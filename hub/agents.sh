@@ -2,7 +2,7 @@
 
 # Function to display usage information
 show_usage() {
-    echo "Usage: $0 [OPTIONS] [COMMAND]"
+    echo "Usage: $0 [COMMAND] [OPTIONS]"
     echo ""
     echo "AI Coding Factory Agent Hub"
     echo ""
@@ -14,9 +14,18 @@ show_usage() {
     echo "  status-container    Show agent container status"
     echo "  list-containers     List available agent containers"
     echo ""
-    echo "Command specific options:"
-    echo "  --volume-name      Specify the name of the volume"
-    echo "  --container-name   Specify the name of the container"
+    echo "$0 create-volume <name>"
+    echo ""
+    echo "$0 delete-volume <name>"
+    echo ""
+    echo "$0 start-container <name> --volume <volume_name> --image <image_name> [--command <command>]"
+    echo ""
+    echo "$0 stop-container <name>"
+    echo ""
+    echo "$0 status-container <name>"
+    echo ""
+    echo "$0 list-containers"
+    echo ""
 }
 
 # Check if no arguments provided
@@ -49,11 +58,43 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+
+# Extract options
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --volume-name)
+            VOLUME_NAME=$2
+            shift 2
+            ;;
+        --container-name)
+            CONTAINER_NAME=$2
+            shift 2
+            ;;
+        --image)
+            IMAGE_NAME=$2
+            shift 2
+            ;;
+        --command)
+            CONTAINER_COMMAND=$2
+            shift 2
+            ;;
+        *)
+            echo "Error: Unknown option '$1'"
+            echo ""
+            show_usage
+            exit 1
+            ;;
+    esac
+done
+
 # Execute the command
 case $COMMAND in
     create-volume)
         echo "Creating volume '$VOLUME_NAME'..."
-        # Add your create volume logic here
+
+        # create volume on AWS EFS
+        aws efs create-file-system --creation-token "$VOLUME_NAME"
+
         ;;
     delete-volume)
         echo "Deleting volume '$VOLUME_NAME'..."
