@@ -14,15 +14,15 @@ show_usage() {
     echo "  status-container    Show agent container status"
     echo "  list-containers     List available agent containers"
     echo ""
-    echo "$0 create-volume <name>"
+    echo "$0 create-volume --volume-name <volume-name>"
     echo ""
-    echo "$0 delete-volume <name>"
+    echo "$0 delete-volume --volume-name <volume-name>"
     echo ""
-    echo "$0 start-container <name> --volume <volume_name> --image <image_name> [--command <command>]"
+    echo "$0 start-container --container-name <container-name> --volume <volume_name> --image <image_name> [--command <command>]"
     echo ""
-    echo "$0 stop-container <name>"
+    echo "$0 stop-container --container-name <container-name>"
     echo ""
-    echo "$0 status-container <name>"
+    echo "$0 status-container --container-name <container-name>"
     echo ""
     echo "$0 list-containers"
     echo ""
@@ -41,33 +41,20 @@ while [[ $# -gt 0 ]]; do
             show_usage
             exit 0
             ;;
-        -v|--verbose)
-            VERBOSE=true
-            shift
-            ;;
         create-volume|delete-volume|start-container|stop-container|status-container|list-containers)
             COMMAND=$1
             shift
             ;;
-        *)
-            echo "Error: Unknown option or command '$1'"
-            echo ""
-            show_usage
-            exit 1
-            ;;
-    esac
-done
-
-
-# Extract options
-while [[ $# -gt 0 ]]; do
-    case $1 in
         --volume-name)
             VOLUME_NAME=$2
             shift 2
             ;;
         --container-name)
             CONTAINER_NAME=$2
+            shift 2
+            ;;
+        --volume)
+            VOLUME=$2
             shift 2
             ;;
         --image)
@@ -79,7 +66,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         *)
-            echo "Error: Unknown option '$1'"
+            echo "Error: Unknown option or command '$1'"
             echo ""
             show_usage
             exit 1
@@ -90,6 +77,10 @@ done
 # Execute the command
 case $COMMAND in
     create-volume)
+        if [ -z "$VOLUME_NAME" ]; then
+            echo "Error: --volume-name is required for create-volume command"
+            exit 1
+        fi
         echo "Creating volume '$VOLUME_NAME'..."
 
         # create volume on AWS EFS
@@ -97,6 +88,10 @@ case $COMMAND in
 
         ;;
     delete-volume)
+        if [ -z "$VOLUME_NAME" ]; then
+            echo "Error: --volume-name is required for delete-volume command"
+            exit 1
+        fi
         echo "Deleting volume '$VOLUME_NAME'..."
         # Add your delete volume logic here
         ;;
