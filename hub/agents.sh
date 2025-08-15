@@ -93,7 +93,42 @@ case $COMMAND in
             exit 1
         fi
         echo "Deleting volume '$VOLUME_NAME'..."
-        # Add your delete volume logic here
+        
+        # Find the file system by creation token (volume name)
+        echo "Looking up file system with creation token '$VOLUME_NAME'..."
+        FILE_SYSTEM_ID=$(aws efs describe-file-systems --query "FileSystems[?CreationToken=='$VOLUME_NAME'].FileSystemId" --output text)
+        
+        if [ -z "$FILE_SYSTEM_ID" ] || [ "$FILE_SYSTEM_ID" = "None" ]; then
+            echo "Error: No file system found with creation token '$VOLUME_NAME'"
+            exit 1
+        fi
+        
+        echo "Found file system ID: $FILE_SYSTEM_ID"
+        
+        # Check if there are any mount targets and delete them first
+        echo "Checking for mount targets..."
+        MOUNT_TARGETS=$(aws efs describe-mount-targets --file-system-id "$FILE_SYSTEM_ID" --query "MountTargets[].MountTargetId" --output text)
+        
+        if [ -n "$MOUNT_TARGETS" ] && [ "$MOUNT_TARGETS" != "None" ]; then
+            echo "Deleting mount targets..."
+            for MOUNT_TARGET_ID in $MOUNT_TARGETS; do
+                echo "Deleting mount target: $MOUNT_TARGET_ID"
+                aws efs delete-mount-target --mount-target-id "$MOUNT_TARGET_ID"
+            done
+            
+            # Wait for mount targets to be deleted
+            echo "Waiting for mount targets to be deleted..."
+            while [ "$(aws efs describe-mount-targets --file-system-id "$FILE_SYSTEM_ID" --query "length(MountTargets)" --output text)" != "0" ]; do
+                echo "Still waiting for mount targets to be deleted..."
+                sleep 5
+            done
+        fi
+        
+        # Delete the file system
+        echo "Deleting file system '$FILE_SYSTEM_ID'..."
+        aws efs delete-file-system --file-system-id "$FILE_SYSTEM_ID"
+        
+        echo "Volume '$VOLUME_NAME' has been successfully deleted."
         ;;
     start-container)
         echo "Starting container '$CONTAINER_NAME'..."
