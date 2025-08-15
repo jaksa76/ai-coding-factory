@@ -1,0 +1,12 @@
+- [ ] Create InitPipeline project - a docker image for initializing the volume (git clone <repo-url>)
+- [ ] Create Pipeline project - a docker image for running the pipelines
+- [ ] Create pipelines.sh - a module to launch, list and stop pipelines (will leverage agents.sh)
+- [ ] Create a UI using mini_httpd
+- [ ] Create project (git url)
+- [ ] Create task (id, description)
+- [ ] List tasks
+- [ ] Delete task
+- [ ] Start pipeline on a task
+- [ ] List tasks by status
+- [ ] Stop pipeline
+- [ ] See pipeline details
