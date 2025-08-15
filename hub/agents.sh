@@ -41,7 +41,7 @@ while [[ $# -gt 0 ]]; do
             show_usage
             exit 0
             ;;
-        create-volume|delete-volume|start-container|stop-container|status-container|list-containers)
+        create-volume|delete-volume|list-volumes|start-container|stop-container|status-container|list-containers)
             COMMAND=$1
             shift
             ;;
@@ -129,6 +129,10 @@ case $COMMAND in
         aws efs delete-file-system --file-system-id "$FILE_SYSTEM_ID"
         
         echo "Volume '$VOLUME_NAME' has been successfully deleted."
+        ;;
+    list-volumes)
+        echo "Listing all volumes..."
+        aws efs describe-file-systems --query "FileSystems[].{ID:FileSystemId, Name:CreationToken}" --output table
         ;;
     start-container)
         echo "Starting container '$CONTAINER_NAME'..."
