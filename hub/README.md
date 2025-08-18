@@ -115,10 +115,9 @@ curl http://localhost:8080/api/tasks.cgi
 ## Dependencies
 
 - `bash` - For CGI script execution
-- `python3` - For JSON parsing and validation
+- `jq` - For JSON parsing and validation
 - `mini_httpd` - Web server with CGI support
 - `curl` - For testing (optional)
-- `jq` - For JSON formatting (optional)
 
 ## Security Notes
 

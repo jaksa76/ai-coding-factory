@@ -32,7 +32,7 @@ generate_id() {
 
 # Function to validate JSON
 validate_json() {
-    echo "$1" | python3 -m json.tool > /dev/null 2>&1
+    echo "$1" | jq empty > /dev/null 2>&1
 }
 
 # Function to get task by ID
@@ -72,14 +72,7 @@ create_task() {
     local task_file="$TASKS_DIR/$task_id.json"
     
     # Extract description from input data
-    local description=$(echo "$task_data" | python3 -c "
-import json, sys
-try:
-    data = json.load(sys.stdin)
-    print(data.get('description', ''))
-except:
-    print('')
-")
+    local description=$(echo "$task_data" | jq -r '.description // ""')
     
     # Create task JSON
     local task_json=$(cat << EOF
@@ -111,51 +104,13 @@ update_task() {
     local current_task=$(cat "$task_file")
     
     # Extract fields from input data
-    local new_description=$(echo "$task_data" | python3 -c "
-import json, sys
-try:
-    data = json.load(sys.stdin)
-    print(data.get('description', ''))
-except:
-    print('')
-")
-    
-    local new_status=$(echo "$task_data" | python3 -c "
-import json, sys
-try:
-    data = json.load(sys.stdin)
-    print(data.get('status', ''))
-except:
-    print('')
-")
+    local new_description=$(echo "$task_data" | jq -r '.description // ""')
+    local new_status=$(echo "$task_data" | jq -r '.status // ""')
     
     # Get current values
-    local current_description=$(echo "$current_task" | python3 -c "
-import json, sys
-try:
-    data = json.load(sys.stdin)
-    print(data.get('description', ''))
-except:
-    print('')
-")
-    
-    local current_status=$(echo "$current_task" | python3 -c "
-import json, sys
-try:
-    data = json.load(sys.stdin)
-    print(data.get('status', ''))
-except:
-    print('')
-")
-    
-    local created_at=$(echo "$current_task" | python3 -c "
-import json, sys
-try:
-    data = json.load(sys.stdin)
-    print(data.get('created_at', ''))
-except:
-    print('')
-")
+    local current_description=$(echo "$current_task" | jq -r '.description // ""')
+    local current_status=$(echo "$current_task" | jq -r '.status // ""')
+    local created_at=$(echo "$current_task" | jq -r '.created_at // ""')
     
     # Use new values if provided, otherwise keep current
     local final_description="${new_description:-$current_description}"

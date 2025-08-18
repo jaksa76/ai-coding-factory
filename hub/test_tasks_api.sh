@@ -19,7 +19,7 @@ TASK1_RESPONSE=$(curl -s -X POST \
     "$API_URL")
 
 echo "Response: $TASK1_RESPONSE"
-TASK1_ID=$(echo "$TASK1_RESPONSE" | python3 -c "import json, sys; print(json.load(sys.stdin)['id'])" 2>/dev/null)
+TASK1_ID=$(echo "$TASK1_RESPONSE" | jq -r '.id' 2>/dev/null)
 echo "Task ID: $TASK1_ID"
 echo
 
@@ -31,19 +31,19 @@ TASK2_RESPONSE=$(curl -s -X POST \
     "$API_URL")
 
 echo "Response: $TASK2_RESPONSE"
-TASK2_ID=$(echo "$TASK2_RESPONSE" | python3 -c "import json, sys; print(json.load(sys.stdin)['id'])" 2>/dev/null)
+TASK2_ID=$(echo "$TASK2_RESPONSE" | jq -r '.id' 2>/dev/null)
 echo "Task ID: $TASK2_ID"
 echo
 
 # Test 3: List all tasks
 echo "3. Listing all tasks..."
-curl -s -X GET "$API_URL" | python3 -m json.tool
+curl -s -X GET "$API_URL" | jq .
 echo
 
 # Test 4: Get specific task
 if [ -n "$TASK1_ID" ]; then
     echo "4. Getting task $TASK1_ID..."
-    curl -s -X GET "$API_URL/$TASK1_ID" | python3 -m json.tool
+    curl -s -X GET "$API_URL/$TASK1_ID" | jq .
     echo
 fi
 
@@ -53,7 +53,7 @@ if [ -n "$TASK1_ID" ]; then
     curl -s -X PUT \
         -H "Content-Type: application/json" \
         -d '{"status": "in_progress"}' \
-        "$API_URL/$TASK1_ID" | python3 -m json.tool
+        "$API_URL/$TASK1_ID" | jq .
     echo
 fi
 
@@ -63,25 +63,25 @@ if [ -n "$TASK2_ID" ]; then
     curl -s -X PUT \
         -H "Content-Type: application/json" \
         -d '{"description": "Set up CI/CD pipeline with GitHub Actions", "status": "completed"}' \
-        "$API_URL/$TASK2_ID" | python3 -m json.tool
+        "$API_URL/$TASK2_ID" | jq .
     echo
 fi
 
 # Test 7: List all tasks again to see updates
 echo "7. Listing all tasks after updates..."
-curl -s -X GET "$API_URL" | python3 -m json.tool
+curl -s -X GET "$API_URL" | jq .
 echo
 
 # Test 8: Delete a task
 if [ -n "$TASK2_ID" ]; then
     echo "8. Deleting task $TASK2_ID..."
-    curl -s -X DELETE "$API_URL/$TASK2_ID" | python3 -m json.tool
+    curl -s -X DELETE "$API_URL/$TASK2_ID" | jq .
     echo
 fi
 
 # Test 9: List tasks after deletion
 echo "9. Listing all tasks after deletion..."
-curl -s -X GET "$API_URL" | python3 -m json.tool
+curl -s -X GET "$API_URL" | jq .
 echo
 
 # Test 10: Try to get deleted task (should return 404)
