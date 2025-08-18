@@ -4,7 +4,7 @@
 # Supports CRUD operations on tasks
 # Tasks are stored as JSON files in $DATA_DIR/tasks/
 
-# Set content type for JSON response
+# Set content type and CORS headers (do not end headers yet)
 echo "Content-Type: application/json"
 echo "Access-Control-Allow-Origin: *"
 echo "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS"
@@ -12,11 +12,10 @@ echo "Access-Control-Allow-Headers: Content-Type"
 
 # Handle preflight OPTIONS request
 if [ "$REQUEST_METHOD" = "OPTIONS" ]; then
+    # End headers and return (preflight OK)
     echo ""
     exit 0
 fi
-
-echo ""
 
 # Set default DATA_DIR if not set
 DATA_DIR=${DATA_DIR:-"/tmp/ai-coding-factory"}
@@ -151,20 +150,23 @@ if [ -n "$PATH_INFO" ]; then
     TASK_ID=$(echo "$PATH_INFO" | sed 's|^/||')
 fi
 
-# Handle different HTTP methods
+# Prepare response placeholders
+STATUS_HEADER=""
+RESPONSE_BODY=""
+
+# Handle different HTTP methods and build response
 case "$REQUEST_METHOD" in
     "GET")
         if [ -z "$TASK_ID" ]; then
             # List all tasks
-            list_tasks
+            RESPONSE_BODY="$(list_tasks)"
         else
             # Get specific task
-            if get_task "$TASK_ID" > /dev/null; then
-                get_task "$TASK_ID"
+            if [ -f "$TASKS_DIR/$TASK_ID.json" ]; then
+                RESPONSE_BODY="$(get_task "$TASK_ID")"
             else
-                echo "Status: 404 Not Found"
-                echo ""
-                echo '{"error": "Task not found", "message": "Task with specified ID does not exist"}'
+                STATUS_HEADER="Status: 404 Not Found"
+                RESPONSE_BODY='{"error": "Task not found", "message": "Task with specified ID does not exist"}'
             fi
         fi
         ;;
@@ -177,16 +179,14 @@ case "$REQUEST_METHOD" in
             
             # Validate JSON
             if validate_json "$POST_DATA"; then
-                create_task "$POST_DATA"
+                RESPONSE_BODY="$(create_task "$POST_DATA")"
             else
-                echo "Status: 400 Bad Request"
-                echo ""
-                echo '{"error": "Invalid JSON", "message": "Request body must be valid JSON"}'
+                STATUS_HEADER="Status: 400 Bad Request"
+                RESPONSE_BODY='{"error": "Invalid JSON", "message": "Request body must be valid JSON"}'
             fi
         else
-            echo "Status: 405 Method Not Allowed"
-            echo ""
-            echo '{"error": "Method not allowed", "message": "POST with task ID is not allowed. Use PUT to update."}'
+            STATUS_HEADER="Status: 405 Method Not Allowed"
+            RESPONSE_BODY='{"error": "Method not allowed", "message": "POST with task ID is not allowed. Use PUT to update."}'
         fi
         ;;
     
@@ -198,22 +198,19 @@ case "$REQUEST_METHOD" in
             
             # Validate JSON
             if validate_json "$PUT_DATA"; then
-                if update_task "$TASK_ID" "$PUT_DATA" > /dev/null; then
-                    update_task "$TASK_ID" "$PUT_DATA"
+                if [ -f "$TASKS_DIR/$TASK_ID.json" ]; then
+                    RESPONSE_BODY="$(update_task "$TASK_ID" "$PUT_DATA")"
                 else
-                    echo "Status: 404 Not Found"
-                    echo ""
-                    echo '{"error": "Task not found", "message": "Task with specified ID does not exist"}'
+                    STATUS_HEADER="Status: 404 Not Found"
+                    RESPONSE_BODY='{"error": "Task not found", "message": "Task with specified ID does not exist"}'
                 fi
             else
-                echo "Status: 400 Bad Request"
-                echo ""
-                echo '{"error": "Invalid JSON", "message": "Request body must be valid JSON"}'
+                STATUS_HEADER="Status: 400 Bad Request"
+                RESPONSE_BODY='{"error": "Invalid JSON", "message": "Request body must be valid JSON"}'
             fi
         else
-            echo "Status: 400 Bad Request"
-            echo ""
-            echo '{"error": "Missing task ID", "message": "Task ID is required for PUT requests"}'
+            STATUS_HEADER="Status: 400 Bad Request"
+            RESPONSE_BODY='{"error": "Missing task ID", "message": "Task ID is required for PUT requests"}'
         fi
         ;;
     
@@ -221,22 +218,26 @@ case "$REQUEST_METHOD" in
         # Delete task
         if [ -n "$TASK_ID" ]; then
             if delete_task "$TASK_ID"; then
-                echo '{"message": "Task deleted successfully"}'
+                RESPONSE_BODY='{"message": "Task deleted successfully"}'
             else
-                echo "Status: 404 Not Found"
-                echo ""
-                echo '{"error": "Task not found", "message": "Task with specified ID does not exist"}'
+                STATUS_HEADER="Status: 404 Not Found"
+                RESPONSE_BODY='{"error": "Task not found", "message": "Task with specified ID does not exist"}'
             fi
         else
-            echo "Status: 400 Bad Request"
-            echo ""
-            echo '{"error": "Missing task ID", "message": "Task ID is required for DELETE requests"}'
+            STATUS_HEADER="Status: 400 Bad Request"
+            RESPONSE_BODY='{"error": "Missing task ID", "message": "Task ID is required for DELETE requests"}'
         fi
         ;;
     
     *)
-        echo "Status: 405 Method Not Allowed"
-        echo ""
-        echo '{"error": "Method not allowed", "message": "Supported methods: GET, POST, PUT, DELETE"}'
+        STATUS_HEADER="Status: 405 Method Not Allowed"
+        RESPONSE_BODY='{"error": "Method not allowed", "message": "Supported methods: GET, POST, PUT, DELETE"}'
         ;;
 esac
+
+# Emit status (if any), end headers, then body
+if [ -n "$STATUS_HEADER" ]; then
+    echo "$STATUS_HEADER"
+fi
+echo ""
+echo "$RESPONSE_BODY"
