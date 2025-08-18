@@ -57,5 +57,5 @@ exec mini_httpd \
     -D \
     -p "$HUB_PORT" \
     -d "$UI_DIR" \
-    -c "*.cgi" \
+    -c "api/*.cgi" \
     -T UTF-8
