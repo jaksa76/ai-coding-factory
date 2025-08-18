@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Coding Factory Hub</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        h1 {
+            font-size: 3em;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .status {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .api-link {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            padding: 10px 20px;
+            border-radius: 5px;
+            text-decoration: none;
+            color: white;
+            margin: 10px;
+            transition: background 0.3s;
+        }
+        .api-link:hover {
+            background: rgba(255,255,255,0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏭 AI Coding Factory Hub</h1>
+        <div class="status">
+            <h2>Welcome to the AI Coding Factory Hub</h2>
+            <p>Your AI-powered development environment is ready!</p>
+            <p>Server is running and ready to process requests.</p>
+        </div>
+        <div>
+            <a href="/api/" class="api-link">📡 API Endpoints</a>
+            <a href="/logs" class="api-link">📋 View Logs</a>
+        </div>
+        <p><small>Powered by mini_httpd</small></p>
+    </div>
+</body>
+</html>
