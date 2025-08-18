@@ -133,7 +133,6 @@ hub/
 ├── ui/
 │   ├── index.html          # Main hub interface
 │   └── api/
-│       ├── index.cgi       # API documentation endpoint
 │       ├── status.cgi      # Status endpoint
 │       └── tasks.cgi       # Tasks CRUD API
 ├── test_tasks_api.sh       # API test script
