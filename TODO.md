@@ -6,7 +6,7 @@
 
 - [ ] Create a UI using mini_httpd
     - [ ] Predefined task list
-    - [ ] List tasks
+    - [x] List tasks
     - [ ] Delete task
     - [ ] Start pipeline on a task
     - [ ] List tasks by status
