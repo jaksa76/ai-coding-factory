@@ -1,19 +1,15 @@
 # AI Coding Factory Hub Docker Image
-FROM debian:bullseye-slim
+FROM node:20-bullseye-slim
 
 # Set environment variables with defaults
 ENV HUB_PORT=8080
 ENV HUB_HOST=0.0.0.0
 ENV DATA_DIR=/data
 
-# Install required packages
-RUN apt-get update && \
-    apt-get install -y \
-        mini-httpd \
-        bash \
-        curl \
-        procps \
-        && rm -rf /var/lib/apt/lists/*
+# Install additional OS packages if needed
+RUN apt-get update && apt-get install -y \
+    bash curl procps \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create application directory
 WORKDIR /app
@@ -24,11 +20,12 @@ RUN mkdir -p /data
 # Copy hub files
 COPY . /app/
 
+# Install dependencies
+RUN npm ci --omit=dev || npm install --omit=dev
+
 # Make scripts executable
 RUN chmod +x /app/hub.sh \
-    && chmod +x /app/agents.sh \
-    && chmod +x /app/test_tasks_api.sh \
-    && chmod +x /app/ui/api/*.cgi
+    && chmod +x /app/agents.sh || true
 
 # Create a non-root user for security
 RUN useradd -r -s /bin/bash -d /app hub
@@ -37,6 +34,7 @@ RUN useradd -r -s /bin/bash -d /app hub
 RUN chown -R hub:hub /app /data
 
 # Switch to non-root user
+# Keep running as non-root user
 USER hub
 
 # Expose the default port

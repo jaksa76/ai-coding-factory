@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # AI Coding Factory Hub - Main Entry Point
-# This script starts a web server using mini_httpd to serve the UI and handle API requests
+# This script starts the Node.js Express server to serve the UI and handle API requests
 
 set -e
 
@@ -11,6 +11,7 @@ HUB_HOST=${HUB_HOST:-0.0.0.0}
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UI_DIR="$SCRIPT_DIR/ui"
 API_DIR="$SCRIPT_DIR/api"
+APP_DIR="$SCRIPT_DIR"
 
 # Colors for output
 RED='\033[0;31m'
@@ -49,13 +50,17 @@ log "Starting AI Coding Factory Hub..."
 
 # Start mini_httpd
 log "Starting web server on http://$HUB_HOST:$HUB_PORT"
-log "Document root: $UI_DIR"
-log "CGI directory: $API_DIR (via symbolic link)"
+log "Document root (served by Express): $UI_DIR"
 
-# mini_httpd command with proper configuration for Docker
-exec mini_httpd \
-    -D \
-    -p "$HUB_PORT" \
-    -d "$UI_DIR" \
-    -c "api/*.cgi" \
-    -T UTF-8
+# If running inside container or without node_modules, install dependencies
+if [ ! -d "$APP_DIR/node_modules" ]; then
+    log "Installing dependencies (npm ci)"
+    if command -v npm >/dev/null 2>&1; then
+        (cd "$APP_DIR" && npm ci --omit=dev || npm install --omit=dev)
+    else
+        error "npm not found, cannot start server"; exit 1
+    fi
+fi
+
+# Start Node server
+exec node "$APP_DIR/src/server.mjs"
