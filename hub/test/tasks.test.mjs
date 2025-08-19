@@ -29,26 +29,26 @@ describe('Hub API', () => {
   it('create a task and fetch it', async () => {
     const desc = `Test task ${Date.now()}`;
     const create = await request(app)
-      .post('/api/tasks.cgi')
+  .post('/api/tasks')
       .set('Content-Type', 'application/json')
       .send({ description: desc });
     expect(create.status).toBe(200);
     expect(create.body.id).toBeTruthy();
 
-    const list = await request(app).get('/api/tasks.cgi');
+  const list = await request(app).get('/api/tasks');
     expect(list.status).toBe(200);
     expect(Array.isArray(list.body)).toBe(true);
     const found = list.body.find((t) => t.description === desc);
     expect(found).toBeTruthy();
 
-    const one = await request(app).get(`/api/tasks.cgi/${found.id}`);
+  const one = await request(app).get(`/api/tasks/${found.id}`);
     expect(one.status).toBe(200);
     expect(one.body.id).toBe(found.id);
   });
 
   it('CRUD: create, get, update, delete a task', async () => {
     const create = await request(app)
-      .post('/api/tasks.cgi')
+  .post('/api/tasks')
       .send({ description: 'CRUD test' })
       .set('Content-Type', 'application/json');
     expect(create.status).toBe(200);
@@ -56,27 +56,27 @@ describe('Hub API', () => {
     expect(id).toBeTruthy();
     expect(create.body.status).toBe('pending');
 
-    const get = await request(app).get(`/api/tasks.cgi/${id}`);
+  const get = await request(app).get(`/api/tasks/${id}`);
     expect(get.status).toBe(200);
 
     const upd = await request(app)
-      .put(`/api/tasks.cgi/${id}`)
+  .put(`/api/tasks/${id}`)
       .send({ status: 'done' })
       .set('Content-Type', 'application/json');
     expect(upd.status).toBe(200);
     expect(upd.body.status).toBe('done');
 
-    const del = await request(app).delete(`/api/tasks.cgi/${id}`);
+  const del = await request(app).delete(`/api/tasks/${id}`);
     expect(del.status).toBe(200);
     expect(del.body.message).toBe('Task deleted successfully');
 
-    const notFoundAfter = await request(app).get(`/api/tasks.cgi/${id}`);
+  const notFoundAfter = await request(app).get(`/api/tasks/${id}`);
     expect(notFoundAfter.status).toBe(404);
   });
 
   it('invalid JSON returns 400', async () => {
     const res = await request(app)
-      .post('/api/tasks.cgi')
+  .post('/api/tasks')
       .set('Content-Type', 'application/json')
       .send('{invalid');
     expect(res.status).toBe(400);
@@ -84,7 +84,7 @@ describe('Hub API', () => {
 
   it('PUT without ID returns 400', async () => {
     const res = await request(app)
-      .put('/api/tasks.cgi')
+      .put('/api/tasks')
       .set('Content-Type', 'application/json')
       .send({ status: 'done' });
     expect(res.status).toBe(400);
@@ -92,7 +92,7 @@ describe('Hub API', () => {
 
   it('POST with ID not allowed returns 405', async () => {
     const res = await request(app)
-      .post('/api/tasks.cgi/someid')
+  .post('/api/tasks/someid')
       .set('Content-Type', 'application/json')
       .send({ description: 'x' });
     expect(res.status).toBe(405);
@@ -100,14 +100,14 @@ describe('Hub API', () => {
 
   it('update non-existing returns 404', async () => {
     const res = await request(app)
-      .put('/api/tasks.cgi/task_000000_nonexistent')
+  .put('/api/tasks/task_000000_nonexistent')
       .set('Content-Type', 'application/json')
       .send({ status: 'done' });
     expect(res.status).toBe(404);
   });
 
   it('delete non-existing returns 404', async () => {
-    const res = await request(app).delete('/api/tasks.cgi/task_000000_nonexistent');
+  const res = await request(app).delete('/api/tasks/task_000000_nonexistent');
     expect(res.status).toBe(404);
   });
 });

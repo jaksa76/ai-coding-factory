@@ -24,8 +24,7 @@ COPY . /app/
 RUN npm ci --omit=dev || npm install --omit=dev
 
 # Make scripts executable
-RUN chmod +x /app/hub.sh \
-    && chmod +x /app/agents.sh || true
+RUN chmod +x /app/agents.sh || true
 
 # Create a non-root user for security
 RUN useradd -r -s /bin/bash -d /app hub
@@ -44,5 +43,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:${HUB_PORT}/ || exit 1
 
-# Set the default command
-CMD ["/app/hub.sh"]
+# Set the default command: run server directly
+CMD ["node", "/app/src/server.mjs"]

@@ -9,8 +9,8 @@ router.get('/', (req, res) => {
     version: '0.1.0',
     timestamp: new Date().toISOString(),
     endpoints: [
-      '/api/status.cgi - Service status',
-      '/api/tasks.cgi - Tasks CRUD'
+  '/api/status - Service status',
+  '/api/tasks - Tasks CRUD'
     ],
   });
 });

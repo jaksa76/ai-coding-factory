@@ -1,7 +1,26 @@
 import express from 'express';
 import { $, chalk } from 'zx';
-import { generateId, listTasks, readJSON, tasksPath, writeJSON } from '../utils/storage.mjs';
 import fs from 'fs-extra';
+import path from 'node:path';
+
+const DATA_DIR = process.env.DATA_DIR || '/tmp/ai-coding-factory';
+const TASKS_DIR = path.join(DATA_DIR, 'tasks');
+await fs.ensureDir(TASKS_DIR);
+
+const tasksPath = (id) => path.join(TASKS_DIR, `${id}.json`);
+const readJSON = (file) => fs.readJSON(file);
+const writeJSON = (file, data) => fs.outputJSON(file, data, { spaces: 2 });
+const listTasks = async () => {
+  const files = await fs.readdir(TASKS_DIR);
+  const jsons = [];
+  for (const f of files) {
+    if (!f.endsWith('.json')) continue;
+    const full = path.join(TASKS_DIR, f);
+    try { jsons.push(await fs.readJSON(full)); } catch {}
+  }
+  return jsons;
+};
+const generateId = () => `task_${Date.now()}_${process.pid}`;
 
 const router = express.Router();
 

@@ -1,31 +1,31 @@
 # AI Coding Factory Hub (Express + zx)
 
-This hub now runs a Node.js Express server with zx for shell integration. It serves the static UI and exposes API endpoints compatible with the previous CGI paths.
+This hub now runs a Node.js Express server with zx for shell integration. It serves the static UI and exposes clean API endpoints.
 
 ## Features
 
 - Express server with CORS and logging
 - CRUD operations for tasks stored as JSON files in `$DATA_DIR/tasks/`
-- Backwards-compatible routes: `/api/tasks.cgi`, `/api/status.cgi`
+- Clean RESTful routes under `/api/*`
 - Uses zx for shell-friendly scripting where needed
 
 ## API Endpoints
 
-### Tasks API (`/api/tasks.cgi`)
+### Tasks API (`/api/tasks`)
 
 #### List All Tasks
 ```bash
-GET /api/tasks.cgi
+GET /api/tasks
 ```
 
 #### Get Specific Task
 ```bash
-GET /api/tasks.cgi/{task_id}
+GET /api/tasks/{task_id}
 ```
 
 #### Create New Task
 ```bash
-POST /api/tasks.cgi
+POST /api/tasks
 Content-Type: application/json
 
 {
@@ -35,7 +35,7 @@ Content-Type: application/json
 
 #### Update Task
 ```bash
-PUT /api/tasks.cgi/{task_id}
+PUT /api/tasks/{task_id}
 Content-Type: application/json
 
 {
@@ -46,12 +46,12 @@ Content-Type: application/json
 
 #### Delete Task
 ```bash
-DELETE /api/tasks.cgi/{task_id}
+DELETE /api/tasks/{task_id}
 ```
 
 ### Other Endpoints
 
-- `GET /api/status.cgi` - Service status and health check
+- `GET /api/status` - Service status and health check
 
 ## Task Data Structure
 
@@ -103,7 +103,7 @@ docker run -d \
     ai-coding-factory-hub
 
 # Test the API
-curl http://localhost:8080/api/tasks.cgi
+curl http://localhost:8080/api/tasks
 ```
 
 ## Dependencies
@@ -123,13 +123,11 @@ curl http://localhost:8080/api/tasks.cgi
 ```
 hub/
 ├── src/
-│   ├── app.mjs             # Express app factory
+│   ├── app.mjs             # Express app factory (used by tests)
 │   ├── server.mjs          # Server entrypoint
-│   ├── routes/
-│   │   ├── status.mjs
-│   │   └── tasks.mjs
-│   └── utils/
-│       └── storage.mjs
+│   └── routes/
+│       ├── status.mjs
+│       └── tasks.mjs       # Includes storage logic
 ├── ui/                     # Static UI served by Express
 ├── agents.sh               # Existing shell agent (invoked as needed)
 ├── package.json

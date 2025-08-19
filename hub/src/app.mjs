@@ -22,9 +22,9 @@ export function createApp() {
   });
   app.use(morgan('dev'));
 
-  // Legacy CGI path compatibility
-  app.use('/api/tasks.cgi', tasksRouter);
-  app.use('/api/status.cgi', statusRouter);
+  // API routes
+  app.use('/api/tasks', tasksRouter);
+  app.use('/api/status', statusRouter);
 
   // Serve static UI
   const uiDir = path.join(__dirname, '../ui');
