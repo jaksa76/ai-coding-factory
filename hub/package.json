@@ -5,8 +5,8 @@
   "type": "module",
   "description": "AI Coding Factory Hub (Express + zx)",
   "scripts": {
-  "start": "node src/server.mjs",
-  "dev": "node --watch src/server.mjs",
+    "start": "node src/server.mjs",
+    "dev": "node --watch src/server.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
