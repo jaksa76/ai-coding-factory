@@ -1,64 +1,349 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Coding Factory Hub</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Coding Factory Hub – Tasks</title>
     <style>
+        :root {
+            --bg: #f7f8fa;
+            --card: #ffffff;
+            --text: #172b4d;
+            --muted: #6b778c;
+            --border: #e6e8ea;
+            --primary: #0052cc; /* Atlassian blue vibe */
+            --primary-600: #0747a6;
+            --success-bg: #e3fcef;
+            --success-text: #006644;
+            --error-bg: #ffebe6;
+            --error-text: #bf2600;
+            --warning-bg: #fffae6;
+            --warning-text: #974f0c;
+        }
+
+        * { box-sizing: border-box; }
+        html, body { height: 100%; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             margin: 0;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+            color: var(--text);
+            background: var(--bg);
         }
-        .container {
-            max-width: 800px;
+
+        /* Top header */
+        .app-header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: var(--card);
+            border-bottom: 1px solid var(--border);
+        }
+        .header-inner {
+            max-width: 1200px;
             margin: 0 auto;
-            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 20px;
+            gap: 16px;
         }
-        h1 {
-            font-size: 3em;
-            margin-bottom: 20px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
         }
-        .status {
-            background: rgba(255,255,255,0.1);
-            padding: 20px;
+        .brand-mark {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            background: var(--primary);
+            box-shadow: inset 0 -6px 12px rgba(0,0,0,0.15);
+        }
+        .brand-name { color: var(--text); }
+
+        .page {
+            max-width: 1200px;
+            margin: 24px auto;
+            padding: 0 20px 40px;
+        }
+
+        .page-title { font-size: 22px; margin-bottom: 16px; }
+
+        /* Controls */
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+        .toolbar-left, .toolbar-right { display: flex; gap: 8px; align-items: center; }
+
+        .btn {
+            appearance: none;
+            border: 1px solid var(--border);
+            background: var(--card);
+            color: var(--text);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+        }
+        .btn:hover { background: #f4f5f7; }
+        .btn:active { transform: translateY(0.5px); }
+        .btn.primary {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: #fff;
+        }
+        .btn.primary:hover { background: var(--primary-600); border-color: var(--primary-600); }
+        .btn.danger { border-color: #ffbdad; color: #de350b; }
+
+        .input, .select {
+            border: 1px solid var(--border);
+            background: var(--card);
+            border-radius: 6px;
+            padding: 8px 10px;
+            font-size: 14px;
+            color: var(--text);
+        }
+
+        /* Card */
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
             border-radius: 10px;
-            margin: 20px 0;
+            box-shadow: 0 1px 2px rgba(9,30,66,0.08);
+            padding: 16px;
         }
-        .api-link {
-            display: inline-block;
-            background: rgba(255,255,255,0.2);
-            padding: 10px 20px;
-            border-radius: 5px;
-            text-decoration: none;
-            color: white;
-            margin: 10px;
-            transition: background 0.3s;
-        }
-        .api-link:hover {
-            background: rgba(255,255,255,0.3);
+
+        .message { margin-bottom: 12px; }
+        .msg { padding: 10px 12px; border-radius: 8px; font-size: 14px; }
+        .msg.success { background: var(--success-bg); color: var(--success-text); border: 1px solid #b3dfc3; }
+        .msg.error { background: var(--error-bg); color: var(--error-text); border: 1px solid #ffd2cc; }
+
+        /* Task form */
+        .task-form { display: none; margin-bottom: 12px; padding: 16px; background: #fafbfc; border: 1px solid var(--border); border-radius: 8px; }
+        .form-row { display: grid; gap: 10px; }
+        .form-actions { display: flex; gap: 8px; margin-top: 8px; }
+        textarea { resize: vertical; min-height: 96px; }
+
+        /* Tasks list */
+        .tasks { display: grid; gap: 10px; }
+        .task { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
+        .task-main { display: grid; grid-template-columns: 180px 1fr; gap: 12px; align-items: center; }
+        .task-id { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 12px; color: var(--muted); }
+        .status { font-size: 12px; font-weight: 600; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; justify-self: start; }
+        .st-pending { background: #ebecf0; color: #42526e; }
+        .st-in-progress { background: #deebff; color: #0747a6; }
+        .st-completed { background: #e3fcef; color: #006644; }
+        .st-failed { background: #ffebe6; color: #bf2600; }
+        .desc { color: var(--text); line-height: 1.5; }
+        .actions { display: flex; gap: 6px; justify-self: end; }
+
+        .loading, .empty { text-align: center; color: var(--muted); padding: 24px; }
+
+        @media (max-width: 720px) {
+            .task-main { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🏭 AI Coding Factory Hub</h1>
-        <div class="status">
-            <h2>Welcome to the AI Coding Factory Hub</h2>
-            <p>Your AI-powered development environment is ready!</p>
-            <p>Server is running and ready to process requests.</p>
+    <header class="app-header">
+        <div class="header-inner">
+            <div class="brand">
+                <div class="brand-mark" aria-hidden="true"></div>
+                <div class="brand-name">AI Coding Factory Hub</div>
+            </div>
         </div>
-        <div>
-            <a href="/tasks.html" class="api-link">📋 Task Manager</a>
-            <a href="/api/" class="api-link">📡 API Endpoints</a>
-            <a href="/api/tasks.cgi" class="api-link">📋 Tasks API</a>
-            <a href="/logs" class="api-link">📋 View Logs</a>
+    </header>
+
+    <main class="page">
+        <h1 class="page-title">Tasks</h1>
+
+        <div id="message" class="message"></div>
+
+        <div class="toolbar">
+            <div class="toolbar-left">
+                <button class="btn primary" id="btnAdd">Add task</button>
+                <button class="btn" id="btnRefresh">Refresh</button>
+            </div>
+            <div class="toolbar-right">
+                <input class="input" id="search" placeholder="Search tasks" />
+                <select class="select" id="statusFilter">
+                    <option value="">All statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="in-progress">In progress</option>
+                    <option value="completed">Completed</option>
+                    <option value="failed">Failed</option>
+                </select>
+            </div>
         </div>
-        <p><small>Powered by mini_httpd</small></p>
-    </div>
+
+        <section class="task-form" id="taskForm">
+            <div class="form-row">
+                <label for="taskDescription" style="font-weight:600;">Description</label>
+                <textarea class="input" id="taskDescription" placeholder="Describe the task…"></textarea>
+            </div>
+            <div class="form-actions">
+                <button class="btn primary" id="btnCreate">Create task</button>
+                <button class="btn" id="btnCancel">Cancel</button>
+            </div>
+        </section>
+
+        <section class="card">
+            <div id="tasks" class="tasks">
+                <div class="loading">Loading tasks…</div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const API_BASE = '/api/tasks';
+        let tasks = [];
+        let filtered = [];
+
+        const els = {
+            msg: document.getElementById('message'),
+            form: document.getElementById('taskForm'),
+            desc: document.getElementById('taskDescription'),
+            tasks: document.getElementById('tasks'),
+            search: document.getElementById('search'),
+            filter: document.getElementById('statusFilter'),
+            btnAdd: document.getElementById('btnAdd'),
+            btnRefresh: document.getElementById('btnRefresh'),
+            btnCreate: document.getElementById('btnCreate'),
+            btnCancel: document.getElementById('btnCancel'),
+        };
+
+        function showMsg(text, type = 'success') {
+            els.msg.innerHTML = `<div class="msg ${type === 'error' ? 'error' : 'success'}">${escapeHtml(text)}</div>`;
+            setTimeout(() => els.msg.innerHTML = '', 4000);
+        }
+
+        function toggleForm(show) {
+            const visible = show ?? (els.form.style.display !== 'block');
+            els.form.style.display = visible ? 'block' : 'none';
+            if (visible) els.desc.focus(); else els.desc.value = '';
+        }
+
+        async function load() {
+            els.tasks.innerHTML = '<div class="loading">Loading tasks…</div>';
+            try {
+                const res = await fetch(API_BASE);
+                if (!res.ok) throw new Error('Failed to load');
+                tasks = await res.json();
+                applyFilter();
+            } catch (e) {
+                els.tasks.innerHTML = '<div class="empty">Could not load tasks.</div>';
+            }
+        }
+
+        async function createTask() {
+            const description = els.desc.value.trim();
+            if (!description) { showMsg('Please enter a description.', 'error'); return; }
+            try {
+                const res = await fetch(API_BASE, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description }) });
+                if (!res.ok) throw new Error('Create failed');
+                const t = await res.json();
+                tasks.unshift(t);
+                applyFilter();
+                toggleForm(false);
+                showMsg('Task created');
+            } catch (e) {
+                showMsg('Failed to create task', 'error');
+            }
+        }
+
+        async function updateStatus(id, status) {
+            try {
+                const res = await fetch(`${API_BASE}/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+                if (!res.ok) throw new Error('Update failed');
+                const updated = await res.json();
+                const idx = tasks.findIndex(t => t.id === id);
+                if (idx !== -1) tasks[idx] = updated;
+                applyFilter();
+                showMsg(`Status updated to ${status}`);
+            } catch (e) {
+                showMsg('Failed to update status', 'error');
+            }
+        }
+
+        async function removeTask(id) {
+            if (!confirm('Delete this task?')) return;
+            try {
+                const res = await fetch(`${API_BASE}/${id}`, { method: 'DELETE' });
+                if (!res.ok) throw new Error('Delete failed');
+                tasks = tasks.filter(t => t.id !== id);
+                applyFilter();
+                showMsg('Task deleted');
+            } catch (e) {
+                showMsg('Failed to delete task', 'error');
+            }
+        }
+
+        function applyFilter() {
+            const q = els.search.value.trim().toLowerCase();
+            const st = els.filter.value;
+            filtered = tasks.filter(t => {
+                const matchesQ = !q || t.description?.toLowerCase().includes(q) || t.id.toLowerCase().includes(q);
+                const matchesS = !st || t.status === st;
+                return matchesQ && matchesS;
+            });
+            render();
+        }
+
+        function render() {
+            if (!filtered.length) {
+                els.tasks.innerHTML = tasks.length
+                    ? '<div class="empty">No tasks match your filters.</div>'
+                    : '<div class="empty">No tasks yet. Create your first task.</div>';
+                return;
+            }
+            const html = filtered.map(t => `
+                <div class="task">
+                    <div class="task-main">
+                        <div class="task-id">${escapeHtml(t.id)}</div>
+                        <div class="status st-${t.status}">${escapeHtml(t.status)}</div>
+                        <div class="desc">${escapeHtml(t.description || '')}</div>
+                    </div>
+                    <div class="actions">
+                        ${t.status === 'pending' ? `<button class="btn" onclick="updateStatus('${t.id}','in-progress')">Start</button>` : ''}
+                        ${t.status === 'in-progress' ? `<button class="btn" onclick="updateStatus('${t.id}','pending')">Pause</button>` : ''}
+                        <button class="btn danger" onclick="removeTask('${t.id}')">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+            els.tasks.innerHTML = html;
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = String(str ?? '');
+            return div.innerHTML;
+        }
+
+        // Events
+        els.btnAdd.addEventListener('click', () => toggleForm());
+        els.btnRefresh.addEventListener('click', load);
+        els.btnCreate.addEventListener('click', createTask);
+        els.btnCancel.addEventListener('click', () => toggleForm(false));
+        els.search.addEventListener('input', applyFilter);
+        els.filter.addEventListener('change', applyFilter);
+
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+                e.preventDefault();
+                toggleForm(true);
+            }
+            if (e.key === 'Escape' && els.form.style.display === 'block') toggleForm(false);
+        });
+
+        // Init
+        load();
+    </script>
 </body>
 </html>

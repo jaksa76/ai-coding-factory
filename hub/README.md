@@ -1,32 +1,31 @@
-# AI Coding Factory Hub - Tasks API
+# AI Coding Factory Hub (Express + zx)
 
-This directory contains a REST API built using CGI scripts for managing tasks in the AI Coding Factory Hub.
+This hub now runs a Node.js Express server with zx for shell integration. It serves the static UI and exposes clean API endpoints.
 
 ## Features
 
-- **CRUD Operations**: Create, Read, Update, and Delete tasks
-- **JSON Storage**: Tasks are stored as individual JSON files in `$DATA_DIR/tasks/`
-- **RESTful Design**: Follows REST conventions for HTTP methods and status codes
-- **CORS Support**: Includes Cross-Origin Resource Sharing headers
-- **Error Handling**: Proper HTTP status codes and error messages
+- Express server with CORS and logging
+- CRUD operations for tasks stored as JSON files in `$DATA_DIR/tasks/`
+- Clean RESTful routes under `/api/*`
+- Uses zx for shell-friendly scripting where needed
 
 ## API Endpoints
 
-### Tasks API (`/api/tasks.cgi`)
+### Tasks API (`/api/tasks`)
 
 #### List All Tasks
 ```bash
-GET /api/tasks.cgi
+GET /api/tasks
 ```
 
 #### Get Specific Task
 ```bash
-GET /api/tasks.cgi/{task_id}
+GET /api/tasks/{task_id}
 ```
 
 #### Create New Task
 ```bash
-POST /api/tasks.cgi
+POST /api/tasks
 Content-Type: application/json
 
 {
@@ -36,7 +35,7 @@ Content-Type: application/json
 
 #### Update Task
 ```bash
-PUT /api/tasks.cgi/{task_id}
+PUT /api/tasks/{task_id}
 Content-Type: application/json
 
 {
@@ -47,13 +46,12 @@ Content-Type: application/json
 
 #### Delete Task
 ```bash
-DELETE /api/tasks.cgi/{task_id}
+DELETE /api/tasks/{task_id}
 ```
 
 ### Other Endpoints
 
-- `GET /api/index.cgi` - API documentation and endpoint listing
-- `GET /api/status.cgi` - Service status and health check
+- `GET /api/status` - Service status and health check
 
 ## Task Data Structure
 
@@ -82,15 +80,10 @@ Each task is stored as a JSON file with the following structure:
 
 ## Testing
 
-Use the provided test script to verify API functionality:
+Run unit tests with vitest:
 
 ```bash
-./test_tasks_api.sh [base_url]
-```
-
-Example:
-```bash
-./test_tasks_api.sh http://localhost:8080
+npm test
 ```
 
 ## Docker Support
@@ -104,20 +97,19 @@ docker build -t ai-coding-factory-hub .
 # Run the container
 docker run -d \
     -p 8080:8080 \
+    -e DATA_DIR=/data \
     -v /path/to/data:/data \
     --name hub \
     ai-coding-factory-hub
 
 # Test the API
-curl http://localhost:8080/api/tasks.cgi
+curl http://localhost:8080/api/tasks
 ```
 
 ## Dependencies
 
-- `bash` - For CGI script execution
-- `jq` - For JSON parsing and validation
-- `mini_httpd` - Web server with CGI support
-- `curl` - For testing (optional)
+- Node.js 18+ (Dockerfile uses Node 20)
+- Express, zx, fs-extra, morgan
 
 ## Security Notes
 
@@ -130,12 +122,15 @@ curl http://localhost:8080/api/tasks.cgi
 
 ```
 hub/
-├── ui/
-│   ├── index.html          # Main hub interface
-│   └── api/
-│       ├── status.cgi      # Status endpoint
-│       └── tasks.cgi       # Tasks CRUD API
-├── test_tasks_api.sh       # API test script
-├── Dockerfile              # Container configuration
-└── README.md              # This file
+├── src/
+│   ├── app.mjs             # Express app factory (used by tests)
+│   ├── server.mjs          # Server entrypoint
+│   └── routes/
+│       ├── status.mjs
+│       └── tasks.mjs       # Includes storage logic
+├── ui/                     # Static UI served by Express
+├── agents.sh               # Existing shell agent (invoked as needed)
+├── package.json
+├── Dockerfile
+└── README.md
 ```

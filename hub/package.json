@@ -1,0 +1,27 @@
+{
+  "name": "ai-coding-factory-hub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AI Coding Factory Hub (Express + zx)",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "dev": "node --watch src/server.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "fs-extra": "^11.2.0",
+    "morgan": "^1.10.0",
+    "zx": "^8.1.6"
+  },
+  "devDependencies": {
+    "supertest": "^7.0.0",
+    "vitest": "^2.0.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
