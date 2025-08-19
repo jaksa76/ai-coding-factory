@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI Coding Factory Hub – Tasks</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
         :root {
             --bg: #f7f8fa;
@@ -102,6 +103,10 @@
         .btn.primary:hover { background: var(--primary-600); border-color: var(--primary-600); }
         .btn.danger { border-color: #ffbdad; color: #de350b; }
 
+        .btn.icon { padding: 6px 8px; }
+        .btn .fa { font-size: 14px; }
+        .btn .btn-text { margin-left: 6px; }
+
         .input, .select {
             border: 1px solid var(--border);
             background: var(--card);
@@ -131,18 +136,24 @@
         .form-actions { display: flex; gap: 8px; margin-top: 8px; }
         textarea { resize: vertical; min-height: 96px; }
 
-        /* Tasks list */
-        .tasks { display: grid; gap: 10px; }
-        .task { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
-        .task-main { display: grid; grid-template-columns: 180px 1fr; gap: 12px; align-items: center; }
-        .task-id { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 12px; color: var(--muted); }
-        .status { font-size: 12px; font-weight: 600; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; justify-self: start; }
+        /* Table */
+        .table-wrapper { overflow-x: auto; background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 1px 2px rgba(9,30,66,0.08); }
+        table.table { width: 100%; border-collapse: separate; border-spacing: 0; }
+        .table thead th { text-align: left; font-weight: 600; font-size: 12px; color: var(--muted); background: #fafbfc; border-bottom: 1px solid var(--border); padding: 10px 12px; }
+        .table tbody td { padding: 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+        .table tbody tr:hover { background: #f8f9fb; }
+        .col-id { width: 220px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 12px; color: var(--muted); }
+        .col-status { width: 140px; }
+        .col-desc { min-width: 300px; }
+        .col-actions { width: 160px; text-align: right; }
+
+        .status { font-size: 12px; font-weight: 600; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; display: inline-block; }
         .st-pending { background: #ebecf0; color: #42526e; }
         .st-in-progress { background: #deebff; color: #0747a6; }
         .st-completed { background: #e3fcef; color: #006644; }
         .st-failed { background: #ffebe6; color: #bf2600; }
         .desc { color: var(--text); line-height: 1.5; }
-        .actions { display: flex; gap: 6px; justify-self: end; }
+        .actions { display: inline-flex; gap: 6px; }
 
         .loading, .empty { text-align: center; color: var(--muted); padding: 24px; }
 
@@ -168,8 +179,8 @@
 
         <div class="toolbar">
             <div class="toolbar-left">
-                <button class="btn primary" id="btnAdd">Add task</button>
-                <button class="btn" id="btnRefresh">Refresh</button>
+                    <button class="btn primary" id="btnAdd" title="Add task"><i class="fa fa-plus" aria-hidden="true"></i><span class="btn-text">Add task</span></button>
+                    <button class="btn" id="btnRefresh" title="Refresh"><i class="fa fa-rotate-right" aria-hidden="true"></i><span class="btn-text">Refresh</span></button>
             </div>
             <div class="toolbar-right">
                 <input class="input" id="search" placeholder="Search tasks" />
@@ -189,16 +200,16 @@
                 <textarea class="input" id="taskDescription" placeholder="Describe the task…"></textarea>
             </div>
             <div class="form-actions">
-                <button class="btn primary" id="btnCreate">Create task</button>
-                <button class="btn" id="btnCancel">Cancel</button>
+                    <button class="btn primary" id="btnCreate" title="Create task"><i class="fa fa-check" aria-hidden="true"></i><span class="btn-text">Create task</span></button>
+                    <button class="btn" id="btnCancel" title="Cancel"><i class="fa fa-xmark" aria-hidden="true"></i><span class="btn-text">Cancel</span></button>
             </div>
         </section>
 
-        <section class="card">
-            <div id="tasks" class="tasks">
-                <div class="loading">Loading tasks…</div>
-            </div>
-        </section>
+            <section class="card">
+                <div id="tasks">
+                    <div class="loading">Loading tasks…</div>
+                </div>
+            </section>
     </main>
 
     <script>
@@ -296,29 +307,58 @@
             render();
         }
 
-        function render() {
-            if (!filtered.length) {
-                els.tasks.innerHTML = tasks.length
-                    ? '<div class="empty">No tasks match your filters.</div>'
-                    : '<div class="empty">No tasks yet. Create your first task.</div>';
-                return;
+            function render() {
+                if (!filtered.length) {
+                    els.tasks.innerHTML = tasks.length
+                        ? '<div class="empty">No tasks match your filters.</div>'
+                        : '<div class="empty">No tasks yet. Create your first task.</div>';
+                    return;
+                }
+                const rows = filtered.map(t => `
+                    <tr>
+                        <td class="col-id">${escapeHtml(t.id)}</td>
+                        <td class="col-status"><span class="status st-${t.status}">${escapeHtml(t.status)}</span></td>
+                        <td class="col-desc desc">${escapeHtml(t.description || '')}</td>
+                        <td class="col-created">${formatDate(t.created_at)}</td>
+                        <td class="col-updated">${formatDate(t.updated_at)}</td>
+                        <td class="col-actions">
+                            <div class="actions">
+                                ${t.status === 'pending' ? `<button class="btn icon" title="Start" aria-label="Start" onclick=\"updateStatus('${t.id}','in-progress')\"><i class='fa fa-play' aria-hidden='true'></i></button>` : ''}
+                                ${t.status === 'in-progress' ? `<button class="btn icon" title="Pause" aria-label="Pause" onclick=\"updateStatus('${t.id}','pending')\"><i class='fa fa-pause' aria-hidden='true'></i></button>` : ''}
+                                <button class="btn icon danger" title="Delete" aria-label="Delete" onclick=\"removeTask('${t.id}')\"><i class='fa fa-trash' aria-hidden='true'></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                `).join('');
+
+                els.tasks.innerHTML = `
+                <div class="table-wrapper">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Task ID</th>
+                                <th>Status</th>
+                                <th>Description</th>
+                                <th>Created</th>
+                                <th>Updated</th>
+                                <th class="col-actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows}
+                        </tbody>
+                    </table>
+                </div>`;
             }
-            const html = filtered.map(t => `
-                <div class="task">
-                    <div class="task-main">
-                        <div class="task-id">${escapeHtml(t.id)}</div>
-                        <div class="status st-${t.status}">${escapeHtml(t.status)}</div>
-                        <div class="desc">${escapeHtml(t.description || '')}</div>
-                    </div>
-                    <div class="actions">
-                        ${t.status === 'pending' ? `<button class="btn" onclick="updateStatus('${t.id}','in-progress')">Start</button>` : ''}
-                        ${t.status === 'in-progress' ? `<button class="btn" onclick="updateStatus('${t.id}','pending')">Pause</button>` : ''}
-                        <button class="btn danger" onclick="removeTask('${t.id}')">Delete</button>
-                    </div>
-                </div>
-            `).join('');
-            els.tasks.innerHTML = html;
-        }
+
+            function formatDate(value) {
+                try {
+                    if (!value) return '';
+                    const d = new Date(value);
+                    if (Number.isNaN(d.getTime())) return String(value);
+                    return d.toLocaleString();
+                } catch { return String(value ?? ''); }
+            }
 
         function escapeHtml(str) {
             const div = document.createElement('div');
