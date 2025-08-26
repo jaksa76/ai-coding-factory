@@ -5,13 +5,13 @@
     - [ ] Fake coding agent (changes background color)
 
 - [ ] Create a UI using mini_httpd
-    - [ ] Predefined task list
+    - [x] Predefined task list
     - [x] List tasks
     - [x] Delete task
     - [ ] Start pipeline on a task
     - [x] List tasks by status
     - [ ] See pipeline details (logs)
-    - [ ] Create task (id, description)
+    - [x] Create task (id, description)
     - [ ] Stop pipeline
 
 Milestone 1: Demo

@@ -6,7 +6,7 @@
   "description": "AI Coding Factory Hub (Express + zx)",
   "scripts": {
     "start": "node src/server.mjs",
-    "dev": "node --watch src/server.mjs",
+    "dev": "DATA_DIR=demo-data node --watch src/server.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
