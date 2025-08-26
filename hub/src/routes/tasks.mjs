@@ -52,8 +52,7 @@ router.post(['/', '/:id'], async (req, res) => {
     // keep compatible behavior but not strictly necessary
   }
   const id = generateId();
-  const now = new Date().toISOString();
-  const task = { id, description, status: 'pending', created_at: now, updated_at: now };
+  const task = { id, description, status: 'pending' };
   await writeJSON(tasksPath(id), task);
   res.json(task);
 });
@@ -67,7 +66,7 @@ router.put('/:id?', async (req, res) => {
   const current = await readJSON(file);
   const description = req.body?.description ?? current.description;
   const status = req.body?.status ?? current.status;
-  const updated = { ...current, description, status, updated_at: new Date().toISOString() };
+  const updated = { ...current, description, status };
   await writeJSON(file, updated);
   res.json(updated);
 });

@@ -319,13 +319,11 @@
                         <td class="col-id">${escapeHtml(t.id)}</td>
                         <td class="col-status"><span class="status st-${t.status}">${escapeHtml(t.status)}</span></td>
                         <td class="col-desc desc">${escapeHtml(t.description || '')}</td>
-                        <td class="col-created">${formatDate(t.created_at)}</td>
-                        <td class="col-updated">${formatDate(t.updated_at)}</td>
                         <td class="col-actions">
                             <div class="actions">
-                                ${t.status === 'pending' ? `<button class="btn icon" title="Start" aria-label="Start" onclick=\"updateStatus('${t.id}','in-progress')\"><i class='fa fa-play' aria-hidden='true'></i></button>` : ''}
-                                ${t.status === 'in-progress' ? `<button class="btn icon" title="Pause" aria-label="Pause" onclick=\"updateStatus('${t.id}','pending')\"><i class='fa fa-pause' aria-hidden='true'></i></button>` : ''}
-                                <button class="btn icon danger" title="Delete" aria-label="Delete" onclick=\"removeTask('${t.id}')\"><i class='fa fa-trash' aria-hidden='true'></i></button>
+                                ${t.status === 'pending' ? `<button class="btn icon" title="Start" aria-label="Start" onclick="updateStatus('${t.id}','in-progress')"><i class='fa fa-play' aria-hidden='true'></i></button>` : ''}
+                                ${t.status === 'in-progress' ? `<button class="btn icon" title="Pause" aria-label="Pause" onclick="updateStatus('${t.id}','pending')"><i class='fa fa-pause' aria-hidden='true'></i></button>` : ''}
+                                <button class="btn icon danger" title="Delete" aria-label="Delete" onclick="removeTask('${t.id}')"><i class='fa fa-trash' aria-hidden='true'></i></button>
                             </div>
                         </td>
                     </tr>
@@ -339,8 +337,6 @@
                                 <th>Task ID</th>
                                 <th>Status</th>
                                 <th>Description</th>
-                                <th>Created</th>
-                                <th>Updated</th>
                                 <th class="col-actions">Actions</th>
                             </tr>
                         </thead>
@@ -349,15 +345,6 @@
                         </tbody>
                     </table>
                 </div>`;
-            }
-
-            function formatDate(value) {
-                try {
-                    if (!value) return '';
-                    const d = new Date(value);
-                    if (Number.isNaN(d.getTime())) return String(value);
-                    return d.toLocaleString();
-                } catch { return String(value ?? ''); }
             }
 
         function escapeHtml(str) {
