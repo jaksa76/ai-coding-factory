@@ -1,5 +1,5 @@
 - [ ] Create worker project - a docker image for running the pipelines
-    - [ ] Capture logs
+    - [ ] Capture logs    
     - [ ] Update pipeline status (logs, running/finished)
     - [ ] Clone repo
     - [ ] Fake coding agent (changes background color)
@@ -8,7 +8,7 @@
     - [x] Predefined task list
     - [x] List tasks
     - [x] Delete task
-    - [ ] Start pipeline on a task
+    - [x] Start pipeline on a task
     - [x] List tasks by status
     - [ ] See pipeline details (logs)
     - [x] Create task (id, description)
@@ -16,8 +16,9 @@
 
 Milestone 1: Demo
 
-- [ ] Create pipelines.sh - a module to launch, list and stop pipelines (will leverage agents.sh)
-    - [ ] Launch a pipeline (git url, git credentials, task id, task desc) - returns id
+- [x] Create pipelines.sh - a module to launch, list and stop pipelines (will leverage agents.sh)
+    - [x] Launch a pipeline (task id, task desc)
+    - [ ] Pass git credentials to pipeline
     - [ ] List pipelines
     - [ ] Stop pipeline (id)
     - [ ] Update pipeline status - save info to disk (set number of stages, current stage, current stage uptime)

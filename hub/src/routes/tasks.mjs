@@ -66,9 +66,21 @@ router.put('/:id?', async (req, res) => {
   const current = await readJSON(file);
   const description = req.body?.description ?? current.description;
   const status = req.body?.status ?? current.status;
+
   const updated = { ...current, description, status };
   await writeJSON(file, updated);
   res.json(updated);
+
+  // start the pipeline
+  if (current.status !== 'in-progress' && status === 'in-progress') {
+    console.log(chalk.green(`Task ${id} started, executing pipeline...`));
+    const pipelineScript = path.resolve(process.cwd(), 'pipelines.sh');
+    try {
+      const p = await $`${pipelineScript} start --task-id ${id} --task-description "${description}"`;
+    } catch (err) {
+      console.error(chalk.red(`Pipeline for task ${id} failed with error:`), err);
+    }
+  }
 });
 
 router.delete('/:id?', async (req, res) => {
