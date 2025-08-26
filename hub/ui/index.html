@@ -323,6 +323,7 @@
                             <div class="actions">
                                 ${t.status === 'pending' ? `<button class="btn icon" title="Start" aria-label="Start" onclick="updateStatus('${t.id}','in-progress')"><i class='fa fa-play' aria-hidden='true'></i></button>` : ''}
                                 ${t.status === 'in-progress' ? `<button class="btn icon" title="Pause" aria-label="Pause" onclick="updateStatus('${t.id}','pending')"><i class='fa fa-pause' aria-hidden='true'></i></button>` : ''}
+                                <a href="pipeline.html?taskId=${t.id}" class="btn icon" title="Details" aria-label="Details"><i class='fa fa-info-circle' aria-hidden='true'></i></a>
                                 <button class="btn icon danger" title="Delete" aria-label="Delete" onclick="removeTask('${t.id}')"><i class='fa fa-trash' aria-hidden='true'></i></button>
                             </div>
                         </td>

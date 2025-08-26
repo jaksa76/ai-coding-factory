@@ -95,4 +95,28 @@ router.delete('/:id?', async (req, res) => {
   }
 });
 
+router.get('/:id/status', async (req, res) => {
+  const id = req.params.id;
+  const pipelineScript = path.resolve(process.cwd(), 'pipelines.sh');
+  try {
+    const p = await $`${pipelineScript} status --task-id ${id}`;
+    res.setHeader('Content-Type', 'text/plain');
+    res.send(p.stdout);
+  } catch (err) {
+    res.status(500).setHeader('Content-Type', 'text/plain').send(err.stderr || err.stdout);
+  }
+});
+
+router.get('/:id/logs', async (req, res) => {
+  const id = req.params.id;
+  const pipelineScript = path.resolve(process.cwd(), 'pipelines.sh');
+  try {
+    const p = await $`${pipelineScript} logs --task-id ${id}`;
+    res.setHeader('Content-Type', 'text/plain');
+    res.send(p.stdout);
+  } catch (err) {
+    res.status(500).setHeader('Content-Type', 'text/plain').send(err.stderr || err.stdout);
+  }
+});
+
 export default router;

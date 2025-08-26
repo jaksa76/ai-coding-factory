@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Coding Factory Hub – Pipeline Details</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+        :root {
+            --bg: #f7f8fa;
+            --card: #ffffff;
+            --text: #172b4d;
+            --muted: #6b778c;
+            --border: #e6e8ea;
+            --primary: #0052cc; /* Atlassian blue vibe */
+            --primary-600: #0747a6;
+        }
+        * { box-sizing: border-box; }
+        html, body { height: 100%; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+            color: var(--text);
+            background: var(--bg);
+        }
+        .app-header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: var(--card);
+            border-bottom: 1px solid var(--border);
+        }
+        .header-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 20px;
+            gap: 16px;
+        }
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+        }
+        .brand-mark {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            background: var(--primary);
+            box-shadow: inset 0 -6px 12px rgba(0,0,0,0.15);
+        }
+        .brand-name { color: var(--text); }
+        .page {
+            max-width: 1200px;
+            margin: 24px auto;
+            padding: 0 20px 40px;
+        }
+        .page-title { font-size: 22px; margin-bottom: 16px; }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            box-shadow: 0 1px 2px rgba(9,30,66,0.08);
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .loading, .empty { text-align: center; color: var(--muted); padding: 24px; }
+        pre {
+            background: #f4f5f7;
+            padding: 12px;
+            border-radius: 6px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+        }
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--primary);
+            text-decoration: none;
+            margin-bottom: 16px;
+        }
+        .back-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div class="brand">
+                <div class="brand-mark" aria-hidden="true"></div>
+                <div class="brand-name">AI Coding Factory Hub</div>
+            </div>
+        </div>
+    </header>
+
+    <main class="page">
+        <a href="index.html" class="back-link"><i class="fa fa-arrow-left"></i> Back to Tasks</a>
+        <h1 class="page-title">Pipeline Details</h1>
+
+        <section class="card">
+            <h2>Status</h2>
+            <div id="status"><div class="loading">Loading status…</div></div>
+        </section>
+
+        <section class="card">
+            <h2>Logs</h2>
+            <div id="logs"><div class="loading">Loading logs…</div></div>
+        </section>
+    </main>
+
+    <script>
+        const API_BASE = '/api/tasks';
+        const taskId = new URLSearchParams(window.location.search).get('taskId');
+
+        const els = {
+            status: document.getElementById('status'),
+            logs: document.getElementById('logs'),
+        };
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = String(str ?? '');
+            return div.innerHTML;
+        }
+
+        async function loadStatus() {
+            if (!taskId) {
+                els.status.innerHTML = '<div class="empty">No task ID provided.</div>';
+                return;
+            }
+            try {
+                const res = await fetch(`${API_BASE}/${taskId}/status`);
+                const text = await res.text();
+                if (!res.ok) throw new Error(text);
+                els.status.innerHTML = `<pre>${escapeHtml(text)}</pre>`;
+            } catch (e) {
+                els.status.innerHTML = `<div class="empty">Could not load status. ${escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        async function loadLogs() {
+            if (!taskId) {
+                els.logs.innerHTML = '<div class="empty">No task ID provided.</div>';
+                return;
+            }
+            try {
+                const res = await fetch(`${API_BASE}/${taskId}/logs`);
+                const text = await res.text();
+                if (!res.ok) throw new Error(text);
+                els.logs.innerHTML = `<pre>${escapeHtml(text)}</pre>`;
+            } catch (e) {
+                els.logs.innerHTML = `<div class="empty">Could not load logs. ${escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        // Init
+        loadStatus();
+        loadLogs();
+    </script>
+</body>
+</html>
