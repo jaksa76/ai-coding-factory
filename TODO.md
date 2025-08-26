@@ -1,5 +1,5 @@
 - [ ] Create worker project - a docker image for running the pipelines
-    - [ ] Capture logs    
+    - [x] Capture logs
     - [ ] Update pipeline status (logs, running/finished)
     - [ ] Clone repo
     - [ ] Fake coding agent (changes background color)
@@ -10,7 +10,7 @@
     - [x] Delete task
     - [x] Start pipeline on a task
     - [x] List tasks by status
-    - [ ] See pipeline details (logs)
+    - [x] See pipeline details (logs)
     - [x] Create task (id, description)
     - [ ] Stop pipeline
 
