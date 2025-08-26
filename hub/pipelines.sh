@@ -10,12 +10,15 @@ show_usage() {
     echo "  start      Start a new pipeline for a task"
     echo "  status     Show pipeline status"
     echo "  stop       Stop a running pipeline"
+    echo "  logs       Get logs from a running pipeline"
     echo ""
     echo "$0 start --task-id <task-id> --task-description \"<description>\""
     echo ""
     echo "$0 status --task-id <task-id>"
     echo ""
     echo "$0 stop --task-id <task-id>"
+    echo ""
+    echo "$0 logs --task-id <task-id>"
     echo ""
 }
 
@@ -32,7 +35,7 @@ while [[ $# -gt 0 ]]; do
             show_usage
             exit 0
             ;;
-        start|status|stop)
+        start|status|stop|logs)
             COMMAND=$1
             shift
             ;;
@@ -109,6 +112,17 @@ case $COMMAND in
         CONTAINER_NAME="pipe-$TASK_ID"
         echo "Stopping pipeline '$CONTAINER_NAME'..."
         ./agents.sh stop-container --container-name "$CONTAINER_NAME"
+        ;;
+        
+    logs)
+        if [ -z "$TASK_ID" ]; then
+            echo "Error: --task-id is required for logs command"
+            exit 1
+        fi
+        
+        CONTAINER_NAME="pipe-$TASK_ID"
+        echo "Getting logs for pipeline '$CONTAINER_NAME'..."
+        ./agents.sh logs-container --container-name "$CONTAINER_NAME"
         ;;
         
     *)
