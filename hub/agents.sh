@@ -114,6 +114,10 @@ while [[ $# -gt 0 ]]; do
             CONTAINER_COMMAND=$2
             shift 2
             ;;
+        --env)
+            ENV_VARS+=($2)
+            shift 2
+            ;;
         *)
             echo "Error: Unknown option or command '$1'"
             echo ""
@@ -249,6 +253,20 @@ case $COMMAND in
         TASK_DEF_NAME="ai-coding-factory-task-$CONTAINER_NAME"
         echo "Creating ECS task definition '$TASK_DEF_NAME'..."
         
+        # Build environment variables JSON
+        ENV_JSON=""
+        if [ ${#ENV_VARS[@]} -gt 0 ]; then
+            ENV_JSON="\"environment\": ["
+            for ENV_VAR in "${ENV_VARS[@]}"; do
+                KEY=$(echo "$ENV_VAR" | cut -d'=' -f1)
+                VALUE=$(echo "$ENV_VAR" | cut -d'=' -f2-)
+                ENV_JSON="$ENV_JSON{\"name\": \"$KEY\", \"value\": \"$VALUE\"},"
+            done
+            # Remove trailing comma
+            ENV_JSON=${ENV_JSON%,}
+            ENV_JSON="$ENV_JSON],"
+        fi
+        
         cat > /tmp/task-definition.json << EOF
 {
     "family": "$TASK_DEF_NAME",
@@ -261,6 +279,7 @@ case $COMMAND in
             "name": "$CONTAINER_NAME",
             "image": "$IMAGE_NAME",
             "essential": true,
+            $ENV_JSON
             "command": ["sh", "-c", "$CONTAINER_COMMAND"],
             "mountPoints": [
                 {
