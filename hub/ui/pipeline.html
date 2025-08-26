@@ -69,7 +69,8 @@
         }
         .loading, .empty { text-align: center; color: var(--muted); padding: 24px; }
         pre {
-            background: #f4f5f7;
+            background: #1e1e1e;
+            color: #d4d4d4;
             padding: 12px;
             border-radius: 6px;
             white-space: pre-wrap;
@@ -85,6 +86,14 @@
             margin-bottom: 16px;
         }
         .back-link:hover { text-decoration: underline; }
+        .details-summary {
+            cursor: pointer;
+            font-weight: 600;
+            padding: 8px 0;
+        }
+        .details-summary:hover {
+            color: var(--primary);
+        }
     </style>
 </head>
 <body>
@@ -102,14 +111,14 @@
         <h1 class="page-title">Pipeline Details</h1>
 
         <section class="card">
-            <h2>Status</h2>
-            <div id="status"><div class="loading">Loading status…</div></div>
-        </section>
-
-        <section class="card">
             <h2>Logs</h2>
             <div id="logs"><div class="loading">Loading logs…</div></div>
         </section>
+        <details class="card">
+            <summary class="details-summary">Status</summary>
+            <div id="status"><div class="loading">Loading status…</div></div>
+        </details>
+
     </main>
 
     <script>
@@ -160,6 +169,7 @@
         // Init
         loadStatus();
         loadLogs();
+        setInterval(loadLogs, 3000);
     </script>
 </body>
 </html>
