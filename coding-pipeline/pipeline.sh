@@ -106,9 +106,9 @@ echo "AGENT: Task Description: $TASK_DESCRIPTION"
 
 # Execute the pipeline stages
 for stage in "${stages[@]}"; do
-  echo "AGENT: Starting stage: $stage"
-  $stage
-  echo "AGENT: Finished stage: $stage"
   echo
+  echo "AGENT: ============ Starting stage: $stage ================"
+  $stage
+  echo "AGENT: ============ Finished stage: $stage ================"
 done
 
