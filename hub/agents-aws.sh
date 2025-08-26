@@ -26,6 +26,8 @@ show_usage() {
     echo ""
     echo "$0 list-containers"
     echo ""
+    echo "$0 logs-container --container-name <container-name>"
+    echo ""
 }
 
 # Function to create ECS execution role if it doesn't exist
@@ -90,7 +92,7 @@ while [[ $# -gt 0 ]]; do
             show_usage
             exit 0
             ;;
-        create-volume|delete-volume|list-volumes|start-container|stop-container|status-container|list-containers)
+        create-volume|delete-volume|list-volumes|start-container|stop-container|status-container|list-containers|logs-container)
             COMMAND=$1
             shift
             ;;
@@ -540,6 +542,40 @@ EOF
         echo ""
         echo "To check status of a specific container, run:"
         echo "  $0 status-container --container-name <name>"
+        ;;
+    logs-container)
+        if [ -z "$CONTAINER_NAME" ]; then
+            echo "Error: --container-name is required for logs-container command"
+            exit 1
+        fi
+        
+        echo "Getting logs for ECS container '$CONTAINER_NAME'..."
+        
+        LOG_GROUP_NAME="/ecs/ai-coding-factory"
+        
+        # Find the latest log stream for the container
+        LOG_STREAM_NAME=$(aws logs describe-log-streams \
+            --log-group-name "$LOG_GROUP_NAME" \
+            --log-stream-name-prefix "ecs/$CONTAINER_NAME" \
+            --order-by LastEventTime \
+            --descending \
+            --limit 1 \
+            --query "logStreams[0].logStreamName" \
+            --output text)
+            
+        if [ -z "$LOG_STREAM_NAME" ] || [ "$LOG_STREAM_NAME" = "None" ]; then
+            echo "No log stream found for container '$CONTAINER_NAME'"
+            exit 1
+        fi
+        
+        echo "Found log stream: $LOG_STREAM_NAME"
+        
+        # Get log events
+        aws logs get-log-events \
+            --log-group-name "$LOG_GROUP_NAME" \
+            --log-stream-name "$LOG_STREAM_NAME" \
+            --query "events[].message" \
+            --output text
         ;;
     *)
         echo "Error: No valid command specified"

@@ -29,6 +29,8 @@ show_usage() {
     echo ""
     echo "$0 list-containers"
     echo ""
+    echo "$0 logs-container --container-name <container-name>"
+    echo ""
 }
 
 # Check if no arguments provided
@@ -45,7 +47,7 @@ while [[ $# -gt 0 ]]; do
             show_usage
             exit 0
             ;;
-        create-volume|delete-volume|list-volumes|start-container|stop-container|status-container|list-containers)
+        create-volume|delete-volume|list-volumes|start-container|stop-container|status-container|list-containers|logs-container)
             COMMAND=$1
             shift
             ;;
@@ -174,6 +176,14 @@ case $COMMAND in
     list-containers)
         echo "Listing AI Coding Factory Docker containers..."
         docker ps -a --filter "name=ai-coding-factory-task-*"
+        ;;
+    logs-container)
+        if [ -z "$CONTAINER_NAME" ]; then
+            echo "Error: --container-name is required for logs-container command"
+            exit 1
+        fi
+        echo "Getting logs for Docker container '$CONTAINER_NAME'..."
+        docker logs "$CONTAINER_NAME"
         ;;
     *)
         echo "Error: No valid command specified"
