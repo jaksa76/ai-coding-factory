@@ -1,6 +1,7 @@
 #!/bin/bash
 
-# Show usage if no arguments or --help is provided
+
+# Show usage information
 show_usage() {
     echo "Usage: $0 [--site <site>] <subcommand> [options]"
     echo "  --site <site>           Override the JIRA_SITE environment variable."
@@ -8,13 +9,15 @@ show_usage() {
     echo "  projects                List all Jira projects."
     echo "  stories --project <key> List all Jira workitems for the specified project."
     echo "  view --story <id>       View a Jira story as JSON (id, description, status)."
+    echo "  import --project <key> --dir <data_dir>  Import all stories for a project to a directory."
     exit 0
 }
 
-if [[ $# -eq 0 ]]; then
-    show_usage
-fi
-
+# Print error and exit
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
 
 # Parse options and capture subcommand and project key
 SUBCOMMAND=""
@@ -47,94 +50,80 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         *)
-            shift
+            error_exit "Unknown option or subcommand: $1"
             ;;
     esac
 done
 
-if [[ -z "${JIRA_TOKEN}" ]]; then
-    echo "Error: JIRA_TOKEN environment variable is not set."
-    exit 1
-fi
-
-if [[ -z "${JIRA_EMAIL}" ]]; then
-    echo "Error: JIRA_EMAIL environment variable is not set."
-    exit 1
-fi
-
-if [[ -z "${JIRA_SITE}" ]]; then
-    echo "Error: JIRA_SITE environment variable is not set and --site not provided."
-    exit 1
-fi
-
 
 # Authenticate only if not already logged in
 if ! acli jira auth status | grep -q "Authenticated"; then
-    echo $JIRA_TOKEN | acli jira auth login --site "${JIRA_SITE}" --email "${JIRA_EMAIL}" --token
+    # Check required environment variables
+    [[ -z "${JIRA_TOKEN}" ]] && error_exit "JIRA_TOKEN environment variable is not set."
+    [[ -z "${JIRA_EMAIL}" ]] && error_exit "JIRA_EMAIL environment variable is not set."
+    [[ -z "${JIRA_SITE}" ]] && error_exit "JIRA_SITE environment variable is not set and --site not provided."
+    echo "$JIRA_TOKEN" | acli jira auth login --site "$JIRA_SITE" --email "$JIRA_EMAIL" --token
 fi
 
 
-
-# Functions for subcommands
+# List all Jira projects
 list_projects() {
     acli jira project list --json --paginate | jq -r '.[] | .key'
 }
 
+# List all stories for a project
 list_stories() {
     local project_key="$1"
     acli jira workitem search --jql "project=$project_key" --json --paginate | jq -r '.[] | .key'
 }
 
+# View a story as JSON
 view_story() {
     local story_id="$1"
-    STORY_JSON=$(acli jira workitem view "$story_id" --json)
-    echo "$STORY_JSON" | jq -r '{id: .key, description: .fields.summary, status: .fields.status.name}'
+    local story_json
+    story_json=$(acli jira workitem view "$story_id" --json)
+    echo "$story_json" | jq -r '{id: .key, description: .fields.summary, status: .fields.status.name}'
 }
 
+# Import all stories for a project to a directory
 import_stories() {
     local project_key="$1"
     local data_dir="$2"
     mkdir -p "$data_dir"
-    # Get all story keys
-    story_keys=( $(list_stories "$project_key") )
+    local story_keys
+    mapfile -t story_keys < <(list_stories "$project_key")
     for key in "${story_keys[@]}"; do
-        STORY_JSON=$(view_story "$key")
-        echo "$STORY_JSON" > "$data_dir/${key}.json"
+        local story_json
+        story_json=$(view_story "$key")
+        echo "$story_json" > "$data_dir/${key}.json"
         echo "Imported $key to $data_dir/${key}.json"
     done
 }
 
+
 # Subcommand dispatcher
-if [[ "$SUBCOMMAND" == "projects" || "$SUBCOMMAND" == "project" ]]; then
-    list_projects
-    exit $?
-fi
-
-if [[ "$SUBCOMMAND" == "stories" ]]; then
-    if [[ -z "$PROJECT_KEY" ]]; then
-        echo "Error: --project <key> is required for stories subcommand."
-        exit 1
-    fi
-    list_stories "$PROJECT_KEY"
-    exit $?
-fi
-
-if [[ "$SUBCOMMAND" == "view" ]]; then
-    if [[ -z "$STORY_ID" ]]; then
-        echo "Error: --story <id> is required for view subcommand."
-        exit 1
-    fi
-    view_story "$STORY_ID"
-    exit $?
-fi
-
-# Import subcommand
-if [[ "$SUBCOMMAND" == "import" ]]; then
-    if [[ -z "$PROJECT_KEY" || -z "$IMPORT_DIR" ]]; then
-        echo "Error: --project <project_id> and --dir <data_dir> are required for import subcommand."
-        exit 1
-    fi
-    import_stories "$PROJECT_KEY" "$IMPORT_DIR"
-    exit $?
-fi
+case "$SUBCOMMAND" in
+    projects)
+        list_projects
+        exit $?
+        ;;
+    stories)
+        [[ -z "$PROJECT_KEY" ]] && error_exit "--project <key> is required for stories subcommand."
+        list_stories "$PROJECT_KEY"
+        exit $?
+        ;;
+    view)
+        [[ -z "$STORY_ID" ]] && error_exit "--story <id> is required for view subcommand."
+        view_story "$STORY_ID"
+        exit $?
+        ;;
+    import)
+        [[ -z "$PROJECT_KEY" || -z "$IMPORT_DIR" ]] && error_exit "--project <project_id> and --dir <data_dir> are required for import subcommand."
+        import_stories "$PROJECT_KEY" "$IMPORT_DIR"
+        exit $?
+        ;;
+    *)
+        show_usage
+        ;;
+esac
 
