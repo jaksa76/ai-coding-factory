@@ -20,6 +20,7 @@ fi
 SUBCOMMAND=""
 PROJECT_KEY=""
 STORY_ID=""
+IMPORT_DIR=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --site)
@@ -34,10 +35,14 @@ while [[ $# -gt 0 ]]; do
             STORY_ID="$2"
             shift 2
             ;;
+        --dir)
+            IMPORT_DIR="$2"
+            shift 2
+            ;;
         --help)
             show_usage
             ;;
-        projects|stories|view)
+        projects|stories|view|import)
             SUBCOMMAND="$1"
             shift
             ;;
@@ -69,10 +74,39 @@ if ! acli jira auth status | grep -q "Authenticated"; then
 fi
 
 
-# Subcommands
 
-if [[ "$SUBCOMMAND" == "projects" || "$SUBCOMMAND" == "project" ]]; then
+# Functions for subcommands
+list_projects() {
     acli jira project list --json --paginate | jq -r '.[] | .key'
+}
+
+list_stories() {
+    local project_key="$1"
+    acli jira workitem search --jql "project=$project_key" --json --paginate | jq -r '.[] | .key'
+}
+
+view_story() {
+    local story_id="$1"
+    STORY_JSON=$(acli jira workitem view "$story_id" --json)
+    echo "$STORY_JSON" | jq -r '{id: .key, description: .fields.summary, status: .fields.status.name}'
+}
+
+import_stories() {
+    local project_key="$1"
+    local data_dir="$2"
+    mkdir -p "$data_dir"
+    # Get all story keys
+    story_keys=( $(list_stories "$project_key") )
+    for key in "${story_keys[@]}"; do
+        STORY_JSON=$(view_story "$key")
+        echo "$STORY_JSON" > "$data_dir/${key}.json"
+        echo "Imported $key to $data_dir/${key}.json"
+    done
+}
+
+# Subcommand dispatcher
+if [[ "$SUBCOMMAND" == "projects" || "$SUBCOMMAND" == "project" ]]; then
+    list_projects
     exit $?
 fi
 
@@ -81,7 +115,7 @@ if [[ "$SUBCOMMAND" == "stories" ]]; then
         echo "Error: --project <key> is required for stories subcommand."
         exit 1
     fi
-    acli jira workitem search --jql "project=$PROJECT_KEY" --json --paginate | jq -r '.[] | .key'
+    list_stories "$PROJECT_KEY"
     exit $?
 fi
 
@@ -90,9 +124,17 @@ if [[ "$SUBCOMMAND" == "view" ]]; then
         echo "Error: --story <id> is required for view subcommand."
         exit 1
     fi
-    STORY_JSON=$(acli jira workitem view "$STORY_ID" --json)
-    # Output in custom format: {id, description, status}
-    echo "$STORY_JSON" | jq -r '{id: .key, description: .fields.summary, status: .fields.status.name}'
+    view_story "$STORY_ID"
+    exit $?
+fi
+
+# Import subcommand
+if [[ "$SUBCOMMAND" == "import" ]]; then
+    if [[ -z "$PROJECT_KEY" || -z "$IMPORT_DIR" ]]; then
+        echo "Error: --project <project_id> and --dir <data_dir> are required for import subcommand."
+        exit 1
+    fi
+    import_stories "$PROJECT_KEY" "$IMPORT_DIR"
     exit $?
 fi
 
