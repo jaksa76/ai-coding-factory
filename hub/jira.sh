@@ -3,10 +3,11 @@
 # Show usage if no arguments or --help is provided
 show_usage() {
     echo "Usage: $0 [--site <site>] <subcommand> [options]"
-    echo "  --site <site>      Override the JIRA_SITE environment variable."
-    echo "  --help             Show this help message."
-    echo "  projects           List all Jira projects."
-    echo "  stories --project <key>   List all Jira workitems for the specified project."
+    echo "  --site <site>           Override the JIRA_SITE environment variable."
+    echo "  --help                  Show this help message."
+    echo "  projects                List all Jira projects."
+    echo "  stories --project <key> List all Jira workitems for the specified project."
+    echo "  view --story <id>       View a Jira story as JSON (id, description, status)."
     exit 0
 }
 
@@ -18,6 +19,7 @@ fi
 # Parse options and capture subcommand and project key
 SUBCOMMAND=""
 PROJECT_KEY=""
+STORY_ID=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --site)
@@ -28,10 +30,14 @@ while [[ $# -gt 0 ]]; do
             PROJECT_KEY="$2"
             shift 2
             ;;
+        --story)
+            STORY_ID="$2"
+            shift 2
+            ;;
         --help)
             show_usage
             ;;
-        projects|stories)
+        projects|stories|view)
             SUBCOMMAND="$1"
             shift
             ;;
@@ -65,7 +71,6 @@ fi
 
 # Subcommands
 
-
 if [[ "$SUBCOMMAND" == "projects" || "$SUBCOMMAND" == "project" ]]; then
     acli jira project list --json --paginate | jq -r '.[] | .key'
     exit $?
@@ -76,8 +81,18 @@ if [[ "$SUBCOMMAND" == "stories" ]]; then
         echo "Error: --project <key> is required for stories subcommand."
         exit 1
     fi
-    echo "Listing all Jira workitems for project: $PROJECT_KEY"
     acli jira workitem search --jql "project=$PROJECT_KEY" --json --paginate | jq -r '.[] | .key'
+    exit $?
+fi
+
+if [[ "$SUBCOMMAND" == "view" ]]; then
+    if [[ -z "$STORY_ID" ]]; then
+        echo "Error: --story <id> is required for view subcommand."
+        exit 1
+    fi
+    STORY_JSON=$(acli jira workitem view "$STORY_ID" --json)
+    # Output in custom format: {id, description, status}
+    echo "$STORY_JSON" | jq -r '{id: .key, description: .fields.summary, status: .fields.status.name}'
     exit $?
 fi
 
