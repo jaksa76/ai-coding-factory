@@ -4,6 +4,13 @@
 # It takes the information about the user story as a set of environment variables:
 #   TASK_ID - The ID of the task to work on
 #   TASK_DESCRIPTION - The description of the task
+#   GITHUB_TOKEN - GitHub authentication token (optional)
+#   GITHUB_SERVER_URL - GitHub server URL (default: https://github.com)
+#   GITHUB_API_URL - GitHub API URL (default: https://api.github.com)
+#   GITHUB_REPOSITORY - Repository name (owner/repo)
+#   GITHUB_REPOSITORY_OWNER - Repository owner
+#   GITHUB_REF - Git reference (branch, tag, etc.)
+#   GITHUB_SHA - Git commit SHA
 
 # Define the pipeline stages
 stages=("refining" "planning" "implementing" "deploying" "verifying")
@@ -103,6 +110,10 @@ verifying() {
 echo "AGENT: Hello, I am the coding agent."
 echo "AGENT: I will now start working on task $TASK_ID."
 echo "AGENT: Task Description: $TASK_DESCRIPTION"
+echo "AGENT: GitHub URL: ${GITHUB_SERVER_URL:-https://github.com}"
+if [ -n "$GITHUB_REPOSITORY" ]; then
+  echo "AGENT: Working on repository: $GITHUB_REPOSITORY"
+fi
 
 # Execute the pipeline stages
 for stage in "${stages[@]}"; do

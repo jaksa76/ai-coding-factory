@@ -87,7 +87,14 @@ case $COMMAND in
             --image "$IMAGE_NAME" \
             --command "/app/pipeline.sh" \
             --env "TASK_ID=$TASK_ID" \
-            --env "TASK_DESCRIPTION=$TASK_DESCRIPTION"
+            --env "TASK_DESCRIPTION=$TASK_DESCRIPTION" \
+            --env "GITHUB_TOKEN=${GITHUB_TOKEN:-}" \
+            --env "GITHUB_SERVER_URL=${GITHUB_SERVER_URL:-https://github.com}" \
+            --env "GITHUB_API_URL=${GITHUB_API_URL:-https://api.github.com}" \
+            --env "GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-}" \
+            --env "GITHUB_REPOSITORY_OWNER=${GITHUB_REPOSITORY_OWNER:-}" \
+            --env "GITHUB_REF=${GITHUB_REF:-}" \
+            --env "GITHUB_SHA=${GITHUB_SHA:-}"
         
         echo "Pipeline for task '$TASK_ID' started successfully."
         ;;
