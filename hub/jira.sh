@@ -52,14 +52,16 @@ if [[ -z "${JIRA_SITE}" ]]; then
 fi
 
 
-# Configure acli with the provided environment variables
-echo $JIRA_TOKEN | acli jira auth login --site "${JIRA_SITE}" --email "${JIRA_EMAIL}" --token
+# Authenticate only if not already logged in
+if ! acli jira auth status | grep -q "Authenticated"; then
+    echo $JIRA_TOKEN | acli jira auth login --site "${JIRA_SITE}" --email "${JIRA_EMAIL}" --token
+fi
 
 
 # Subcommands
+
 if [[ "$SUBCOMMAND" == "projects" || "$SUBCOMMAND" == "project" ]]; then
-    echo "Listing all Jira projects..."
-    acli jira project list --paginate
+    acli jira project list --json --paginate | jq -r '.[] | .key'
     exit $?
 fi
 
