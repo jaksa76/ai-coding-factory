@@ -119,4 +119,42 @@ router.get('/:id/logs', async (req, res) => {
   }
 });
 
+router.post('/import/jira', async (req, res) => {
+  const { site, email, token, project } = req.body || {};
+  if (!site || !email || !token || !project) {
+    return res.status(400).json({ 
+      error: 'Missing required fields', 
+      message: 'site, email, token, and project are required' 
+    });
+  }
+
+  try {
+    const jiraScript = path.resolve(process.cwd(), 'jira.sh');
+    
+    // Set environment variables for the jira script
+    const env = {
+      ...process.env,
+      JIRA_SITE: site,
+      JIRA_EMAIL: email,
+      JIRA_TOKEN: token
+    };
+
+    // Import tasks from Jira
+    const p = await $({ env })`${jiraScript} import --project ${project} --dir ${TASKS_DIR}`;
+    
+    // Return the updated list of tasks
+    const list = await listTasks();
+    res.json({ 
+      message: 'Tasks imported successfully from Jira', 
+      tasks: list 
+    });
+  } catch (err) {
+    console.error(chalk.red('Jira import failed:'), err);
+    res.status(500).json({ 
+      error: 'Import failed', 
+      message: err.stderr || err.stdout || err.message 
+    });
+  }
+});
+
 export default router;
