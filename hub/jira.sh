@@ -2,10 +2,11 @@
 
 # Show usage if no arguments or --help is provided
 show_usage() {
-    echo "Usage: $0 [--site <site>] <subcommand>"
-    echo "  --site <site>    Override the JIRA_SITE environment variable."
-    echo "  --help           Show this help message."
-    echo "  project          List all Jira projects."
+    echo "Usage: $0 [--site <site>] <subcommand> [options]"
+    echo "  --site <site>      Override the JIRA_SITE environment variable."
+    echo "  --help             Show this help message."
+    echo "  projects           List all Jira projects."
+    echo "  stories --project <key>   List all Jira workitems for the specified project."
     exit 0
 }
 
@@ -14,23 +15,27 @@ if [[ $# -eq 0 ]]; then
 fi
 
 
-# Parse options and capture subcommand
+# Parse options and capture subcommand and project key
 SUBCOMMAND=""
+PROJECT_KEY=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --site)
             JIRA_SITE="$2"
             shift 2
             ;;
+        --project)
+            PROJECT_KEY="$2"
+            shift 2
+            ;;
         --help)
             show_usage
             ;;
-        project|projects)
+        projects|stories)
             SUBCOMMAND="$1"
             shift
             ;;
         *)
-            # Ignore unknown options, but keep for subcommand
             shift
             ;;
     esac
@@ -60,9 +65,19 @@ fi
 
 # Subcommands
 
+
 if [[ "$SUBCOMMAND" == "projects" || "$SUBCOMMAND" == "project" ]]; then
     acli jira project list --json --paginate | jq -r '.[] | .key'
     exit $?
 fi
 
-echo "Jira CLI configured successfully."
+if [[ "$SUBCOMMAND" == "stories" ]]; then
+    if [[ -z "$PROJECT_KEY" ]]; then
+        echo "Error: --project <key> is required for stories subcommand."
+        exit 1
+    fi
+    echo "Listing all Jira workitems for project: $PROJECT_KEY"
+    acli jira workitem search --jql "project=$PROJECT_KEY" --json --paginate | jq -r '.[] | .key'
+    exit $?
+fi
+
