@@ -152,13 +152,6 @@ case $COMMAND in
         
         echo "Stopping Docker container '$CONTAINER_NAME'..."
         docker stop "$CONTAINER_NAME"
-        
-        echo "Would you like to remove the container? (y/n)"
-        read -r REMOVE_CONTAINER
-        if [ "$REMOVE_CONTAINER" = "y" ] || [ "$REMOVE_CONTAINER" = "Y" ]; then
-            docker rm "$CONTAINER_NAME"
-            echo "Container '$CONTAINER_NAME' removed."
-        fi
         ;;
     status-container)
         if [ -z "$CONTAINER_NAME" ]; then

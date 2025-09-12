@@ -377,22 +377,7 @@ EOF
             done
             
             echo "Container '$CONTAINER_NAME' has been stopped"
-        fi
-        
-        # Optionally deregister the task definition
-        echo "Would you like to remove the task definition? (y/n)"
-        read -r REMOVE_TASK_DEF
-        if [ "$REMOVE_TASK_DEF" = "y" ] || [ "$REMOVE_TASK_DEF" = "Y" ]; then
-            # Get all revisions of the task definition
-            REVISIONS=$(aws ecs list-task-definitions --family-prefix "$TASK_DEF_NAME" --query "taskDefinitionArns" --output text)
-            
-            for REVISION in $REVISIONS; do
-                echo "Deregistering task definition: $REVISION"
-                aws ecs deregister-task-definition --task-definition "$REVISION" > /dev/null
-            done
-            
-            echo "Task definition '$TASK_DEF_NAME' has been deregistered"
-        fi
+        fi        
         ;;
 
     status-container)
