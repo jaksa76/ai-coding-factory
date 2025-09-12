@@ -1,18 +1,46 @@
 #!/bin/bash
+exec 2>&1
 
 # This script runs the coding pipeline for a given task (user story)
 # It takes the information about the user story as a set of environment variables:
 #   TASK_ID - The ID of the task to work on
 #   TASK_DESCRIPTION - The description of the task
+#   GIT_REPO_URL - The URL of the git repository
+#   GIT_TOKEN - The git access token (optional)
+#   GIT_USERNAME - The git username (optional)
 
 # Define the pipeline stages
-stages=("refining" "planning" "implementing" "deploying" "verifying")
+stages=("cloning" "refining" "planning" "implementing" "deploying" "verifying")
+
+# Define the cloning stage
+cloning() {
+  echo "AGENT: Cloning the repository from ${GIT_REPO_URL}"
+  cd /workspace
+  # Clone the repository using the provided credentials (if any
+  if [ -n "$GIT_USERNAME" ] && [ -n "$GIT_TOKEN" ]; then
+    TRUNCATED_TOKEN="****${GIT_TOKEN: -4}"
+    echo "AGENT: Using GIT_USERNAME=${GIT_USERNAME} and GIT_TOKEN=${TRUNCATED_TOKEN}"
+    # Use sed to inject username and token into the URL
+    # This is a bit of a hack, but it's simple and works for https URLs
+    CLONE_URL=$(echo "$GIT_REPO_URL" | sed "s|https://|https://${GIT_USERNAME}:${GIT_TOKEN}@|")
+    git clone "$CLONE_URL" .
+  else
+    git clone "$GIT_REPO_URL" .
+  fi
+  sleep 2
+  echo "AGENT: I have cloned the repository."
+  ls -la
+}
 
 # Define the refining stage
 refining() {
   echo "AGENT: Refining the requirements..."
   sleep 3
   echo "AGENT: First, I need to understand the requirements."
+  echo "AGENT: Task ID: $TASK_ID"
+  echo "AGENT: Task Description:"
+  echo "$TASK_DESCRIPTION"
+  echo
   echo "AGENT: Identifying vague points..."
   sleep 1
   echo "AGENT: Generating clarifying questions..."
@@ -100,9 +128,6 @@ verifying() {
   echo "AGENT: Requesting UAT from product team..."
 }
 
-echo "AGENT: Hello, I am the coding agent."
-echo "AGENT: I will now start working on task $TASK_ID."
-echo "AGENT: Task Description: $TASK_DESCRIPTION"
 
 # Execute the pipeline stages
 for stage in "${stages[@]}"; do
@@ -111,4 +136,3 @@ for stage in "${stages[@]}"; do
   $stage
   echo "AGENT: ============ Finished stage: $stage ================"
 done
-

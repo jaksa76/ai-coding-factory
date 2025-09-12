@@ -1,8 +1,8 @@
 - [ ] coding-pipeline - a docker image for running the pipelines
     - [x] Capture logs in Docker
     - [ ] Capture logs on AWS ECS using CloudWatch
-    - [ ] Enable coding pipeline to update pipeline the status in the hub (logs, running/finished)    
-    - [ ] Clone the git repo at the start of the pipeline
+    - [ ] Enable coding pipeline to update the pipeline status in the hub (logs, running/finished)    
+    - [x] Clone the git repo at the start of the pipeline
     - [ ] Implement a fake coding agent that doesn't use AI (changes background color depending on the task description)
 
 - [ ] Hub - a web app to manage tasks and pipelines
@@ -20,7 +20,7 @@ Milestone 1: Demo
 
 - [x] Create pipelines.sh - a module to launch, list and stop pipelines (will leverage agents.sh)
     - [x] Launch a pipeline (task id, task desc)
-    - [ ] Pass git credentials to pipeline
+    - [x] Pass git credentials to pipeline
     - [ ] List pipelines for a task
     - [ ] Stop pipeline (id)
     - [ ] Update pipeline status - save info to disk (set number of stages, current stage, current stage uptime)
