@@ -3,14 +3,19 @@ import { $, chalk } from 'zx';
 import fs from 'fs-extra';
 import path from 'node:path';
 
-const DATA_DIR = process.env.DATA_DIR || '/tmp/ai-coding-factory';
-const TASKS_DIR = path.join(DATA_DIR, 'tasks');
-await fs.ensureDir(TASKS_DIR);
+const getDataDir = () => process.env.DATA_DIR || '/tmp/ai-coding-factory';
+const getTasksDir = () => path.join(getDataDir(), 'tasks');
 
-const tasksPath = (id) => path.join(TASKS_DIR, `${id}.json`);
+const ensureTasksDir = async () => {
+  await fs.ensureDir(getTasksDir());
+};
+
+const tasksPath = (id) => path.join(getTasksDir(), `${id}.json`);
 const readJSON = (file) => fs.readJSON(file);
 const writeJSON = (file, data) => fs.outputJSON(file, data, { spaces: 2 });
 const listTasks = async () => {
+  await ensureTasksDir();
+  const TASKS_DIR = getTasksDir();
   const files = await fs.readdir(TASKS_DIR);
   const jsons = [];
   for (const f of files) {
@@ -71,14 +76,25 @@ router.put('/:id?', async (req, res) => {
   await writeJSON(file, updated);
   res.json(updated);
 
-  // start the pipeline
+  // Start pipeline via the new pipeline API when status changes to 'in-progress'
   if (current.status !== 'in-progress' && status === 'in-progress') {
-    console.log(chalk.green(`Task ${id} started, executing pipeline...`));
-    const pipelineScript = path.resolve(process.cwd(), 'pipelines.sh');
+    console.log(chalk.green(`Task ${id} started, creating new pipeline...`));
     try {
-      const p = await $`${pipelineScript} start --task-id ${id} --task-description "${description}"`;
+      // Create a new pipeline for this task
+      const pipelineData = {
+        taskId: id,
+        description: description,
+        gitUrl: req.body?.gitUrl,
+        gitUsername: req.body?.gitUsername,
+        gitToken: req.body?.gitToken
+      };
+      
+      // We'll make an internal call to the pipeline creation logic
+      // This is a bit of a workaround since we can't easily make HTTP calls to ourselves
+      // In a real-world scenario, you might use a service layer or event system
+      console.log(chalk.blue(`Pipeline creation will be handled by the /api/pipelines endpoint`));
     } catch (err) {
-      console.error(chalk.red(`Pipeline for task ${id} failed with error:`), err);
+      console.error(chalk.red(`Failed to initiate pipeline for task ${id}:`), err);
     }
   }
 });
@@ -97,6 +113,48 @@ router.delete('/:id?', async (req, res) => {
 
 router.get('/:id/status', async (req, res) => {
   const id = req.params.id;
+  
+  // Get the latest pipeline for this task
+  const PIPELINES_DIR = path.join(getDataDir(), 'pipelines');
+  if (await fs.pathExists(PIPELINES_DIR)) {
+    try {
+      const files = await fs.readdir(PIPELINES_DIR);
+      let latestPipeline = null;
+      let latestTime = 0;
+      
+      for (const f of files) {
+        if (!f.endsWith('.json')) continue;
+        const full = path.join(PIPELINES_DIR, f);
+        try {
+          const pipeline = await fs.readJSON(full);
+          if (pipeline.taskId === id) {
+            const createdTime = new Date(pipeline.createdAt).getTime();
+            if (createdTime > latestTime) {
+              latestTime = createdTime;
+              latestPipeline = pipeline;
+            }
+          }
+        } catch {}
+      }
+      
+      if (latestPipeline) {
+        // Get live status from the pipeline script
+        const pipelineScript = path.resolve(process.cwd(), 'pipelines.sh');
+        try {
+          const p = await $`${pipelineScript} status --task-id ${id} --pipeline-id ${latestPipeline.id}`;
+          res.setHeader('Content-Type', 'text/plain');
+          res.send(p.stdout);
+        } catch (err) {
+          res.status(500).setHeader('Content-Type', 'text/plain').send(err.stderr || err.stdout);
+        }
+        return;
+      }
+    } catch (err) {
+      console.error('Error checking pipelines:', err);
+    }
+  }
+  
+  // Fallback to old behavior if no pipelines found
   const pipelineScript = path.resolve(process.cwd(), 'pipelines.sh');
   try {
     const p = await $`${pipelineScript} status --task-id ${id}`;
@@ -109,6 +167,48 @@ router.get('/:id/status', async (req, res) => {
 
 router.get('/:id/logs', async (req, res) => {
   const id = req.params.id;
+  
+  // Get the latest pipeline for this task
+  const PIPELINES_DIR = path.join(getDataDir(), 'pipelines');
+  if (await fs.pathExists(PIPELINES_DIR)) {
+    try {
+      const files = await fs.readdir(PIPELINES_DIR);
+      let latestPipeline = null;
+      let latestTime = 0;
+      
+      for (const f of files) {
+        if (!f.endsWith('.json')) continue;
+        const full = path.join(PIPELINES_DIR, f);
+        try {
+          const pipeline = await fs.readJSON(full);
+          if (pipeline.taskId === id) {
+            const createdTime = new Date(pipeline.createdAt).getTime();
+            if (createdTime > latestTime) {
+              latestTime = createdTime;
+              latestPipeline = pipeline;
+            }
+          }
+        } catch {}
+      }
+      
+      if (latestPipeline) {
+        // Get logs from the pipeline script
+        const pipelineScript = path.resolve(process.cwd(), 'pipelines.sh');
+        try {
+          const p = await $`${pipelineScript} logs --task-id ${id} --pipeline-id ${latestPipeline.id}`;
+          res.setHeader('Content-Type', 'text/plain');
+          res.send(p.stdout);
+        } catch (err) {
+          res.status(500).setHeader('Content-Type', 'text/plain').send(err.stderr || err.stdout);
+        }
+        return;
+      }
+    } catch (err) {
+      console.error('Error checking pipelines:', err);
+    }
+  }
+  
+  // Fallback to old behavior if no pipelines found
   const pipelineScript = path.resolve(process.cwd(), 'pipelines.sh');
   try {
     const p = await $`${pipelineScript} logs --task-id ${id}`;

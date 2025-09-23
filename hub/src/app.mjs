@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import tasksRouter from './routes/tasks.mjs';
 import statusRouter from './routes/status.mjs';
+import pipelinesRouter from './routes/pipelines.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,6 +26,7 @@ export function createApp() {
   // API routes
   app.use('/api/tasks', tasksRouter);
   app.use('/api/status', statusRouter);
+  app.use('/api/pipelines', pipelinesRouter);
 
   // Serve static UI
   const uiDir = path.join(__dirname, '../ui');

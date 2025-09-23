@@ -1,0 +1,11 @@
+{
+  "id": "task_1756198256187_11243_pipeline_1",
+  "taskId": "task_1756198256187_11243",
+  "description": "Change the background to light blue.",
+  "status": "stopped",
+  "createdAt": "2025-09-23T10:30:42.798Z",
+  "containerName": "pipe-task_1756198256187_11243_pipeline_1",
+  "volumeName": "vol-task_1756198256187_11243_pipeline_1",
+  "startedAt": "2025-09-23T10:30:43.118Z",
+  "stoppedAt": "2025-09-23T10:35:03.925Z"
+}

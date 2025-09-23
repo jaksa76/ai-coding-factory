@@ -307,8 +307,10 @@
 
     <script>
         const API_BASE = '/api/tasks';
+        const PIPELINES_API = '/api/pipelines';
         let tasks = [];
         let filtered = [];
+        let taskPipelines = {}; // Store active pipelines for each task
 
         const els = {
             msg: document.getElementById('message'),
@@ -361,9 +363,30 @@
                 const res = await fetch(API_BASE);
                 if (!res.ok) throw new Error('Failed to load');
                 tasks = await res.json();
+                await loadPipelineStatus();
                 applyFilter();
             } catch (e) {
                 els.tasks.innerHTML = '<div class="empty">Could not load tasks.</div>';
+            }
+        }
+
+        async function loadPipelineStatus() {
+            taskPipelines = {};
+            try {
+                // Load active pipelines for all tasks
+                for (const task of tasks) {
+                    const res = await fetch(`${PIPELINES_API}?task=${task.id}`);
+                    if (res.ok) {
+                        const pipelines = await res.json();
+                        // Find the most recent active pipeline (running or starting)
+                        const activePipeline = pipelines.find(p => p.status === 'running' || p.status === 'starting');
+                        if (activePipeline) {
+                            taskPipelines[task.id] = activePipeline;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to load pipeline status:', e);
             }
         }
 
@@ -436,6 +459,82 @@
             }
         }
 
+        async function startPipeline(taskId) {
+            try {
+                const task = tasks.find(t => t.id === taskId);
+                if (!task) {
+                    showMsg('Task not found', 'error');
+                    return;
+                }
+
+                const res = await fetch('/api/pipelines', { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ 
+                        taskId: taskId, 
+                        description: task.description 
+                    }) 
+                });
+                
+                if (!res.ok) {
+                    const error = await res.json();
+                    throw new Error(error.message || 'Failed to start pipeline');
+                }
+                
+                const pipeline = await res.json();
+                
+                // Update task status to in-progress to reflect the pipeline is running
+                const taskIdx = tasks.findIndex(t => t.id === taskId);
+                if (taskIdx !== -1) {
+                    tasks[taskIdx].status = 'in-progress';
+                }
+                
+                // Update pipeline status
+                taskPipelines[taskId] = pipeline;
+                
+                applyFilter();
+                showMsg(`Pipeline started: ${pipeline.id}`);
+            } catch (e) {
+                showMsg(`Failed to start pipeline: ${e.message}`, 'error');
+            }
+        }
+
+        async function stopPipeline(taskId) {
+            try {
+                const activePipeline = taskPipelines[taskId];
+                if (!activePipeline) {
+                    showMsg('No active pipeline found for this task', 'error');
+                    return;
+                }
+
+                const res = await fetch(`${PIPELINES_API}/${activePipeline.id}/stop`, { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                if (!res.ok) {
+                    const error = await res.json();
+                    throw new Error(error.message || 'Failed to stop pipeline');
+                }
+                
+                const stoppedPipeline = await res.json();
+                
+                // Update task status to pending since pipeline is stopped
+                const taskIdx = tasks.findIndex(t => t.id === taskId);
+                if (taskIdx !== -1) {
+                    tasks[taskIdx].status = 'pending';
+                }
+                
+                // Remove from active pipelines
+                delete taskPipelines[taskId];
+                
+                applyFilter();
+                showMsg(`Pipeline stopped: ${stoppedPipeline.id}`);
+            } catch (e) {
+                showMsg(`Failed to stop pipeline: ${e.message}`, 'error');
+            }
+        }
+
         async function removeTask(id) {
             if (!confirm('Delete this task?')) return;
             try {
@@ -467,21 +566,26 @@
                         : '<div class="empty">No tasks yet. Create your first task.</div>';
                     return;
                 }
-                const rows = filtered.map(t => `
+                const rows = filtered.map(t => {
+                    const activePipeline = taskPipelines[t.id];
+                    const hasActivePipeline = activePipeline && (activePipeline.status === 'running' || activePipeline.status === 'starting');
+                    
+                    return `
                     <tr>
                         <td class="col-id">${escapeHtml(t.id)}</td>
                         <td class="col-status"><span class="status st-${t.status}">${escapeHtml(t.status)}</span></td>
                         <td class="col-desc desc">${escapeHtml(t.description || '')}</td>
                         <td class="col-actions">
                             <div class="actions">
-                                ${t.status === 'pending' ? `<button class="btn icon" title="Start" aria-label="Start" onclick="updateStatus('${t.id}','in-progress')"><i class='fa fa-play' aria-hidden='true'></i></button>` : ''}
-                                ${t.status === 'in-progress' ? `<button class="btn icon" title="Pause" aria-label="Pause" onclick="updateStatus('${t.id}','pending')"><i class='fa fa-pause' aria-hidden='true'></i></button>` : ''}
+                                ${hasActivePipeline ? `<button class="btn icon" title="Stop Pipeline" aria-label="Stop Pipeline" onclick="stopPipeline('${t.id}')"><i class='fa fa-stop' aria-hidden='true'></i></button>` : ''}
+                                ${!hasActivePipeline && t.status === 'pending' ? `<button class="btn icon" title="Start Pipeline" aria-label="Start Pipeline" onclick="startPipeline('${t.id}')"><i class='fa fa-play' aria-hidden='true'></i></button>` : ''}
+                                ${!hasActivePipeline && t.status === 'in-progress' ? `<button class="btn icon" title="Pause" aria-label="Pause" onclick="updateStatus('${t.id}','pending')"><i class='fa fa-pause' aria-hidden='true'></i></button>` : ''}
                                 <a href="pipeline.html?taskId=${t.id}" class="btn icon" title="Details" aria-label="Details"><i class='fa fa-info-circle' aria-hidden='true'></i></a>
                                 <button class="btn icon danger" title="Delete" aria-label="Delete" onclick="removeTask('${t.id}')"><i class='fa fa-trash' aria-hidden='true'></i></button>
                             </div>
                         </td>
                     </tr>
-                `).join('');
+                `;}).join('');
 
                 els.tasks.innerHTML = `
                 <div class="table-wrapper">
