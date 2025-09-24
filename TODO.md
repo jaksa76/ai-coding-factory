@@ -21,10 +21,10 @@ Milestone 1: Demo
 - [x] Create pipelines.sh - a module to launch, list and stop pipelines (will leverage agents.sh)
     - [x] Launch a pipeline (task id, task desc)
     - [x] Pass git credentials to pipeline
-    - [ ] List pipelines for a task
-    - [ ] Stop pipeline (id)
+    - [x] List pipelines for a task
+    - [x] Stop pipeline (id)
     - [ ] Update pipeline status - save info to disk (set number of stages, current stage, current stage uptime)
-    - [ ] Get pipeline status
+    - [x] Get pipeline status
 
 - [ ] Improve worker project
     - [ ] Fake deploy

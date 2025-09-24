@@ -109,7 +109,7 @@ case $COMMAND in
         ;;
     list-volumes)
         echo "Listing all Docker volumes..."
-        docker volume ls
+        docker volume ls | grep "vol-"
         ;;
     start-container)
         require_param "container-name" "$CONTAINER_NAME" "$COMMAND"
