@@ -12,7 +12,19 @@ const listPipelines = async (taskId) => {
   try {
     const pipelineScript = path.resolve(process.cwd(), 'pipelines.sh');
     const result = await $`${pipelineScript} list --task-id ${taskId}`;
-    return result.stdout.split('\n').filter(line => line.trim());
+    // The agent scripts return container names in the form:
+    //   pipe-<taskId>-<pipelineId>
+    // We need to convert those to just the pipelineId (the part after the task prefix)
+    return result.stdout
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line)
+      .map(line => {
+        const prefix = `pipe-${taskId}-`;
+        if (line.startsWith(prefix)) return line.slice(prefix.length);
+        // fallback: if the line is already a pipeline id, return as-is
+        return line;
+      });
   } catch (error) {
     console.error('Error listing pipelines via script:', error);
     return [];
@@ -20,16 +32,16 @@ const listPipelines = async (taskId) => {
 };
 
 const generatePipelineId = async (taskId) => {
-  // Get existing pipelines for this task to determine next sequential number
+  // Get existing pipeline IDs (we return plain pipeline ids from listPipelines)
   const existingPipelines = await listPipelines(taskId);
   const pipelineNumbers = existingPipelines
-    .map(pipelineName => {
-      // Extract numbers from pipeline names like "pipe-task123_pipeline_1"
-      const match = pipelineName.match(new RegExp(`pipe-${taskId}_pipeline_(\\d+)`));
+    .map(pipelineId => {
+      // Extract numbers from pipeline ids like "<taskId>_pipeline_1"
+      const match = pipelineId.match(new RegExp(`${taskId}_pipeline_(\\d+)$`));
       return match ? parseInt(match[1]) : 0;
     })
-    .filter(num => !isNaN(num));
-  
+    .filter(num => !isNaN(num) && num > 0);
+
   const nextNumber = pipelineNumbers.length > 0 ? Math.max(...pipelineNumbers) + 1 : 1;
   return `${taskId}_pipeline_${nextNumber}`;
 };
@@ -43,9 +55,10 @@ router.get('/', async (req, res) => {
       return res.status(400).json({ error: 'Missing task parameter', message: 'task query parameter is required' });
     }
     
-    const pipelines = await listPipelines(taskId);
-    
-    res.json(pipelines);
+  const pipelines = await listPipelines(taskId);
+
+  // Return objects with `id` to match API contract used in tests
+  res.json(pipelines.map(id => ({ id })));
   } catch (error) {
     console.error('Error listing pipelines:', error);
     res.status(500).json({ error: 'Internal server error', message: 'Failed to list pipelines' });
