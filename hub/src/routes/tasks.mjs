@@ -11,8 +11,11 @@ const ensureTasksDir = async () => {
 };
 
 const tasksPath = (id) => path.join(getTasksDir(), `${id}.json`);
+
 const readJSON = (file) => fs.readJSON(file);
+
 const writeJSON = (file, data) => fs.outputJSON(file, data, { spaces: 2 });
+
 const listTasks = async () => {
   await ensureTasksDir();
   const TASKS_DIR = getTasksDir();
@@ -111,113 +114,6 @@ router.delete('/:id?', async (req, res) => {
   }
 });
 
-router.get('/:id/status', async (req, res) => {
-  const id = req.params.id;
-  
-  // Get the latest pipeline for this task
-  const PIPELINES_DIR = path.join(getDataDir(), 'pipelines');
-  if (await fs.pathExists(PIPELINES_DIR)) {
-    try {
-      const files = await fs.readdir(PIPELINES_DIR);
-      let latestPipeline = null;
-      let latestTime = 0;
-      
-      for (const f of files) {
-        if (!f.endsWith('.json')) continue;
-        const full = path.join(PIPELINES_DIR, f);
-        try {
-          const pipeline = await fs.readJSON(full);
-          if (pipeline.taskId === id) {
-            const createdTime = new Date(pipeline.createdAt).getTime();
-            if (createdTime > latestTime) {
-              latestTime = createdTime;
-              latestPipeline = pipeline;
-            }
-          }
-        } catch {}
-      }
-      
-      if (latestPipeline) {
-        // Get live status from the pipeline script
-        const pipelineScript = path.resolve(process.cwd(), 'pipelines.sh');
-        try {
-          const p = await $`${pipelineScript} status --task-id ${id} --pipeline-id ${latestPipeline.id}`;
-          res.setHeader('Content-Type', 'text/plain');
-          res.send(p.stdout);
-        } catch (err) {
-          res.status(500).setHeader('Content-Type', 'text/plain').send(err.stderr || err.stdout);
-        }
-        return;
-      }
-    } catch (err) {
-      console.error('Error checking pipelines:', err);
-    }
-  }
-  
-  // Fallback to old behavior if no pipelines found
-  const pipelineScript = path.resolve(process.cwd(), 'pipelines.sh');
-  try {
-    const p = await $`${pipelineScript} status --task-id ${id}`;
-    res.setHeader('Content-Type', 'text/plain');
-    res.send(p.stdout);
-  } catch (err) {
-    res.status(500).setHeader('Content-Type', 'text/plain').send(err.stderr || err.stdout);
-  }
-});
-
-router.get('/:id/logs', async (req, res) => {
-  const id = req.params.id;
-  
-  // Get the latest pipeline for this task
-  const PIPELINES_DIR = path.join(getDataDir(), 'pipelines');
-  if (await fs.pathExists(PIPELINES_DIR)) {
-    try {
-      const files = await fs.readdir(PIPELINES_DIR);
-      let latestPipeline = null;
-      let latestTime = 0;
-      
-      for (const f of files) {
-        if (!f.endsWith('.json')) continue;
-        const full = path.join(PIPELINES_DIR, f);
-        try {
-          const pipeline = await fs.readJSON(full);
-          if (pipeline.taskId === id) {
-            const createdTime = new Date(pipeline.createdAt).getTime();
-            if (createdTime > latestTime) {
-              latestTime = createdTime;
-              latestPipeline = pipeline;
-            }
-          }
-        } catch {}
-      }
-      
-      if (latestPipeline) {
-        // Get logs from the pipeline script
-        const pipelineScript = path.resolve(process.cwd(), 'pipelines.sh');
-        try {
-          const p = await $`${pipelineScript} logs --task-id ${id} --pipeline-id ${latestPipeline.id}`;
-          res.setHeader('Content-Type', 'text/plain');
-          res.send(p.stdout);
-        } catch (err) {
-          res.status(500).setHeader('Content-Type', 'text/plain').send(err.stderr || err.stdout);
-        }
-        return;
-      }
-    } catch (err) {
-      console.error('Error checking pipelines:', err);
-    }
-  }
-  
-  // Fallback to old behavior if no pipelines found
-  const pipelineScript = path.resolve(process.cwd(), 'pipelines.sh');
-  try {
-    const p = await $`${pipelineScript} logs --task-id ${id}`;
-    res.setHeader('Content-Type', 'text/plain');
-    res.send(p.stdout);
-  } catch (err) {
-    res.status(500).setHeader('Content-Type', 'text/plain').send(err.stderr || err.stdout);
-  }
-});
 
 router.post('/import/jira', async (req, res) => {
   const { site, email, token, project } = req.body || {};

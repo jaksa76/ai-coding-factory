@@ -168,7 +168,7 @@ case $COMMAND in
     list)
         require_param "task-id" "$TASK_ID" "list"
         
-        ./agents.sh list-containers | grep "$TASK_ID"
+        ./agents.sh list-containers | grep "$TASK_ID" | sort
         ;;
         
     *)
