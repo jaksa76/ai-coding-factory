@@ -58,7 +58,48 @@
             margin: 24px auto;
             padding: 0 20px 40px;
         }
-        .page-title { font-size: 22px; margin-bottom: 16px; }
+        .page-title { font-size: 22px; margin: 0; }
+        .page-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .pipeline-wrap { display: flex; align-items: center; gap: 8px; }
+        .sr-only {
+            position: absolute !important;
+            width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+            clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+        }
+        .pipeline-select {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            padding: 8px 36px 8px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: linear-gradient(180deg, #ffffff, #fafbff);
+            color: var(--text);
+            box-shadow: 0 1px 2px rgba(9,30,66,0.06);
+            font-weight: 600;
+            cursor: pointer;
+            min-width: 260px;
+            transition: box-shadow 150ms ease, border-color 150ms ease;
+            background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+            background-position: calc(100% - 18px) calc(1em + 2px), calc(100% - 13px) calc(1em + 2px);
+            background-size: 6px 6px, 6px 6px;
+            background-repeat: no-repeat;
+        }
+        .pipeline-select:focus {
+            outline: none;
+            border-color: var(--primary-600);
+            box-shadow: 0 4px 12px rgba(9,30,66,0.08);
+        }
+        .pipeline-select[disabled] {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
         .card {
             background: var(--card);
             border: 1px solid var(--border);
@@ -76,6 +117,11 @@
             white-space: pre-wrap;
             word-wrap: break-word;
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+        }
+        /* scrollable log area */
+        .log-output {
+            max-height: 60vh;
+            overflow: auto;
         }
         .back-link {
             display: inline-flex;
@@ -108,7 +154,13 @@
 
     <main class="page">
         <a href="index.html" class="back-link"><i class="fa fa-arrow-left"></i> Back to Tasks</a>
-        <h1 class="page-title">Pipeline Details</h1>
+        <div class="page-header">
+            <h1 class="page-title">Pipeline Details</h1>
+            <div class="pipeline-wrap">
+                <label for="pipeline-select" class="sr-only">Pipeline</label>
+                <select id="pipeline-select" class="pipeline-select" aria-label="Select pipeline"></select>
+            </div>
+        </div>
 
         <section class="card">
             <h2>Logs</h2>
@@ -124,11 +176,14 @@
     <script>
     const API_BASE = '/api/tasks';
     const PIPELINES_API = '/api/pipelines';
-    const taskId = new URLSearchParams(window.location.search).get('taskId');
+    const params = new URLSearchParams(window.location.search);
+    const taskId = params.get('taskId');
+    const pipelineIdParam = params.get('pipelineId');
 
         const els = {
             status: document.getElementById('status'),
             logs: document.getElementById('logs'),
+            pipelineSelect: document.getElementById('pipeline-select')
         };
 
         function escapeHtml(str) {
@@ -137,47 +192,100 @@
             return div.innerHTML;
         }
 
-        async function loadStatus() {
+        let currentPipelineId = null;
+
+        function updateUrlPipelineParam(pipelineId) {
+            try {
+                const u = new URL(window.location.href);
+                if (pipelineId) u.searchParams.set('pipelineId', pipelineId); else u.searchParams.delete('pipelineId');
+                history.replaceState({}, '', u.toString());
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        function extractTaskIdFromPipelineId(pipelineId) {
+            const match = String(pipelineId).match(/^(.*)_pipeline_\d+$/);
+            return match ? match[1] : null;
+        }
+
+        async function fetchPipelinesAndPopulate() {
+            if (!taskId) {
+                els.pipelineSelect.disabled = true;
+                return;
+            }
+            try {
+                const listRes = await fetch(`${PIPELINES_API}?task=${taskId}`);
+                if (!listRes.ok) throw new Error('Failed to list pipelines');
+                const pipelines = await listRes.json();
+                els.pipelineSelect.innerHTML = '';
+                if (!Array.isArray(pipelines) || pipelines.length === 0) {
+                    els.pipelineSelect.disabled = true;
+                    els.pipelineSelect.appendChild(new Option('No pipelines', ''));
+                    currentPipelineId = null;
+                    return;
+                }
+
+                // Populate options
+                pipelines.forEach(p => {
+                    const opt = new Option(p.id, p.id);
+                    els.pipelineSelect.appendChild(opt);
+                });
+
+                // Choose pipeline: URL param if present and exists, else last one
+                let chosen = null;
+                if (pipelineIdParam) {
+                    const found = pipelines.find(p => p.id === pipelineIdParam);
+                    if (found) chosen = pipelineIdParam;
+                }
+                if (!chosen) chosen = pipelines[pipelines.length - 1].id;
+
+                els.pipelineSelect.value = chosen;
+                els.pipelineSelect.disabled = false;
+                currentPipelineId = chosen;
+                updateUrlPipelineParam(chosen);
+
+            } catch (e) {
+                els.pipelineSelect.disabled = true;
+                els.pipelineSelect.innerHTML = '';
+                els.pipelineSelect.appendChild(new Option('Error', ''));
+                console.error('Could not fetch pipelines', e);
+            }
+        }
+
+        async function loadStatus(pipelineId) {
+            els.status.innerHTML = '<div class="loading">Loading status…</div>';
             if (!taskId) {
                 els.status.innerHTML = '<div class="empty">No task ID provided.</div>';
                 return;
             }
+            pipelineId = pipelineId || currentPipelineId;
+            if (!pipelineId) {
+                els.status.innerHTML = '<div class="empty">No pipeline selected.</div>';
+                return;
+            }
             try {
-                // First, get pipelines for this task
-                const listRes = await fetch(`${PIPELINES_API}?task=${taskId}`);
-                if (!listRes.ok) throw new Error('Failed to list pipelines');
-                const pipelines = await listRes.json();
-                if (!Array.isArray(pipelines) || pipelines.length === 0) {
-                    els.status.innerHTML = '<div class="empty">No pipelines found for this task.</div>';
-                    return;
-                }
-
-                // Use the most recent pipeline id
-                const pipelineId = pipelines[pipelines.length - 1].id;
                 const res = await fetch(`${PIPELINES_API}/${encodeURIComponent(pipelineId)}/status`);
                 if (!res.ok) {
                     const text = await res.text();
                     throw new Error(text);
                 }
-                // The status endpoint now returns JSON like { status: "running", ... }
                 let statusObj = null;
                 try {
                     statusObj = await res.json();
                 } catch (e) {
-                    // If it isn't JSON, fall back to text
                     const text = await res.text();
                     els.status.innerHTML = `<pre>${escapeHtml(text)}</pre>`;
                     return;
                 }
 
-                // Show the JSON prettified
                 els.status.innerHTML = `<pre>${escapeHtml(JSON.stringify(statusObj, null, 2))}</pre>`;
 
-                // Add a Start/Stop button depending on status
                 const status = String(statusObj.status || '').toLowerCase();
                 const isRunning = status === 'running' || status === 'restarting';
                 const btnContainer = document.createElement('div');
                 btnContainer.style.marginTop = '12px';
+
                 if (isRunning) {
                     const stopBtn = document.createElement('button');
                     stopBtn.className = 'btn';
@@ -185,7 +293,7 @@
                     stopBtn.onclick = async () => {
                         const stopRes = await fetch(`${PIPELINES_API}/${encodeURIComponent(pipelineId)}/stop`, { method: 'POST' });
                         if (stopRes.ok) {
-                            loadStatus();
+                            loadStatus(pipelineId);
                         } else {
                             alert('Failed to stop pipeline');
                         }
@@ -196,13 +304,10 @@
                     startBtn.className = 'btn primary';
                     startBtn.textContent = 'Start Pipeline';
                     startBtn.onclick = async () => {
-                        // Start pipeline by posting to /api/pipelines with the taskId extracted from pipeline id
-                        // pipeline id format: <taskId>_pipeline_<timestamp>
-                        const match = pipelineId.match(/^(.*)_pipeline_\d+$/);
-                        if (!match) return alert('Cannot determine taskId for this pipeline');
-                        const taskId = match[1];
-                        const res = await fetch('/api/pipelines', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ taskId, description: 'Manual start' }) });
-                        if (res.ok) loadStatus(); else alert('Failed to start pipeline');
+                        const taskFromPipeline = extractTaskIdFromPipelineId(pipelineId);
+                        if (!taskFromPipeline) return alert('Cannot determine taskId for this pipeline');
+                        const res = await fetch('/api/pipelines', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ taskId: taskFromPipeline, description: 'Manual start' }) });
+                        if (res.ok) loadStatus(pipelineId); else alert('Failed to start pipeline');
                     };
                     btnContainer.appendChild(startBtn);
                 }
@@ -213,35 +318,77 @@
             }
         }
 
-        async function loadLogs() {
+        // Update only the inner <pre> inside #logs to preserve scroll position and avoid reflows
+        async function loadLogs(pipelineId) {
+            pipelineId = pipelineId || currentPipelineId;
+            // ensure we have a container element for the logs (a <pre> that we can update)
+            function ensurePre() {
+                let pre = els.logs.querySelector('pre.log-output');
+                if (!pre) {
+                    // clear any placeholder and create a persistent pre element
+                    els.logs.innerHTML = '';
+                    pre = document.createElement('pre');
+                    pre.className = 'log-output';
+                    pre.textContent = 'Loading logs…';
+                    els.logs.appendChild(pre);
+                }
+                return pre;
+            }
+
             if (!taskId) {
                 els.logs.innerHTML = '<div class="empty">No task ID provided.</div>';
                 return;
             }
-            try {
-                // First, list pipelines for the task and use the latest pipeline id
-                const listRes = await fetch(`${PIPELINES_API}?task=${taskId}`);
-                if (!listRes.ok) throw new Error('Failed to list pipelines');
-                const pipelines = await listRes.json();
-                if (!Array.isArray(pipelines) || pipelines.length === 0) {
-                    els.logs.innerHTML = '<div class="empty">No pipelines found for this task.</div>';
-                    return;
-                }
+            if (!pipelineId) {
+                els.logs.innerHTML = '<div class="empty">No pipeline selected.</div>';
+                return;
+            }
 
-                const pipelineId = pipelines[pipelines.length - 1].id;
+            const pre = ensurePre();
+            // remember scroll state: are we near the bottom?
+            const wasAtBottom = (pre.scrollHeight - pre.scrollTop - pre.clientHeight) < 20;
+            const previousScrollTop = pre.scrollTop;
+
+            try {
                 const res = await fetch(`${PIPELINES_API}/${encodeURIComponent(pipelineId)}/logs`);
                 const text = await res.text();
                 if (!res.ok) throw new Error(text);
-                els.logs.innerHTML = `<pre>${escapeHtml(text)}</pre>`;
+
+                // update textContent (safe, preserves node and scroll properties)
+                pre.textContent = text;
+
+                // restore scroll: if user was at bottom, keep at bottom; otherwise preserve position
+                if (wasAtBottom) {
+                    pre.scrollTop = pre.scrollHeight;
+                } else {
+                    // try to keep the same offset from top (best effort)
+                    pre.scrollTop = Math.min(previousScrollTop, pre.scrollHeight - pre.clientHeight);
+                }
             } catch (e) {
                 els.logs.innerHTML = `<div class="empty">Could not load logs. ${escapeHtml(e.message)}</div>`;
             }
         }
 
+        // Wire select change
+        els.pipelineSelect.addEventListener('change', (ev) => {
+            const val = ev.target.value;
+            currentPipelineId = val || null;
+            updateUrlPipelineParam(currentPipelineId);
+            loadStatus(currentPipelineId);
+            loadLogs(currentPipelineId);
+        });
+
         // Init
-        loadStatus();
-        loadLogs();
-        setInterval(loadLogs, 3000);
+        (async function init() {
+            await fetchPipelinesAndPopulate();
+            if (currentPipelineId) {
+                loadStatus(currentPipelineId);
+                loadLogs(currentPipelineId);
+            }
+            setInterval(() => {
+                if (currentPipelineId) loadLogs(currentPipelineId);
+            }, 3000);
+        })();
     </script>
 </body>
 </html>
