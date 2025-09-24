@@ -22,6 +22,7 @@ show_usage() {
     echo "$0 list-volumes"
     echo ""
     echo "$0 start-container --container-name <container-name> --volume <volume_name> --image <image_name> [--command <command>] [--env <KEY=VALUE>]"
+    echo "  Note: Container name will be prefixed with 'ai-coding-factory-container-'"
     echo ""
     echo "$0 stop-container --container-name <container-name>"
     echo ""
@@ -31,6 +32,16 @@ show_usage() {
     echo ""
     echo "$0 logs-container --container-name <container-name>"
     echo ""
+}
+
+require_param() {
+    local param_name="$1"
+    local param_value="$2"
+    local cmd="$3"
+    if [ -z "$param_value" ]; then
+    echo "Error: --$param_name is required for $cmd command"
+    exit 1
+    fi
 }
 
 # Check if no arguments provided
@@ -87,18 +98,12 @@ done
 # Execute the command
 case $COMMAND in
     create-volume)
-        if [ -z "$VOLUME_NAME" ]; then
-            echo "Error: --volume-name is required for create-volume command"
-            exit 1
-        fi
+        require_param "volume-name" "$VOLUME_NAME" "$COMMAND"
         echo "Creating Docker volume '$VOLUME_NAME'..."
         docker volume create "$VOLUME_NAME"
         ;;
     delete-volume)
-        if [ -z "$VOLUME_NAME" ]; then
-            echo "Error: --volume-name is required for delete-volume command"
-            exit 1
-        fi
+        require_param "volume-name" "$VOLUME_NAME" "$COMMAND"
         echo "Deleting Docker volume '$VOLUME_NAME'..."
         docker volume rm "$VOLUME_NAME"
         ;;
@@ -107,20 +112,14 @@ case $COMMAND in
         docker volume ls
         ;;
     start-container)
-        if [ -z "$CONTAINER_NAME" ]; then
-            echo "Error: --container-name is required for start-container command"
-            exit 1
-        fi
-        if [ -z "$VOLUME" ]; then
-            echo "Error: --volume is required for start-container command"
-            exit 1
-        fi
-        if [ -z "$IMAGE_NAME" ]; then
-            echo "Error: --image is required for start-container command"
-            exit 1
-        fi
+        require_param "container-name" "$CONTAINER_NAME" "$COMMAND"
+        require_param "volume" "$VOLUME" "$COMMAND"
+        require_param "image" "$IMAGE_NAME" "$COMMAND"
         
-        echo "Starting Docker container '$CONTAINER_NAME'..."
+        # Add prefix to container name
+        FULL_CONTAINER_NAME="ai-coding-factory-container-$CONTAINER_NAME"
+        
+        echo "Starting Docker container '$FULL_CONTAINER_NAME'..."
         
         # override image command if one is provided
         if [ "$CONTAINER_COMMAND" ]; then
@@ -135,48 +134,49 @@ case $COMMAND in
         }
         
         # Run the container
-        docker run -d --name "$CONTAINER_NAME" \
+        docker run -d --name "$FULL_CONTAINER_NAME" \
             -v "$VOLUME:/workspace" \
             "${ENV_VARS[@]}" \
             "$IMAGE_NAME" \
             $CONTAINER_OPTION
 
-        echo "Docker container '$CONTAINER_NAME' started successfully!"
+        echo "Docker container '$FULL_CONTAINER_NAME' started successfully!"
         echo "Volume '$VOLUME' is mounted at /workspace"
         ;;
     stop-container)
-        if [ -z "$CONTAINER_NAME" ]; then
-            echo "Error: --container-name is required for stop-container command"
-            exit 1
-        fi
+        require_param "container-name" "$CONTAINER_NAME" "$COMMAND"
         
-        echo "Stopping Docker container '$CONTAINER_NAME'..."
-        docker stop "$CONTAINER_NAME"
+        # Add prefix to container name
+        FULL_CONTAINER_NAME="ai-coding-factory-container-$CONTAINER_NAME"
+        
+        echo "Stopping Docker container '$FULL_CONTAINER_NAME'..."
+        docker stop "$FULL_CONTAINER_NAME"
         ;;
     status-container)
-        if [ -z "$CONTAINER_NAME" ]; then
-            echo "Error: --container-name is required for status-container command"
-            exit 1
-        fi
+        require_param "container-name" "$CONTAINER_NAME" "$COMMAND"
         
-        echo "Checking status for Docker container '$CONTAINER_NAME'..."
-        docker ps -a --filter "name=$CONTAINER_NAME"
+        # Add prefix to container name
+        FULL_CONTAINER_NAME="ai-coding-factory-container-$CONTAINER_NAME"
+        
+        echo "Checking status for Docker container '$FULL_CONTAINER_NAME'..."
+        docker ps -a --filter "name=$FULL_CONTAINER_NAME"
         
         echo ""
         echo "--- DETAILS ---"
-        docker inspect "$CONTAINER_NAME"
+        docker inspect "$FULL_CONTAINER_NAME"
         ;;
     list-containers)
         echo "Listing AI Coding Factory Docker containers..."
-        docker ps -a --filter "name=ai-coding-factory-task-*"
+        docker ps -a --filter "name=ai-coding-factory-container-*" --format "{{.Names}}" | sed 's/^ai-coding-factory-container-//'
         ;;
     logs-container)
-        if [ -z "$CONTAINER_NAME" ]; then
-            echo "Error: --container-name is required for logs-container command"
-            exit 1
-        fi
-        echo "Getting logs for Docker container '$CONTAINER_NAME'..."
-        docker logs "$CONTAINER_NAME"
+        require_param "container-name" "$CONTAINER_NAME" "$COMMAND"
+        
+        # Add prefix to container name
+        FULL_CONTAINER_NAME="ai-coding-factory-container-$CONTAINER_NAME"
+        
+        echo "Getting logs for Docker container '$FULL_CONTAINER_NAME'..."
+        docker logs "$FULL_CONTAINER_NAME"
         ;;
     *)
         echo "Error: No valid command specified"

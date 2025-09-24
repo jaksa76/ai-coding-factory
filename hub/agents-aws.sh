@@ -18,7 +18,10 @@ show_usage() {
     echo ""
     echo "$0 delete-volume --volume-name <volume-name>"
     echo ""
-    echo "$0 start-container --container-name <container-name> --volume <volume_name> --image <image_name> [--command <command>]"
+    echo "$0 list-volumes"
+    echo ""
+    echo "$0 start-container --container-name <container-name> --volume <volume_name> --image <image_name> [--command <command>] [--env <KEY=VALUE>]"
+    echo "  Note: Container name will be prefixed with 'ai-coding-factory-container-'"
     echo ""
     echo "$0 stop-container --container-name <container-name>"
     echo ""
@@ -28,6 +31,16 @@ show_usage() {
     echo ""
     echo "$0 logs-container --container-name <container-name>"
     echo ""
+}
+
+require_param() {
+    local param_name="$1"
+    local param_value="$2"
+    local cmd="$3"
+    if [ -z "$param_value" ]; then
+    echo "Error: --$param_name is required for $cmd command"
+    exit 1
+    fi
 }
 
 # Function to create ECS execution role if it doesn't exist
@@ -86,6 +99,7 @@ if [ $# -eq 0 ]; then
 fi
 
 # Parse command line arguments
+ENV_VARS=()
 while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help)
@@ -117,7 +131,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --env)
-            ENV_VARS+=($2)
+            ENV_VARS+=("$2")
             shift 2
             ;;
         *)
@@ -132,10 +146,7 @@ done
 # Execute the command
 case $COMMAND in
     create-volume)
-        if [ -z "$VOLUME_NAME" ]; then
-            echo "Error: --volume-name is required for create-volume command"
-            exit 1
-        fi
+        require_param "volume-name" "$VOLUME_NAME" "$COMMAND"
         echo "Creating volume '$VOLUME_NAME'..."
 
         # create volume on AWS EFS
@@ -143,10 +154,7 @@ case $COMMAND in
 
         ;;
     delete-volume)
-        if [ -z "$VOLUME_NAME" ]; then
-            echo "Error: --volume-name is required for delete-volume command"
-            exit 1
-        fi
+        require_param "volume-name" "$VOLUME_NAME" "$COMMAND"
         echo "Deleting volume '$VOLUME_NAME'..."
         
         # Find the file system by creation token (volume name)
@@ -187,21 +195,12 @@ case $COMMAND in
         ;;
     list-volumes)
         echo "Listing all volumes..."
-        aws efs describe-file-systems --query "FileSystems[].{ID:FileSystemId, Name:CreationToken}" --output table
+        aws efs describe-file-systems --query "FileSystems[].CreationToken" --output text | tr '\t' '\n'
         ;;
     start-container)
-        if [ -z "$CONTAINER_NAME" ]; then
-            echo "Error: --container-name is required for start-container command"
-            exit 1
-        fi
-        if [ -z "$VOLUME" ]; then
-            echo "Error: --volume is required for start-container command"
-            exit 1
-        fi
-        if [ -z "$IMAGE_NAME" ]; then
-            echo "Error: --image is required for start-container command"
-            exit 1
-        fi
+        require_param "container-name" "$CONTAINER_NAME" "$COMMAND"
+        require_param "volume" "$VOLUME" "$COMMAND"
+        require_param "image" "$IMAGE_NAME" "$COMMAND"
         
         echo "Starting ECS container '$CONTAINER_NAME'..."
         
@@ -344,10 +343,7 @@ EOF
         ;;
 
     stop-container)
-        if [ -z "$CONTAINER_NAME" ]; then
-            echo "Error: --container-name is required for stop-container command"
-            exit 1
-        fi
+        require_param "container-name" "$CONTAINER_NAME" "$COMMAND"
         
         echo "Stopping ECS container '$CONTAINER_NAME'..."
         
@@ -381,10 +377,7 @@ EOF
         ;;
 
     status-container)
-        if [ -z "$CONTAINER_NAME" ]; then
-            echo "Error: --container-name is required for status-container command"
-            exit 1
-        fi
+        require_param "container-name" "$CONTAINER_NAME" "$COMMAND"
         
         echo "Checking status for ECS container '$CONTAINER_NAME'..."
         
@@ -461,78 +454,23 @@ EOF
         
         if [ -z "$CLUSTER_EXISTS" ] || [ "$CLUSTER_EXISTS" = "None" ]; then
             echo "ECS cluster '$CLUSTER_NAME' not found"
-            echo ""
-            echo "To start a new container, run:"
-            echo "  $0 start-container --container-name <name> --volume <volume> --image <image>"
             exit 0
         fi
         
-        echo "=== RUNNING TASKS ==="
-        RUNNING_TASKS=$(aws ecs list-tasks --cluster "$CLUSTER_NAME" --desired-status RUNNING --query "taskArns" --output text)
-        
-        if [ -n "$RUNNING_TASKS" ] && [ "$RUNNING_TASKS" != "None" ]; then
-            echo "Found running tasks:"
-            printf "%-30s %-20s %-15s %-20s\n" "TASK_ID" "FAMILY" "STATUS" "STARTED_AT"
-            echo "-----------------------------------------------------------------------------------------"
-            
-            for TASK_ARN in $RUNNING_TASKS; do
-                TASK_ID=$(echo "$TASK_ARN" | cut -d'/' -f3)
-                TASK_INFO=$(aws ecs describe-tasks --cluster "$CLUSTER_NAME" --tasks "$TASK_ARN" --query "tasks[0].{Family:group,Status:lastStatus,StartedAt:startedAt}" --output text)
-                printf "%-30s %s\n" "$TASK_ID" "$TASK_INFO"
-            done
-        else
-            echo "No running tasks found"
-        fi
-        
-        echo ""
-        echo "=== TASK DEFINITIONS ==="
-        
-        # List all task definitions with our prefix
+        # List all task definitions with our prefix and extract container names
         TASK_DEFS=$(aws ecs list-task-definitions --family-prefix "ai-coding-factory-task-" --query "taskDefinitionArns" --output text)
         
         if [ -n "$TASK_DEFS" ] && [ "$TASK_DEFS" != "None" ]; then
-            echo "Available task definitions:"
-            printf "%-40s %-10s %-10s %-10s\n" "FAMILY" "REVISION" "CPU" "MEMORY"
-            echo "-----------------------------------------------------------------------------------------"
-            
             for TASK_DEF in $TASK_DEFS; do
-                TASK_DEF_INFO=$(aws ecs describe-task-definition --task-definition "$TASK_DEF" --query "taskDefinition.{Family:family,Revision:revision,CPU:cpu,Memory:memory}" --output text)
-                printf "%s\n" "$TASK_DEF_INFO"
-            done
-        else
-            echo "No task definitions found"
+                # Extract container name from task definition ARN
+                # Format: arn:aws:ecs:region:account:task-definition/ai-coding-factory-task-CONTAINER_NAME:revision
+                CONTAINER_NAME=$(echo "$TASK_DEF" | sed 's/.*ai-coding-factory-task-\([^:]*\):.*/\1/')
+                echo "$CONTAINER_NAME"
+            done | sort -u
         fi
-        
-        echo ""
-        echo "=== RECENT STOPPED TASKS ==="
-        STOPPED_TASKS=$(aws ecs list-tasks --cluster "$CLUSTER_NAME" --desired-status STOPPED --max-items 5 --query "taskArns" --output text)
-        
-        if [ -n "$STOPPED_TASKS" ] && [ "$STOPPED_TASKS" != "None" ]; then
-            echo "Recently stopped tasks:"
-            printf "%-30s %-20s %-15s %-25s\n" "TASK_ID" "FAMILY" "STATUS" "STOPPED_AT"
-            echo "-----------------------------------------------------------------------------------------"
-            
-            for TASK_ARN in $STOPPED_TASKS; do
-                TASK_ID=$(echo "$TASK_ARN" | cut -d'/' -f3)
-                TASK_INFO=$(aws ecs describe-tasks --cluster "$CLUSTER_NAME" --tasks "$TASK_ARN" --query "tasks[0].{Family:group,Status:lastStatus,StoppedAt:stoppedAt}" --output text)
-                printf "%-30s %s\n" "$TASK_ID" "$TASK_INFO"
-            done
-        else
-            echo "No recent stopped tasks found"
-        fi
-        
-        echo ""
-        echo "To start a new container, run:"
-        echo "  $0 start-container --container-name <name> --volume <volume> --image <image>"
-        echo ""
-        echo "To check status of a specific container, run:"
-        echo "  $0 status-container --container-name <name>"
         ;;
     logs-container)
-        if [ -z "$CONTAINER_NAME" ]; then
-            echo "Error: --container-name is required for logs-container command"
-            exit 1
-        fi
+        require_param "container-name" "$CONTAINER_NAME" "$COMMAND"
         
         echo "Getting logs for ECS container '$CONTAINER_NAME'..."
         

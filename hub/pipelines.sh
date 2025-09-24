@@ -10,14 +10,17 @@ show_usage() {
     echo "  status     Show pipeline status"
     echo "  stop       Stop a running pipeline"
     echo "  logs       Get logs from a running pipeline"
+    echo "  list       List pipelines for a task or all pipelines"
     echo ""
     echo "$0 start --task-id <task-id> --pipeline-id <pipeline-id> --task-description \"<description>\" [--git-url <git-url>] [--git-username <username>] [--git-token <token>]"
     echo ""
-    echo "$0 status --task-id <task-id> [--pipeline-id <pipeline-id>]"
+    echo "$0 status --task-id <task-id> --pipeline-id <pipeline-id>"
     echo ""
-    echo "$0 stop --task-id <task-id> [--pipeline-id <pipeline-id>]"
+    echo "$0 stop --task-id <task-id> --pipeline-id <pipeline-id>"
     echo ""
-    echo "$0 logs --task-id <task-id> [--pipeline-id <pipeline-id>]"
+    echo "$0 logs --task-id <task-id> --pipeline-id <pipeline-id>"
+    echo ""
+    echo "$0 list --task-id <task-id>"
     echo ""
     echo "Git options:"
     echo "  --git-url         Git repository URL"
@@ -29,6 +32,17 @@ show_usage() {
     echo "      If --pipeline-id is not provided, operations will use the task-id for backward compatibility"
     echo ""
 }
+
+require_param() {
+    local param_name="$1"
+    local param_value="$2"
+    local cmd="$3"
+    if [ -z "$param_value" ]; then
+    echo "Error: --$param_name is required for $cmd command"
+    exit 1
+    fi
+}
+
 
 # Check if no arguments provided
 if [ $# -eq 0 ]; then
@@ -43,7 +57,7 @@ while [[ $# -gt 0 ]]; do
             show_usage
             exit 0
             ;;
-        start|status|stop|logs)
+        start|status|stop|logs|list)
             COMMAND=$1
             shift
             ;;
@@ -83,24 +97,15 @@ done
 # Execute the command
 case $COMMAND in
     start)
-        if [ -z "$TASK_ID" ]; then
-            echo "Error: --task-id is required for start command"
-            exit 1
-        fi
-        if [ -z "$PIPELINE_ID" ]; then
-            echo "Error: --pipeline-id is required for start command"
-            exit 1
-        fi
-        if [ -z "$TASK_DESCRIPTION" ]; then
-            echo "Error: --task-description is required for start command"
-            exit 1
-        fi
+        require_param "task-id" "$TASK_ID" "start"
+        require_param "pipeline-id" "$PIPELINE_ID" "start"
+        require_param "task-description" "$TASK_DESCRIPTION" "start"
         
         echo "Starting pipeline '$PIPELINE_ID' for task '$TASK_ID'..."
         
         # Define volume name and container name based on pipeline ID
-        VOLUME_NAME="vol-$PIPELINE_ID"
-        CONTAINER_NAME="pipe-$PIPELINE_ID"
+        VOLUME_NAME="vol-$TASK_ID-$PIPELINE_ID"
+        CONTAINER_NAME="pipe-$TASK_ID-$PIPELINE_ID"
         IMAGE_NAME="coding-pipeline:latest" # Assuming the image is tagged as 'coding-pipeline:latest'
 
         # 1. Create a volume
@@ -136,57 +141,34 @@ case $COMMAND in
         ;;
         
     status)
-        if [ -z "$TASK_ID" ]; then
-            echo "Error: --task-id is required for status command"
-            exit 1
-        fi
+        require_param "task-id" "$TASK_ID" "status"
+        require_param "pipeline-id" "$PIPELINE_ID" "status"
         
-        # Use pipeline-specific container name if pipeline ID is provided
-        if [ -n "$PIPELINE_ID" ]; then
-            CONTAINER_NAME="pipe-$PIPELINE_ID"
-            echo "Checking status for pipeline '$PIPELINE_ID' (container '$CONTAINER_NAME')..."
-        else
-            # Backward compatibility: use task ID
-            CONTAINER_NAME="pipe-$TASK_ID"
-            echo "Checking status for pipeline '$CONTAINER_NAME'..."
-        fi
+        CONTAINER_NAME="pipe-$TASK_ID-$PIPELINE_ID"
         ./agents.sh status-container --container-name "$CONTAINER_NAME"
         ;;
         
     stop)
-        if [ -z "$TASK_ID" ]; then
-            echo "Error: --task-id is required for stop command"
-            exit 1
-        fi
-        
-        # Use pipeline-specific container name if pipeline ID is provided
-        if [ -n "$PIPELINE_ID" ]; then
-            CONTAINER_NAME="pipe-$PIPELINE_ID"
-            echo "Stopping pipeline '$PIPELINE_ID' (container '$CONTAINER_NAME')..."
-        else
-            # Backward compatibility: use task ID
-            CONTAINER_NAME="pipe-$TASK_ID"
-            echo "Stopping pipeline '$CONTAINER_NAME'..."
-        fi
+        require_param "task-id" "$TASK_ID" "stop"
+        require_param "pipeline-id" "$PIPELINE_ID" "stop"
+
+        CONTAINER_NAME="pipe-$TASK_ID-$PIPELINE_ID"
         ./agents.sh stop-container --container-name "$CONTAINER_NAME"
         ;;
         
     logs)
-        if [ -z "$TASK_ID" ]; then
-            echo "Error: --task-id is required for logs command"
-            exit 1
-        fi
-        
-        # Use pipeline-specific container name if pipeline ID is provided
-        if [ -n "$PIPELINE_ID" ]; then
-            CONTAINER_NAME="pipe-$PIPELINE_ID"
-            echo "Getting logs for pipeline '$PIPELINE_ID' (container '$CONTAINER_NAME')..."
-        else
-            # Backward compatibility: use task ID
-            CONTAINER_NAME="pipe-$TASK_ID"
-            echo "Getting logs for pipeline '$CONTAINER_NAME'..."
-        fi
+        require_param "task-id" "$TASK_ID" "logs"
+        require_param "pipeline-id" "$PIPELINE_ID" "logs"
+
+        CONTAINER_NAME="pipe-$TASK_ID-$PIPELINE_ID"
+        echo "Getting logs for pipeline '$PIPELINE_ID' (container '$CONTAINER_NAME')..."
         ./agents.sh logs-container --container-name "$CONTAINER_NAME"
+        ;;
+
+    list)
+        require_param "task-id" "$TASK_ID" "list"
+        
+        ./agents.sh list-containers | grep "$TASK_ID"
         ;;
         
     *)

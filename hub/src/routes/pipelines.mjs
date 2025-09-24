@@ -35,6 +35,28 @@ const listPipelines = async (taskId = null) => {
   return jsons.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 };
 
+// Alternative implementation using pipelines.sh script
+const listPipelinesViaScript = async (taskId = null) => {
+  try {
+    const pipelineScript = path.resolve(process.cwd(), 'pipelines.sh');
+    const args = ['list', '--format', 'json'];
+    
+    if (taskId) {
+      args.push('--task-id', taskId);
+    }
+    
+    const result = await $`${pipelineScript} ${args}`;
+    const pipelines = JSON.parse(result.stdout);
+    
+    // Sort by creation time, most recent first (same as the file-based version)
+    return pipelines.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  } catch (error) {
+    console.error('Error listing pipelines via script:', error);
+    // Fallback to the file-based implementation
+    return await listPipelines(taskId);
+  }
+};
+
 const generatePipelineId = async (taskId) => {
   // Get existing pipelines for this task to determine next sequential number
   const existingPipelines = await listPipelines(taskId);
@@ -58,7 +80,8 @@ $.verbose = !!process.env.DEBUG;
 router.get('/', async (req, res) => {
   try {
     const taskId = req.query.task;
-    const pipelines = await listPipelines(taskId);
+    // Use shell script implementation for better consistency with command-line tools
+    const pipelines = await listPipelinesViaScript(taskId);
     res.json(pipelines);
   } catch (error) {
     console.error('Error listing pipelines:', error);
