@@ -155,9 +155,59 @@
                 // Use the most recent pipeline id
                 const pipelineId = pipelines[pipelines.length - 1].id;
                 const res = await fetch(`${PIPELINES_API}/${encodeURIComponent(pipelineId)}/status`);
-                const text = await res.text();
-                if (!res.ok) throw new Error(text);
-                els.status.innerHTML = `<pre>${escapeHtml(text)}</pre>`;
+                if (!res.ok) {
+                    const text = await res.text();
+                    throw new Error(text);
+                }
+                // The status endpoint now returns JSON like { status: "running", ... }
+                let statusObj = null;
+                try {
+                    statusObj = await res.json();
+                } catch (e) {
+                    // If it isn't JSON, fall back to text
+                    const text = await res.text();
+                    els.status.innerHTML = `<pre>${escapeHtml(text)}</pre>`;
+                    return;
+                }
+
+                // Show the JSON prettified
+                els.status.innerHTML = `<pre>${escapeHtml(JSON.stringify(statusObj, null, 2))}</pre>`;
+
+                // Add a Start/Stop button depending on status
+                const status = String(statusObj.status || '').toLowerCase();
+                const isRunning = status === 'running' || status === 'restarting';
+                const btnContainer = document.createElement('div');
+                btnContainer.style.marginTop = '12px';
+                if (isRunning) {
+                    const stopBtn = document.createElement('button');
+                    stopBtn.className = 'btn';
+                    stopBtn.textContent = 'Stop Pipeline';
+                    stopBtn.onclick = async () => {
+                        const stopRes = await fetch(`${PIPELINES_API}/${encodeURIComponent(pipelineId)}/stop`, { method: 'POST' });
+                        if (stopRes.ok) {
+                            loadStatus();
+                        } else {
+                            alert('Failed to stop pipeline');
+                        }
+                    };
+                    btnContainer.appendChild(stopBtn);
+                } else {
+                    const startBtn = document.createElement('button');
+                    startBtn.className = 'btn primary';
+                    startBtn.textContent = 'Start Pipeline';
+                    startBtn.onclick = async () => {
+                        // Start pipeline by posting to /api/pipelines with the taskId extracted from pipeline id
+                        // pipeline id format: <taskId>_pipeline_<timestamp>
+                        const match = pipelineId.match(/^(.*)_pipeline_\d+$/);
+                        if (!match) return alert('Cannot determine taskId for this pipeline');
+                        const taskId = match[1];
+                        const res = await fetch('/api/pipelines', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ taskId, description: 'Manual start' }) });
+                        if (res.ok) loadStatus(); else alert('Failed to start pipeline');
+                    };
+                    btnContainer.appendChild(startBtn);
+                }
+
+                els.status.appendChild(btnContainer);
             } catch (e) {
                 els.status.innerHTML = `<div class="empty">Could not load status. ${escapeHtml(e.message)}</div>`;
             }

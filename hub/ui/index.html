@@ -382,8 +382,21 @@
                         // We'll consider the most recent pipeline (last in list) as the active one
                         if (Array.isArray(pipelines) && pipelines.length > 0) {
                             const latest = pipelines[pipelines.length - 1];
-                            // store as object with `id` to remain compatible with other code
-                            taskPipelines[task.id] = { id: latest.id };
+                            // Fetch the pipeline status endpoint which now returns JSON
+                            try {
+                                const statusRes = await fetch(`${PIPELINES_API}/${encodeURIComponent(latest.id)}/status`);
+                                if (statusRes.ok) {
+                                    const statusObj = await statusRes.json();
+                                    // store id + status so render() can decide to show Start/Stop
+                                    taskPipelines[task.id] = { id: latest.id, status: statusObj.status };
+                                } else {
+                                    // If status endpoint fails, still keep the id so user can view details
+                                    taskPipelines[task.id] = { id: latest.id, status: null };
+                                }
+                            } catch (e) {
+                                console.warn('Failed to fetch pipeline status for', latest.id, e);
+                                taskPipelines[task.id] = { id: latest.id, status: null };
+                            }
                         }
                     }
                 }
@@ -570,10 +583,16 @@
                 }
                 const rows = filtered.map(t => {
                     const activePipeline = taskPipelines[t.id];
-                    // Pipelines API currently returns only pipeline ids. If we have a pipeline id for the task,
-                    // treat it as an active pipeline that can be stopped.
+                    // activePipeline may include { id, status } where status matches docker's status values
                     const hasActivePipeline = !!(activePipeline && activePipeline.id);
-                    
+                    // Determine if the pipeline is currently running based on docker status
+                    // Docker statuses: created, restarting, running, removing, paused, exited, dead
+                    const pipelineStatus = activePipeline && activePipeline.status ? String(activePipeline.status).toLowerCase() : null;
+                    const isRunning = pipelineStatus === 'running' || pipelineStatus === 'restarting';
+
+                    // If we don't have a status but have an id, assume it's active (conservative: show Stop)
+                    const shouldShowStop = isRunning || (hasActivePipeline && pipelineStatus === null);
+
                     return `
                     <tr>
                         <td class="col-id">${escapeHtml(t.id)}</td>
@@ -581,8 +600,8 @@
                         <td class="col-desc desc">${escapeHtml(t.description || '')}</td>
                         <td class="col-actions">
                             <div class="actions">
-                                ${hasActivePipeline ? `<button class="btn icon" title="Stop Pipeline" aria-label="Stop Pipeline" onclick="stopPipeline('${t.id}')"><i class='fa fa-stop' aria-hidden='true'></i></button>` : ''}
-                                ${!hasActivePipeline && t.status === 'pending' ? `<button class="btn icon" title="Start Pipeline" aria-label="Start Pipeline" onclick="startPipeline('${t.id}')"><i class='fa fa-play' aria-hidden='true'></i></button>` : ''}
+                                ${shouldShowStop ? `<button class="btn icon" title="Stop Pipeline" aria-label="Stop Pipeline" onclick="stopPipeline('${t.id}')"><i class='fa fa-stop' aria-hidden='true'></i></button>` : ''}
+                                ${!shouldShowStop && t.status === 'pending' ? `<button class="btn icon" title="Start Pipeline" aria-label="Start Pipeline" onclick="startPipeline('${t.id}')"><i class='fa fa-play' aria-hidden='true'></i></button>` : ''}
                                 ${!hasActivePipeline && t.status === 'in-progress' ? `<button class="btn icon" title="Pause" aria-label="Pause" onclick="updateStatus('${t.id}','pending')"><i class='fa fa-pause' aria-hidden='true'></i></button>` : ''}
                                 <a href="pipeline.html?taskId=${t.id}" class="btn icon" title="Details" aria-label="Details"><i class='fa fa-info-circle' aria-hidden='true'></i></a>
                                 <button class="btn icon danger" title="Delete" aria-label="Delete" onclick="removeTask('${t.id}')"><i class='fa fa-trash' aria-hidden='true'></i></button>
