@@ -1,7 +1,7 @@
 - [ ] coding-pipeline - a docker image for running the pipelines
     - [x] Capture logs in Docker
     - [ ] Capture logs on AWS ECS using CloudWatch
-    - [ ] Enable coding pipeline to update the pipeline status in the hub (logs, running/finished)    
+    - [ ] Enable coding pipeline to update the pipeline status in the hub (logs, running/finished)
     - [x] Clone the git repo at the start of the pipeline
     - [ ] Implement a fake coding agent that doesn't use AI (changes background color depending on the task description)
 
@@ -14,7 +14,7 @@
     - [x] See pipeline details (logs)
     - [x] Create task (id, description)
     - [x] Import tasks from Jira
-    - [ ] Stop pipeline
+    - [ ] Properly distinguish active and stopped pipelines
 
 Milestone 1: Demo
 
@@ -37,5 +37,5 @@ Milestone 2: MVP
 
 - [ ] Custom pipeline definition
 - [ ] Containerized Pipeline stages
-- [ ] Jira integration
-- [ ] Teams integration
+- [ ] Better Jira integration (import more details, comments, attachments)
+- [ ] Teams integration (ask stakeholders for feedback, notifications etc.)

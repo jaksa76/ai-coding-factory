@@ -1,83 +1,72 @@
 # AI Coding Factory - Copilot Instructions
 
-This document provides guidance for AI coding agents working in the `ai-coding-factory` repository.
+Short, focused instructions to help an AI coding agent be immediately productive in this repository.
 
-## Architecture Overview
+## Big picture
+- This is a small monorepo with two main pieces:
+  - `hub/`: an Express (Node.js ESM) control-plane that exposes a REST API and serves static UI from `hub/ui/`.
+  - `coding-pipeline/`: Dockerized pipeline scripts and helpers orchestrated from the `hub` via shell scripts.
+- The `hub` stores tasks as JSON files in `$DATA_DIR/tasks` (default `/tmp/ai-coding-factory`), or `hub/demo-data/tasks` in dev. Shell scripts (`pipelines.sh`, `agents.sh`) are invoked via `zx` from the server.
 
-The `ai-coding-factory` is a monorepo containing two main components:
+## Why the structure
+- File-backed storage keeps the project simple and testable without a DB. The server shells out to pipeline scripts so the orchestration is explicit and easy to stub in tests.
 
-1.  **`hub/`**: A Node.js Express server that acts as the central control plane.
-    *   **API**: Exposes a REST API for managing `tasks`. The API is defined in `hub/src/routes/`.
-        *   `hub/src/routes/tasks.mjs` is the core of the API, handling CRUD operations for tasks.
-        *   Task data is stored as JSON files in the `demo-data/tasks/` directory (for development) or `/data/tasks` in the Docker container.
-    *   **UI**: Serves a static UI from the `hub/ui/` directory.
-    *   **Scripts**: Contains shell scripts (`agents.sh`, `pipelines.sh`) for interacting with AI agents and coding pipelines.
-2.  **`coding-pipeline/`**: A Dockerized coding pipeline.
-    *   `coding-pipeline/pipeline.sh` defines the stages of the pipeline (refining, planning, implementing, deploying, verifying).
-    *   This pipeline is triggered by the `hub` when a task's status is updated to `in-progress`.
+## Key files to read first
+- `hub/src/app.mjs` — app factory, middleware, route mounting.
+- `hub/src/routes/tasks.mjs` — task CRUD, import/jira endpoint, task id generation and status update logic.
+- `hub/src/routes/pipelines.mjs` — pipeline list/start/stop/status/log endpoints, pipeline id format.
+- `hub/ui/index.html` and `hub/ui/pipeline.html` — frontend expectations for API shapes.
+- `pipelines.sh`, `agents.sh`, `agents-docker.sh` — shell scripts invoked by the server (see `zx` usage in routes).
+- `hub/test/*.mjs` — concise examples of required API behavior and edge cases.
 
-### Data Flow
+## API contracts & important shapes (be strict)
+- Tasks API (`hub/src/routes/tasks.mjs`):
+  - `GET /api/tasks` → array of task objects stored as JSON files.
+  - `POST /api/tasks` → create task; returns `{ id, description, status }`. POST to `/api/tasks/:id` returns 405 (not allowed).
+  - `GET /api/tasks/:id`, `PUT /api/tasks/:id` (PUT without id → 400), `DELETE /api/tasks/:id`.
+  - `POST /api/tasks/import/jira` → accepts `{ site, email, token, project }` and calls `jira.sh`.
+  - Task id format: `task_${Date.now()}_${process.pid}` (see `generateId`).
 
-1.  A user creates a task via the UI, which calls the `POST /api/tasks` endpoint in the `hub`.
-2.  The `hub` creates a new JSON file for the task in the `tasks` directory.
-3.  When a task is ready to be worked on, the UI updates the task's status to `in-progress` via `PUT /api/tasks/:id`.
-4.  The `hub` then executes the `pipelines.sh` script, passing the task ID and description.
-5.  The `pipelines.sh` script (currently a placeholder) would then invoke the `coding-pipeline` to perform the actual coding work.
+- Pipelines API (`hub/src/routes/pipelines.mjs`):
+  - `GET /api/pipelines?task=<taskId>` → returns an array of objects `{ id }`. The list contains pipeline ids, not statuses.
+  - `POST /api/pipelines` → create/start pipeline. Body must include `{ taskId, description }`; returns `201` with `{ id }`.
+  - `POST /api/pipelines/:pipelineId/stop` → stops a pipeline. Pipeline id must match `^(.+)_pipeline_\d+$` (extracts taskId).
+  - `GET /api/pipelines/:pipelineId/status` and `/logs` → return text/plain output from the underlying script.
+  - Pipeline id format: `${taskId}_pipeline_${Date.now()}` (see `generatePipelineId`).
 
-## Developer Workflow
+## Code patterns & conventions
+- Source files in `hub/src` use ESM `.mjs` modules — keep imports/exports as ESM.
+- `zx` is used to run shell scripts; `$.verbose` is toggled by `process.env.DEBUG`.
+- Tests use `vitest` + `supertest`. Tests may set `process.env.DATA_DIR` before importing `app` to isolate state.
+- The UI is static HTML with inline JavaScript in `hub/ui/` and calls API endpoints directly; keep API contracts stable when changing routes.
 
-### Prerequisites
 
-*   Node.js (v18+)
-*   Docker
+## Developer workflow
 
-### Running the Hub
+### Scripts (pipelines, agents, jira)
 
-To run the `hub` server in development mode:
+Testing is performed manually by running the scripts directly. There is no automated test mechanism for now.
 
-```bash
-npm run dev
-```
+### Hub Backend
 
-This will start the server with `nodemon` and use the `demo-data` directory for task storage.
+Run the tests with `npm test` in `hub/`.
 
-### Running Tests
+### Hub UI
 
-The `hub` uses `vitest` for testing. To run the tests:
+Run the server with `npm run dev` in `hub/` and open `http://localhost:8080` in a browser.
 
-```bash
-npm test
-```
+### Coding Pipeline
 
-The tests are located in `hub/test/` and use `supertest` to make requests to the API. The test data directory is `hub/test/.data-test`.
+Build the docker image using `docker build -t coding-pipeline coding-pipeline/`.
 
-### Building and Running with Docker
 
-To build the `hub` Docker image:
+## Editing guidance — safe, minimal changes
+- If you change pipeline start/stop semantics, update both `hub/src/routes/pipelines.mjs` and `pipelines.sh` to keep the API contract consistent.
+- When changing task state handling in `tasks.mjs`, keep the same HTTP semantics (status codes) used in tests: 400 for missing ID/invalid JSON, 405 for POST with ID, 404 when resources missing.
+- Prefer updating the small JSON files under `demo-data/tasks/` for local manual testing.
 
-```bash
-docker build -t ai-coding-factory-hub .
-```
+## Integration points / external dependencies
+- Shell scripts: `pipelines.sh`, `agents.sh`, and `jira.sh`.
+- Docker: pipeline runner expects Docker available when starting actual containers.
+- No external DB; persistence is file-backed under `$DATA_DIR/tasks`.
 
-To run the `hub` container:
-
-```bash
-docker run -p 8080:8080 -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd)/demo-data:/data ai-coding-factory-hub
-```
-
-## Conventions
-
-*   The `hub` uses ES Modules (`.mjs`).
-*   The `zx` library is used for running shell commands within the Node.js application.
-*   API routes are defined in separate files in `hub/src/routes/`.
-*   The `fs-extra` library is used for file system operations.
-
-## Key Files
-
-*   `hub/src/app.mjs`: Express app factory, used by both the server and tests.
-*   `hub/src/server.mjs`: The main entry point for the `hub` server.
-*   `hub/src/routes/tasks.mjs`: The core logic for the `tasks` API.
-*   `hub/test/tasks.test.mjs`: Tests for the `tasks` API.
-*   `coding-pipeline/pipeline.sh`: The main script for the coding pipeline.
-*   `hub/Dockerfile`: Dockerfile for the `hub` server.
-*   `coding-pipeline/Dockerfile`: Dockerfile for the coding pipeline.

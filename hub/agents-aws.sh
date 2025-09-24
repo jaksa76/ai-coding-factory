@@ -9,6 +9,7 @@ show_usage() {
     echo "Commands:"
     echo "  create-volume       Create a new volume that can be attached to a container"
     echo "  delete-volume       Delete an existing volume"
+    echo "  list-volumes        List Docker volumes"
     echo "  start-container     Start an agent container"
     echo "  stop-container      Stop an agent container"
     echo "  status-container    Show agent container status"

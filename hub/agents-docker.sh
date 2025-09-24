@@ -155,15 +155,20 @@ case $COMMAND in
     status-container)
         require_param "container-name" "$CONTAINER_NAME" "$COMMAND"
         
-        # Add prefix to container name
-        FULL_CONTAINER_NAME="ai-coding-factory-container-$CONTAINER_NAME"
-        
-        echo "Checking status for Docker container '$FULL_CONTAINER_NAME'..."
-        docker ps -a --filter "name=$FULL_CONTAINER_NAME"
-        
-        echo ""
-        echo "--- DETAILS ---"
-        docker inspect "$FULL_CONTAINER_NAME"
+        FULL_CONTAINER_NAME="ai-coding-factory-container-$CONTAINER_NAME"        
+
+        # Get container inspect JSON
+        INSPECT_JSON=$(docker inspect "$FULL_CONTAINER_NAME")
+        if [ $? -ne 0 ]; then
+            echo "{\"error\": \"Container '$FULL_CONTAINER_NAME' not found\"}"
+            exit 1
+        fi
+
+        # Extract status using jq if available, else fallback to grep/sed
+        STATUS=$(echo "$INSPECT_JSON" | jq -r '.[0].State.Status')
+
+        # Output wrapped JSON
+        echo "{\"name\": \"$CONTAINER_NAME\", \"status\": \"$STATUS\", \"details\": $INSPECT_JSON}"
         ;;
     list-containers)
         echo "Listing AI Coding Factory Docker containers..."
