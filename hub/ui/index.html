@@ -378,10 +378,12 @@
                     const res = await fetch(`${PIPELINES_API}?task=${task.id}`);
                     if (res.ok) {
                         const pipelines = await res.json();
-                        // Find the most recent active pipeline (running or starting)
-                        const activePipeline = pipelines.find(p => p.status === 'running' || p.status === 'starting');
-                        if (activePipeline) {
-                            taskPipelines[task.id] = activePipeline;
+                        // The pipelines API returns an array of objects like { id }
+                        // We'll consider the most recent pipeline (last in list) as the active one
+                        if (Array.isArray(pipelines) && pipelines.length > 0) {
+                            const latest = pipelines[pipelines.length - 1];
+                            // store as object with `id` to remain compatible with other code
+                            taskPipelines[task.id] = { id: latest.id };
                         }
                     }
                 }
@@ -568,7 +570,9 @@
                 }
                 const rows = filtered.map(t => {
                     const activePipeline = taskPipelines[t.id];
-                    const hasActivePipeline = activePipeline && (activePipeline.status === 'running' || activePipeline.status === 'starting');
+                    // Pipelines API currently returns only pipeline ids. If we have a pipeline id for the task,
+                    // treat it as an active pipeline that can be stopped.
+                    const hasActivePipeline = !!(activePipeline && activePipeline.id);
                     
                     return `
                     <tr>

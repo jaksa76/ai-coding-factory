@@ -122,8 +122,9 @@
     </main>
 
     <script>
-        const API_BASE = '/api/tasks';
-        const taskId = new URLSearchParams(window.location.search).get('taskId');
+    const API_BASE = '/api/tasks';
+    const PIPELINES_API = '/api/pipelines';
+    const taskId = new URLSearchParams(window.location.search).get('taskId');
 
         const els = {
             status: document.getElementById('status'),
@@ -142,7 +143,18 @@
                 return;
             }
             try {
-                const res = await fetch(`${API_BASE}/${taskId}/status`);
+                // First, get pipelines for this task
+                const listRes = await fetch(`${PIPELINES_API}?task=${taskId}`);
+                if (!listRes.ok) throw new Error('Failed to list pipelines');
+                const pipelines = await listRes.json();
+                if (!Array.isArray(pipelines) || pipelines.length === 0) {
+                    els.status.innerHTML = '<div class="empty">No pipelines found for this task.</div>';
+                    return;
+                }
+
+                // Use the most recent pipeline id
+                const pipelineId = pipelines[pipelines.length - 1].id;
+                const res = await fetch(`${PIPELINES_API}/${encodeURIComponent(pipelineId)}/status`);
                 const text = await res.text();
                 if (!res.ok) throw new Error(text);
                 els.status.innerHTML = `<pre>${escapeHtml(text)}</pre>`;
@@ -157,7 +169,17 @@
                 return;
             }
             try {
-                const res = await fetch(`${API_BASE}/${taskId}/logs`);
+                // First, list pipelines for the task and use the latest pipeline id
+                const listRes = await fetch(`${PIPELINES_API}?task=${taskId}`);
+                if (!listRes.ok) throw new Error('Failed to list pipelines');
+                const pipelines = await listRes.json();
+                if (!Array.isArray(pipelines) || pipelines.length === 0) {
+                    els.logs.innerHTML = '<div class="empty">No pipelines found for this task.</div>';
+                    return;
+                }
+
+                const pipelineId = pipelines[pipelines.length - 1].id;
+                const res = await fetch(`${PIPELINES_API}/${encodeURIComponent(pipelineId)}/logs`);
                 const text = await res.text();
                 if (!res.ok) throw new Error(text);
                 els.logs.innerHTML = `<pre>${escapeHtml(text)}</pre>`;
