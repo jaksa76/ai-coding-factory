@@ -133,7 +133,17 @@ case $COMMAND in
             AGENT_COMMAND="$AGENT_COMMAND --env \"GIT_TOKEN=$GIT_TOKEN\""
             echo "Git token: [REDACTED - length: ${#GIT_TOKEN} characters]"
         fi
-        
+
+        if [ -n "$GH_TOKEN" ]; then
+            AGENT_COMMAND="$AGENT_COMMAND --env \"GH_TOKEN=$GH_TOKEN\""
+            echo "GitHub token (Copilot): [REDACTED - length: ${#GH_TOKEN} characters]"
+        fi
+
+        if [ -n "$GH_USERNAME" ]; then
+            AGENT_COMMAND="$AGENT_COMMAND --env \"GH_USERNAME=$GH_USERNAME\""
+            echo "GitHub username (Copilot): $GH_USERNAME"
+        fi
+
         # Execute the command
         eval $AGENT_COMMAND
         

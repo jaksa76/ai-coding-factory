@@ -8,6 +8,21 @@ exec 2>&1
 #   GIT_REPO_URL - The URL of the git repository
 #   GIT_TOKEN - The git access token (optional)
 #   GIT_USERNAME - The git username (optional)
+#   GH_TOKEN - GitHub token for Copilot CLI authentication (required)
+#   GH_USERNAME - GitHub username for Copilot CLI authentication (required)
+
+# Verify GH_TOKEN and GH_USERNAME are set before proceeding
+if [ -z "$GH_TOKEN" ]; then
+  echo "ERROR: GH_TOKEN is required for GitHub Copilot CLI authentication"
+  exit 1
+fi
+if [ -z "$GH_USERNAME" ]; then
+  echo "ERROR: GH_USERNAME is required for GitHub Copilot CLI authentication"
+  exit 1
+fi
+
+# Inject credentials into copilot config
+sed -i "s|\${GH_USERNAME}|${GH_USERNAME}|g; s|\${GH_TOKEN}|${GH_TOKEN}|g" /root/.copilot/config.json
 
 # Define the pipeline stages
 stages=("cloning" "refining" "planning" "implementing" "deploying" "verifying")
@@ -16,116 +31,61 @@ stages=("cloning" "refining" "planning" "implementing" "deploying" "verifying")
 cloning() {
   echo "AGENT: Cloning the repository from ${GIT_REPO_URL}"
   cd /workspace
-  # Clone the repository using the provided credentials (if any
+  # Clone the repository using the provided credentials (if any)
   if [ -n "$GIT_USERNAME" ] && [ -n "$GIT_TOKEN" ]; then
     TRUNCATED_TOKEN="****${GIT_TOKEN: -4}"
     echo "AGENT: Using GIT_USERNAME=${GIT_USERNAME} and GIT_TOKEN=${TRUNCATED_TOKEN}"
     # Use sed to inject username and token into the URL
-    # This is a bit of a hack, but it's simple and works for https URLs
     CLONE_URL=$(echo "$GIT_REPO_URL" | sed "s|https://|https://${GIT_USERNAME}:${GIT_TOKEN}@|")
     git clone "$CLONE_URL" .
   else
     git clone "$GIT_REPO_URL" .
   fi
-  sleep 2
-  echo "AGENT: I have cloned the repository."
+  echo "AGENT: Repository cloned successfully."
   ls -la
 }
 
+# Common copilot flags for non-interactive pipeline use
+COPILOT_FLAGS="--yolo --no-ask-user --add-dir /workspace --model gpt-4.1"
+
 # Define the refining stage
 refining() {
-  echo "AGENT: Refining the requirements..."
-  sleep 3
-  echo "AGENT: First, I need to understand the requirements."
-  echo "AGENT: Task ID: $TASK_ID"
-  echo "AGENT: Task Description:"
-  echo "$TASK_DESCRIPTION"
-  echo
-  echo "AGENT: Identifying vague points..."
-  sleep 1
-  echo "AGENT: Generating clarifying questions..."
-  sleep 1
-  echo "AGENT: Asking stakeholders for clarification on the requirements..."
-  sleep 5
-  echo "AGENT: Updating requirements with new information..."
-  sleep 1
-  echo "AGENT: I have refined the requirements."
+  echo "AGENT: Refining requirements using GitHub Copilot..."
+  cd /workspace
+  copilot -p "Analyze the following task requirements and identify any ambiguities, edge cases, or missing details. Provide a refined specification ready for implementation. Task ID: $TASK_ID. Task: $TASK_DESCRIPTION" \
+    $COPILOT_FLAGS
 }
 
 # Define the planning stage
 planning() {
-  echo "AGENT: Planning the implementation..."
-  echo "AGENT: Now that I understand the requirements, I will create a plan."
-  echo "AGENT: Creating several options..."
-  sleep 2
-  echo "AGENT: 3 options generated."
-  echo "AGENT: Evaluating pros and cons of option 1..."
-  sleep 2
-  echo "AGENT: Evaluating pros and cons of option 2..."
-  sleep 2
-  echo "AGENT: Evaluating pros and cons of option 3..."
-  sleep 2
-  echo "AGENT: Choosing the best option..."
-  sleep 1
-  echo "AGENT: Detailing the chosen option..."
-  sleep 1
-  echo "AGENT: Validating the detailed plan..."
-  sleep 1
-  echo "AGENT: I have created a plan."
+  echo "AGENT: Planning the implementation using GitHub Copilot..."
+  cd /workspace
+  copilot -p "Based on the repository codebase, create a detailed step-by-step implementation plan for the following task. Identify which files to modify, functions to add or change, and the testing approach. Task: $TASK_DESCRIPTION" \
+    $COPILOT_FLAGS
 }
 
 # Define the implementing stage
 implementing() {
-  echo "AGENT: Implementing the solution..."
-  echo "AGENT: The plan is ready, I will start coding now."
-  for i in {1..3}; do
-    echo "AGENT: Coding iteration $i..."
-    sleep 2
-    echo "AGENT: Running tests..."
-    sleep 1
-    echo "AGENT: Refactoring code..."
-    sleep 1
-  done
-  echo "AGENT: Reviewing the security aspects..."
-  sleep 1
-  echo "AGENT: Reviewing the performance aspects..."
-  sleep 1
-  echo "AGENT: Running integration tests..."
-  sleep 3
-  echo "AGENT: I have implemented the solution."
+  echo "AGENT: Implementing the solution using GitHub Copilot..."
+  cd /workspace
+  copilot -p "Implement the following task in the repository at /workspace. Make all necessary code changes, run tests to verify correctness, and ensure the implementation is complete. Task: $TASK_DESCRIPTION" \
+    $COPILOT_FLAGS
 }
 
 # Define the deploying stage
 deploying() {
-  echo "AGENT: Deploying the application..."
-  echo "AGENT: Creating ephemeral environment..."
-  sleep 2
-  echo "AGENT: The code is ready, I will deploy it now."
-  sleep 1
-  echo "AGENT: Running readiness probe..."
-  sleep 1
-  echo "AGENT: I have deployed the application."
+  echo "AGENT: Preparing deployment summary using GitHub Copilot..."
+  cd /workspace
+  copilot -p "Review the implemented changes in the repository and prepare a deployment summary. List all changed files, describe what was changed and why, and provide any deployment instructions or configuration changes needed. Task: $TASK_DESCRIPTION" \
+    $COPILOT_FLAGS
 }
 
 # Define the verifying stage
 verifying() {
-  echo "AGENT: Verifying the deployment..."
-  echo "AGENT: The deployment is done, I will verify it now."
-  echo "AGENT: Running smoke tests..."
-  sleep 1
-  echo "AGENT: Running full e2e test suite..."
-  sleep 5
-  echo "AGENT: Requesting code review from reviewer..."
-  sleep 1
-  echo "AGENT: Taking screenshots..."
-  sleep 1
-  echo "AGENT: Creating QA report..."
-  sleep 1
-  echo "AGENT: Creating PR..."
-  sleep 1
-  echo "AGENT: Requesting QA review from QA team..."
-  sleep 1
-  echo "AGENT: Requesting UAT from product team..."
+  echo "AGENT: Verifying the implementation using GitHub Copilot..."
+  cd /workspace
+  copilot -p "Verify the implementation of the following task. Run any available tests, check code quality, review edge cases, and produce a verification report with a pass/fail status and findings. Task: $TASK_DESCRIPTION" \
+    $COPILOT_FLAGS
 }
 
 
