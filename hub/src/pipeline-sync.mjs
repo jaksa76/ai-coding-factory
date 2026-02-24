@@ -1,7 +1,7 @@
 import { $ } from 'zx';
 import path from 'node:path';
 import { chalk } from 'zx';
-import * as pipelinesStore from './pipelines-store.mjs';
+import * as pipelinesStore from './routes/pipelines.mjs';
 
 $.verbose = !!process.env.DEBUG;
 

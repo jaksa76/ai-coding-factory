@@ -19,7 +19,7 @@ The system is built from a small number of composable parts:
 ┌────────────────────────▼────────────────────────────────┐
 │                   Hub (Express)                         │
 │  REST API · static file serving · shell orchestration   │
-│  src/app.mjs · src/routes/ · src/pipelines-store.mjs    │
+│  src/app.mjs · src/routes/                              │
 └──────┬──────────────────────────────────────┬───────────┘
        │ reads/writes JSON files              │ spawns via zx
        │                                     │
@@ -60,8 +60,7 @@ The system is built from a small number of composable parts:
 - **`app.mjs`** — Express app factory; mounts middleware and routes. Used directly by tests.
 - **`server.mjs`** — process entry point; starts the HTTP listener.
 - **`routes/tasks.mjs`** — task CRUD over the file store.
-- **`routes/pipelines.mjs`** — pipeline lifecycle endpoints; orchestrates the file store and `pipelines.sh`.
-- **`src/pipelines-store.mjs`** — all pipeline file I/O in one place (create, read, list, update pipeline and stage records).
+- **`routes/pipelines.mjs`** — pipeline lifecycle endpoints; orchestrates the persistent data and `pipelines.sh`.
 - Shell scripts are invoked via `zx` for container start/stop/status/logs.
 - `process.env.DATA_DIR` controls the root of the file store (default `/tmp/ai-coding-factory`).
 

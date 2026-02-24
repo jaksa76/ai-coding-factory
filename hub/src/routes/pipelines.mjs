@@ -1,15 +1,65 @@
 import express from 'express';
 import { $, chalk } from 'zx';
 import path from 'node:path';
-import * as pipelinesStore from '../pipelines-store.mjs';
 
 const router = express.Router();
+
+const getDataDir = () => process.env.DATA_DIR || '/tmp/ai-coding-factory';
+
+export const getPipelinesDir = () => path.join(getDataDir(), 'pipelines');
+
+export const pipelinePath = (pipelineId) => path.join(getPipelinesDir(), `${pipelineId}.json`);
 
 // Ensure zx doesn't print commands in tests unless DEBUG
 $.verbose = !!process.env.DEBUG;
 
 // Per-taskId locks to serialize concurrent POSTs so each gets a unique number
 const _locks = new Map();
+
+export const createPipeline = async (record) => {
+  await fs.ensureDir(getPipelinesDir());
+  await fs.outputJSON(pipelinePath(record.id), record, { spaces: 2 });
+};
+
+export const getPipeline = async (pipelineId) => {
+  const file = pipelinePath(pipelineId);
+  if (!(await fs.pathExists(file))) return null;
+  return fs.readJSON(file);
+};
+
+export const listPipelines = async (taskId) => {
+  await fs.ensureDir(getPipelinesDir());
+  const files = await fs.readdir(getPipelinesDir());
+  const results = [];
+  for (const f of files) {
+    if (!f.endsWith('.json')) continue;
+    if (taskId && !f.startsWith(`${taskId}_pipeline_`)) continue;
+    try {
+      const record = await fs.readJSON(path.join(getPipelinesDir(), f));
+      results.push(record);
+    } catch {}
+  }
+  return results;
+};
+
+export const updatePipeline = async (pipelineId, fields) => {
+  const file = pipelinePath(pipelineId);
+  const current = await fs.readJSON(file);
+  const updated = { ...current, ...fields };
+  await fs.outputJSON(file, updated, { spaces: 2 });
+  return updated;
+};
+
+export const upsertStage = async (pipelineId, position, stageData) => {
+  const file = pipelinePath(pipelineId);
+  const record = await fs.readJSON(file);
+  const stages = record.stages || [];
+  stages[position] = { ...stageData };
+  record.stages = stages;
+  await fs.outputJSON(file, record, { spaces: 2 });
+  return record;
+};
+
 
 // Allocate a pipeline ID and write the initial record atomically under a per-taskId lock
 const allocatePipeline = async (taskId, record) => {

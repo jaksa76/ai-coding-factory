@@ -46,7 +46,6 @@ mock-coding-pipeline/  Lightweight mock agent for local testing
 - **`routes/tasks.mjs`** — Task CRUD over the file store.
 - **`routes/pipelines.mjs`** — Pipeline lifecycle (create, stop, status, logs); calls `pipelines.sh` via `zx`.
 - **`routes/status.mjs`** — Pipeline/stage write-back endpoints called by `pipeline-client.sh`.
-- **`pipelines-store.mjs`** — All pipeline file I/O in one place (create, read, list, upsert stage).
 - **`pipeline-sync.mjs`** — Background sync that reconciles pipeline state from the container runtime every 10 s.
 
 ### File Store

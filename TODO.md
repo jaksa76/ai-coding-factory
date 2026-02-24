@@ -6,7 +6,8 @@
 - [x] Create a .env file for various credentials
 - [x] Periodically check the status of pipelines and update the hub (in case of crashes etc.)
 - [x] Add playwright tests for the hub
-- [ ] Analyse architecture of the app and identify areas for improvement (e.g. better separation of concerns, more modular design)
+- [x] Analyse architecture of the app and identify areas for improvement (e.g. better separation of concerns, more modular design)
+
 - [ ] Ensure documentation is up to date
 - [ ] Commit changes on successful pipeline execution
 - [ ] Add Claude Code as coding agent (allow selection)

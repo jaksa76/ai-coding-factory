@@ -12,7 +12,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import supertest from 'supertest';
 import fs from 'fs-extra';
 import { createApp } from '../src/app.mjs';
-import { createPipeline } from '../src/pipelines-store.mjs';
+import { createPipeline } from '../src/routes/pipelines.mjs';
 
 let server;
 let api;
