@@ -224,3 +224,54 @@ The Hub container requires the Docker socket (`/var/run/docker.sock`) mounted to
 - Tests set `process.env.DATA_DIR` to an isolated temp directory before importing `app.mjs`, so no real data is touched.
 - Shell script calls (`pipelines.sh`, `agents.sh`) are not invoked in tests; the file store layer is exercised directly.
 - Run tests: `npm test` from the `hub/` directory.
+
+---
+
+## Known Issues and Areas for Improvement
+
+Recorded during architecture review (2026-02-24).
+
+### Bugs
+
+**`TASKS_DIR` undefined in the Jira import handler** (`routes/tasks.mjs:139`)
+The variable `TASKS_DIR` is passed to `jira.sh` but is never declared in scope — the correct call is `getTasksDir()`. This throws a `ReferenceError` at runtime when the Jira import endpoint is hit.
+
+### Dead / misleading code
+
+**Dead code block in `routes/tasks.mjs` PUT handler** (lines 82–102)
+The block detects a status transition to `'in-progress'` and was intended to trigger a pipeline, but only prints a `console.log` and does nothing. It should be removed.
+
+### Structural inconsistencies
+
+**Tasks have no store module**
+`routes/pipelines.mjs` contains dedicated store functions (`createPipeline`, `getPipeline`, `listPipelines`, `updatePipeline`, `upsertStage`). Tasks duplicate the same pattern (inline `getDataDir`, `getTasksDir`, `listTasks`, `readJSON`, `writeJSON`) inside the route file. A `tasks-store.mjs` should be extracted for symmetry and independent testability.
+
+**`$.verbose` set as a side-effect in multiple modules**
+`$.verbose = !!process.env.DEBUG` is executed at module load time in `routes/tasks.mjs`, `routes/pipelines.mjs`, and `pipeline-sync.mjs`. Because `zx`'s `$` is a shared singleton, the last module to load wins. It should be set once at startup in `server.mjs`.
+
+**`pipelineScript` path repeated in multiple places**
+`path.resolve(process.cwd(), 'pipelines.sh')` is repeated four times inside `routes/pipelines.mjs` (start, stop, status, logs handlers) and once more in `pipeline-sync.mjs`. It should be a single module-level constant.
+
+**Status value inconsistency: `in-progress` vs `in_progress`**
+Tasks use the hyphenated value `'in-progress'`; pipeline/stage statuses use underscored values (`'in_progress'`, `'needs_review'`, etc.). The UI status filter also uses `'in-progress'`. This divergence will cause silent filter and comparison bugs as the two entities become more tightly coupled.
+
+### Data model gaps
+
+**Task schema is minimal compared to the data model**
+Tasks are currently created with only `{ id, description, status }`. The canonical data model (`docs/DATA_MODEL.md`) specifies `title`, `project_id`, `priority`, `source`, `external_id`, `external_url`, `created_at`, `updated_at`. The task route does not populate or validate these fields.
+
+**Projects API not implemented**
+The architecture defines `GET/POST /api/projects` and `GET/PUT/DELETE /api/projects/:id`, but no `routes/projects.mjs` exists and the route is not mounted in `app.mjs`. The task model also lacks `project_id`.
+
+### Performance
+
+**`loadPipelineStatus` in `index.html` makes O(n × 2) serial HTTP calls**
+On every board refresh, the UI fetches `/api/pipelines?task=<id>` sequentially for every task, then fetches `/api/pipelines/:id/status` for the latest pipeline of each task. With 20 tasks this is 40 serial requests. At minimum these should be parallelised with `Promise.all`; a better fix would be a batch endpoint or returning the latest pipeline inline with the task list.
+
+**Pipeline detail page polls unconditionally**
+`pipeline.html` polls stages and logs every 3 seconds via `setInterval` regardless of pipeline status. It should stop polling once a terminal state (`completed`, `failed`, `stopped`) is reached.
+
+### Robustness
+
+**`pipeline-sync` marks "container not found" as `failed`**
+In `pipeline-sync.mjs`, when the container is not found (`data.error` is truthy), the pipeline is immediately marked `failed`. A missing container can also mean a clean stop or successful completion where the container was already removed. The sync should check the pipeline's current persisted status before overriding it.

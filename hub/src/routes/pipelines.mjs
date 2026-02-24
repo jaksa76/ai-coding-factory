@@ -1,6 +1,7 @@
 import express from 'express';
 import { $, chalk } from 'zx';
 import path from 'node:path';
+import fs from 'fs-extra';
 
 const router = express.Router();
 
@@ -13,8 +14,19 @@ export const pipelinePath = (pipelineId) => path.join(getPipelinesDir(), `${pipe
 // Ensure zx doesn't print commands in tests unless DEBUG
 $.verbose = !!process.env.DEBUG;
 
-// Per-taskId locks to serialize concurrent POSTs so each gets a unique number
-const _locks = new Map();
+// Monotonically increasing timestamp so same-millisecond concurrent requests still get unique IDs.
+// Node is single-threaded so this read-modify-write is safe with no lock.
+let _lastTs = 0;
+const generatePipelineId = (taskId) => {
+  const now = Date.now();
+  _lastTs = now > _lastTs ? now : _lastTs + 1;
+  const d = new Date(_lastTs);
+  const pad = (n, w = 2) => String(n).padStart(w, '0');
+  const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}` +
+             `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}` +
+             `${pad(d.getMilliseconds(), 3)}`;
+  return `${taskId}_pipeline_${ts}`;
+};
 
 export const createPipeline = async (record) => {
   await fs.ensureDir(getPipelinesDir());
@@ -61,28 +73,10 @@ export const upsertStage = async (pipelineId, position, stageData) => {
 };
 
 
-// Allocate a pipeline ID and write the initial record atomically under a per-taskId lock
 const allocatePipeline = async (taskId, record) => {
-  const prev = _locks.get(taskId) ?? Promise.resolve();
-  let resolve;
-  const next = new Promise((r) => { resolve = r; });
-  _locks.set(taskId, next);
-  try {
-    await prev;
-    const existing = await pipelinesStore.listPipelines(taskId);
-    const numbers = existing
-      .map(p => {
-        const match = p.id.match(new RegExp(`${taskId}_pipeline_(\\d+)$`));
-        return match ? parseInt(match[1]) : 0;
-      })
-      .filter(n => n > 0);
-    const nextNum = numbers.length > 0 ? Math.max(...numbers) + 1 : 1;
-    const pipelineId = `${taskId}_pipeline_${nextNum}`;
-    await pipelinesStore.createPipeline({ ...record, id: pipelineId });
-    return pipelineId;
-  } finally {
-    resolve();
-  }
+  const pipelineId = generatePipelineId(taskId);
+  await createPipeline({ ...record, id: pipelineId });
+  return pipelineId;
 };
 
 // GET /pipelines?task=<task_id> - List all pipelines for a task
@@ -92,7 +86,7 @@ router.get('/', async (req, res) => {
     if (!taskId) {
       return res.status(400).json({ error: 'Missing task parameter', message: 'task query parameter is required' });
     }
-    const pipelines = await pipelinesStore.listPipelines(taskId);
+    const pipelines = await listPipelines(taskId);
     res.json(pipelines);
   } catch (error) {
     console.error('Error listing pipelines:', error);
@@ -103,7 +97,7 @@ router.get('/', async (req, res) => {
 // GET /pipelines/:pipelineId - Get a single pipeline record
 router.get('/:pipelineId', async (req, res) => {
   try {
-    const pipeline = await pipelinesStore.getPipeline(req.params.pipelineId);
+    const pipeline = await getPipeline(req.params.pipelineId);
     if (!pipeline) return res.status(404).json({ error: 'Pipeline not found' });
     res.json(pipeline);
   } catch (error) {
@@ -144,9 +138,9 @@ router.post('/', async (req, res) => {
 
       await $({ env: { ...process.env, MOCK_MODE: mockMode || '', MOCK_SCRIPT: mockScript || '' } })`${pipelineScript} ${args}`;
 
-      await pipelinesStore.updatePipeline(pipelineId, { status: 'running' });
+      await updatePipeline(pipelineId, { status: 'running' });
 
-      res.status(201).json(await pipelinesStore.getPipeline(pipelineId));
+      res.status(201).json(await getPipeline(pipelineId));
     } catch (err) {
       console.error(chalk.red(`Pipeline ${pipelineId} failed to start:`), err);
       res.status(500).json({
@@ -164,9 +158,9 @@ router.post('/', async (req, res) => {
 router.put('/:pipelineId', async (req, res) => {
   try {
     const { pipelineId } = req.params;
-    const pipeline = await pipelinesStore.getPipeline(pipelineId);
+    const pipeline = await getPipeline(pipelineId);
     if (!pipeline) return res.status(404).json({ error: 'Pipeline not found' });
-    const updated = await pipelinesStore.updatePipeline(pipelineId, req.body);
+    const updated = await updatePipeline(pipelineId, req.body);
     res.json(updated);
   } catch (error) {
     console.error('Error updating pipeline:', error);
@@ -182,9 +176,9 @@ router.put('/:pipelineId/stages/:position', async (req, res) => {
     if (isNaN(position)) {
       return res.status(400).json({ error: 'Invalid position', message: 'Stage position must be a number' });
     }
-    const pipeline = await pipelinesStore.getPipeline(pipelineId);
+    const pipeline = await getPipeline(pipelineId);
     if (!pipeline) return res.status(404).json({ error: 'Pipeline not found' });
-    const updated = await pipelinesStore.upsertStage(pipelineId, position, req.body);
+    const updated = await upsertStage(pipelineId, position, req.body);
     res.json(updated);
   } catch (error) {
     console.error('Error upserting stage:', error);
@@ -210,9 +204,9 @@ router.post('/:pipelineId/stop', async (req, res) => {
       const pipelineScript = path.resolve(process.cwd(), 'pipelines.sh');
       await $`${pipelineScript} stop --task-id ${taskId} --pipeline-id ${pipelineId}`;
 
-      await pipelinesStore.updatePipeline(pipelineId, { status: 'stopped' });
+      await updatePipeline(pipelineId, { status: 'stopped' });
 
-      res.json(await pipelinesStore.getPipeline(pipelineId));
+      res.json(await getPipeline(pipelineId));
     } catch (err) {
       console.error(chalk.red(`Failed to stop pipeline ${pipelineId}:`), err);
       res.status(500).json({

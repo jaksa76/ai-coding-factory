@@ -88,7 +88,7 @@ Changing these breaks the UI and the pipeline agent:
 - `POST /api/pipelines` requires `{ taskId, description }` → 201 `{ id }`.
 - `POST /api/pipelines/:id/stop` — pipeline id must match `^(.+)_pipeline_\d+$`.
 - `PUT /api/pipelines/:id/stages/:position` — upserts a stage by zero-based position.
-- ID formats: `task_<ts>_<pid>`, `project_<ts>_<pid>`, `<taskId>_pipeline_<ts>`, `<pipelineId>_stage_<position>`.
+- ID formats: `task_<ts>_<pid>`, `project_<ts>_<pid>`, `<taskId>_pipeline_<YYYYMMDDhhmmssmmm>`, `<pipelineId>_stage_<position>`.
 
 ## Environment Variables
 

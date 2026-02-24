@@ -133,6 +133,11 @@ case $COMMAND in
             exit 1
         }
         
+        # Remove any pre-existing container with this name (e.g. from a previous run that
+        # was not explicitly stopped, or from a test run that wiped the data dir).
+        # Logs are intentionally not kept with --rm; this achieves the same effect on restart.
+        docker rm -f "$FULL_CONTAINER_NAME" 2>/dev/null || true
+
         # Run the container (no --rm so logs remain readable after the container exits)
         docker run -d --name "$FULL_CONTAINER_NAME" \
             -v "$VOLUME:/workspace" \
