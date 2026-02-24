@@ -7,15 +7,23 @@
 - [x] Periodically check the status of pipelines and update the hub (in case of crashes etc.)
 - [x] Add playwright tests for the hub
 - [x] Analyse architecture of the app and identify areas for improvement (e.g. better separation of concerns, more modular design)
-
-- [ ] Ensure documentation is up to date
+- [x] The variable `TASKS_DIR` is passed to `jira.sh` but is never declared in scope. Use DATA_DIR/tasks instead of TASKS_DIR
+- [ ] Remove Dead code block in `routes/tasks.mjs` PUT handler
+- [ ] Set `$.verbose = !!process.env.DEBUG` once at startup in server.mjs instead of in every file that imports zx
+- [ ] `pipelineScript` path repeated in multiple places: `path.resolve(process.cwd(), 'pipelines.sh')` is repeated four times inside `routes/pipelines.mjs` (start, stop, status, logs handlers) and once more in `pipeline-sync.mjs`. It should be a single module-level constant.
+- [ ] add title to task schema and display it in the task view list of the description
+- [ ] Pipeline detail page polls unconditionally: `pipeline.html` polls stages and logs every 3 seconds via `setInterval` regardless of pipeline status. It should stop polling once a terminal state (`completed`, `failed`, `stopped`) is reached.
+- [ ] `pipeline-sync` marks "container not found" as `failed`: In `pipeline-sync.mjs`, when the container is not found (`data.error` is truthy), the pipeline is immediately marked `failed`. A missing container can also mean a clean stop or successful completion where the container was already removed. The sync should check the pipeline's current persisted status before overriding it.
+- [ ] Ensure documentation is up to date (ARCHITECTURE.md, TEST_STRATEGY.md, README.md, etc.)
 - [ ] Commit changes on successful pipeline execution
-- [ ] Add Claude Code as coding agent (allow selection)
+- [ ] Add Claude Code as coding agent (allow selection in UI)
 - [ ] Create feature branches for each pipeline
 - [ ] Add ability to deploy the test project and add the link into the status updates
 - [ ] Create a PR and add the PR link into the status updates
 - [ ] Add ability to associate a plan to a pipeline run (and display it in the status updates)
 - [ ] Add planning stage (agent should wait for plan approval before executing)
+- [ ] add the ability to change the project config via UI (git url, username, token)
+- [ ] Add support for multiple projects and dropdown to switch project in the UI
 - [ ] Capture logs on AWS ECS using CloudWatch
 - [ ] Custom pipeline definition
 - [ ] Containerized Pipeline stages

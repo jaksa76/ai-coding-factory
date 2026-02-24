@@ -136,7 +136,7 @@ router.post('/import/jira', async (req, res) => {
     };
 
     // Import tasks from Jira
-    const p = await $({ env })`${jiraScript} import --project ${project} --dir ${TASKS_DIR}`;
+    const p = await $({ env })`${jiraScript} import --project ${project} --dir ${getTasksDir()}`;
     
     // Return the updated list of tasks
     const list = await listTasks();
