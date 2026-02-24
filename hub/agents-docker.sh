@@ -133,8 +133,8 @@ case $COMMAND in
             exit 1
         }
         
-        # Run the container
-        docker run -d --rm --name "$FULL_CONTAINER_NAME" \
+        # Run the container (no --rm so logs remain readable after the container exits)
+        docker run -d --name "$FULL_CONTAINER_NAME" \
             -v "$VOLUME:/workspace" \
             --network=host \
             "${ENV_VARS[@]}" \
@@ -146,10 +146,10 @@ case $COMMAND in
         ;;
     stop-container)
         require_param "container-name" "$CONTAINER_NAME" "$COMMAND"
-        
+
         # Add prefix to container name
         FULL_CONTAINER_NAME="ai-coding-factory-container-$CONTAINER_NAME"
-        
+
         echo "Stopping Docker container '$FULL_CONTAINER_NAME'..."
         docker stop "$FULL_CONTAINER_NAME"
         ;;

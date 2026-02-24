@@ -163,6 +163,24 @@ describe('Pipelines API', () => {
     expect(final.stages[5].content).toContain('Verify failed');
   });
 
+  it('can read logs of a completed pipeline', { timeout: 30000 }, async () => {
+    // A top-level echo in mockScript runs when the script is sourced inside the
+    // Docker container, so its output goes to the container's stdout and appears
+    // in `docker logs` (and therefore the /logs API endpoint).
+    const mockScript = 'echo "LOGS_MARKER: pipeline started"';
+
+    const res = await api.post('/api/pipelines')
+      .send({ taskId: 'logs-test-task', description: 'Log reading test', mockMode: 'instant', mockScript })
+      .expect(201);
+    createdPipelines.push(res.body.id);
+
+    await waitForStatus(res.body.id, 'completed');
+
+    const logsRes = await api.get(`/api/pipelines/${encodeURIComponent(res.body.id)}/logs`).expect(200);
+    expect(logsRes.headers['content-type']).toMatch(/text\/plain/);
+    expect(logsRes.text).toContain('LOGS_MARKER: pipeline started');
+  });
+
   it('two concurrent pipelines get distinct IDs', { timeout: 30000 }, async () => {
     const taskId = `concurrent-${Date.now()}`;
     const [r1, r2] = await Promise.all([
