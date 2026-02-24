@@ -8,10 +8,10 @@
 - [x] Add playwright tests for the hub
 - [ ] Analyse architecture of the app and identify areas for improvement (e.g. better separation of concerns, more modular design)
 - [ ] Ensure documentation is up to date
-- [ ] Commit on successful pipeline
-- [ ] Add Claude Code as coding agent (allow selecting)
+- [ ] Commit changes on successful pipeline execution
+- [ ] Add Claude Code as coding agent (allow selection)
 - [ ] Create feature branches for each pipeline
-- [ ] Add to deploy the test project and add the link into the status updates
+- [ ] Add ability to deploy the test project and add the link into the status updates
 - [ ] Create a PR and add the PR link into the status updates
 - [ ] Add ability to associate a plan to a pipeline run (and display it in the status updates)
 - [ ] Add planning stage (agent should wait for plan approval before executing)
