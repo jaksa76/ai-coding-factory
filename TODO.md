@@ -8,7 +8,7 @@
 - [x] Add playwright tests for the hub
 - [x] Analyse architecture of the app and identify areas for improvement (e.g. better separation of concerns, more modular design)
 - [x] The variable `TASKS_DIR` is passed to `jira.sh` but is never declared in scope. Use DATA_DIR/tasks instead of TASKS_DIR
-- [ ] Remove Dead code block in `routes/tasks.mjs` PUT handler
+- [x] Remove Dead code block in `routes/tasks.mjs` PUT handler
 - [ ] Set `$.verbose = !!process.env.DEBUG` once at startup in server.mjs instead of in every file that imports zx
 - [ ] `pipelineScript` path repeated in multiple places: `path.resolve(process.cwd(), 'pipelines.sh')` is repeated four times inside `routes/pipelines.mjs` (start, stop, status, logs handlers) and once more in `pipeline-sync.mjs`. It should be a single module-level constant.
 - [ ] add title to task schema and display it in the task view list of the description

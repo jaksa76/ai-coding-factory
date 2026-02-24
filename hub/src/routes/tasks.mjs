@@ -78,28 +78,6 @@ router.put('/:id?', async (req, res) => {
   const updated = { ...current, description, status };
   await writeJSON(file, updated);
   res.json(updated);
-
-  // Start pipeline via the new pipeline API when status changes to 'in-progress'
-  if (current.status !== 'in-progress' && status === 'in-progress') {
-    console.log(chalk.green(`Task ${id} started, creating new pipeline...`));
-    try {
-      // Create a new pipeline for this task
-      const pipelineData = {
-        taskId: id,
-        description: description,
-        gitUrl: req.body?.gitUrl,
-        gitUsername: req.body?.gitUsername,
-        gitToken: req.body?.gitToken
-      };
-      
-      // We'll make an internal call to the pipeline creation logic
-      // This is a bit of a workaround since we can't easily make HTTP calls to ourselves
-      // In a real-world scenario, you might use a service layer or event system
-      console.log(chalk.blue(`Pipeline creation will be handled by the /api/pipelines endpoint`));
-    } catch (err) {
-      console.error(chalk.red(`Failed to initiate pipeline for task ${id}:`), err);
-    }
-  }
 });
 
 router.delete('/:id?', async (req, res) => {
