@@ -12,6 +12,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import supertest from 'supertest';
 import fs from 'fs-extra';
 import { createApp } from '../src/app.mjs';
+import { createPipeline } from '../src/pipelines-store.mjs';
 
 let server;
 let api;
@@ -196,5 +197,80 @@ describe('Pipelines API', () => {
     const ids = listRes.body.map((p) => p.id);
     expect(ids).toContain(r1.body.id);
     expect(ids).toContain(r2.body.id);
+  });
+
+  // Helper: seed a pipeline record directly (no Docker needed)
+  const seed = (id, extra = {}) => createPipeline({
+    id,
+    taskId: 'hub-test-task',
+    status: 'running',
+    createdAt: new Date().toISOString(),
+    stages: [],
+    ...extra,
+  });
+
+  describe('PUT /api/pipelines/:pipelineId', () => {
+    it('returns 404 for unknown pipeline', async () => {
+      const res = await api.put('/api/pipelines/ghost_pipeline_1')
+        .send({ status: 'completed' }).expect(404);
+      expect(res.body.error).toBe('Pipeline not found');
+    });
+
+    it('updates the pipeline status', async () => {
+      await seed('hub-test-task_pipeline_1');
+      const res = await api.put('/api/pipelines/hub-test-task_pipeline_1')
+        .send({ status: 'completed' }).expect(200);
+      expect(res.body.status).toBe('completed');
+
+      // persisted
+      const get = await api.get('/api/pipelines/hub-test-task_pipeline_1').expect(200);
+      expect(get.body.status).toBe('completed');
+    });
+
+    it('merges fields without overwriting unrelated ones', async () => {
+      await seed('hub-test-task_pipeline_2', { customField: 'original' });
+      const res = await api.put('/api/pipelines/hub-test-task_pipeline_2')
+        .send({ status: 'completed' }).expect(200);
+      expect(res.body.status).toBe('completed');
+      expect(res.body.customField).toBe('original');
+      expect(res.body.taskId).toBe('hub-test-task');
+    });
+  });
+
+  describe('PUT /api/pipelines/:pipelineId/stages/:position', () => {
+    it('returns 404 for unknown pipeline', async () => {
+      const res = await api.put('/api/pipelines/ghost_pipeline_1/stages/0')
+        .send({ name: 'cloning', status: 'completed' }).expect(404);
+      expect(res.body.error).toBe('Pipeline not found');
+    });
+
+    it('returns 400 for non-numeric position', async () => {
+      await seed('hub-test-task_pipeline_3');
+      const res = await api.put('/api/pipelines/hub-test-task_pipeline_3/stages/abc')
+        .send({ name: 'cloning', status: 'completed' }).expect(400);
+      expect(res.body.error).toBe('Invalid position');
+    });
+
+    it('inserts a stage and then updates it', async () => {
+      await seed('hub-test-task_pipeline_4');
+
+      const r1 = await api.put('/api/pipelines/hub-test-task_pipeline_4/stages/0')
+        .send({ name: 'cloning', status: 'in_progress' }).expect(200);
+      expect(r1.body.stages[0]).toMatchObject({ name: 'cloning', status: 'in_progress' });
+
+      const r2 = await api.put('/api/pipelines/hub-test-task_pipeline_4/stages/0')
+        .send({ name: 'cloning', status: 'completed', content: 'Cloned successfully' }).expect(200);
+      expect(r2.body.stages[0]).toMatchObject({ name: 'cloning', status: 'completed', content: 'Cloned successfully' });
+    });
+
+    it('stores links in a stage', async () => {
+      await seed('hub-test-task_pipeline_5');
+      const links = [{ label: 'Pull Request', url: 'https://github.com/org/repo/pull/42' }];
+
+      const res = await api.put('/api/pipelines/hub-test-task_pipeline_5/stages/4')
+        .send({ name: 'deploying', status: 'completed', content: 'Deployed to staging', links })
+        .expect(200);
+      expect(res.body.stages[4]).toMatchObject({ name: 'deploying', status: 'completed', links });
+    });
   });
 });
