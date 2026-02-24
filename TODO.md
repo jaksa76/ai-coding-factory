@@ -4,8 +4,8 @@
 - [x] Add test for updating pipeline status in the hub
 - [x] Make a test project for e2e testing
 - [x] Create a .env file for various credentials
-- [ ] Periodically check the status of pipelines and update the hub (in case of crashes etc.)
-- [ ] Add playwright tests for the hub
+- [x] Periodically check the status of pipelines and update the hub (in case of crashes etc.)
+- [x] Add playwright tests for the hub
 - [ ] Analyse code for any issues
 - [ ] Ensure documentation is up to date
 - [ ] Create feature branches for each pipeline
