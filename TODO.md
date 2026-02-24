@@ -1,4 +1,4 @@
-- [ ] Refactor mock coding agent to accept a bash script as prompt
+- [x] Refactor mock coding agent to accept a bash script as prompt
 - [ ] Add test for reading logs of completed pipelines in Docker
 - [ ] Review the status format (is it generic enough, does it support links)
 - [ ] Add test for updating pipeline status in the hub

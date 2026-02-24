@@ -65,7 +65,7 @@ router.get('/:pipelineId', async (req, res) => {
 // POST /pipelines - Create and start a new pipeline for a task
 router.post('/', async (req, res) => {
   try {
-    const { taskId, description, gitUrl, gitUsername, gitToken, mockMode } = req.body || {};
+    const { taskId, description, gitUrl, gitUsername, gitToken, mockMode, mockScript } = req.body || {};
 
     if (!taskId) {
       return res.status(400).json({ error: 'Missing required field', message: 'taskId is required' });
@@ -92,7 +92,7 @@ router.post('/', async (req, res) => {
       if (gitUsername) args.push('--git-username', gitUsername);
       if (gitToken) args.push('--git-token', gitToken);
 
-      await $({ env: { ...process.env, MOCK_MODE: mockMode || '' } })`${pipelineScript} ${args}`;
+      await $({ env: { ...process.env, MOCK_MODE: mockMode || '', MOCK_SCRIPT: mockScript || '' } })`${pipelineScript} ${args}`;
 
       await pipelinesStore.updatePipeline(pipelineId, { status: 'running' });
 

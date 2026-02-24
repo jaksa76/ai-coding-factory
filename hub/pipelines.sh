@@ -152,6 +152,11 @@ case $COMMAND in
             AGENT_COMMAND="$AGENT_COMMAND --env \"MOCK_MODE=$MOCK_MODE\""
         fi
 
+        if [ -n "$MOCK_SCRIPT" ]; then
+            MOCK_SCRIPT_B64=$(printf '%s' "$MOCK_SCRIPT" | base64 | tr -d '\n')
+            AGENT_COMMAND="$AGENT_COMMAND --env \"MOCK_SCRIPT_B64=$MOCK_SCRIPT_B64\""
+        fi
+
         # Execute the command
         eval $AGENT_COMMAND
         
