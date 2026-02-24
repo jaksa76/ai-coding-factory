@@ -5,7 +5,7 @@
   "type": "module",
   "description": "AI Coding Factory Hub (Express + zx)",
   "scripts": {
-    "start": "node src/server.mjs",
+    "start": "node --env-file=.env src/server.mjs",
     "dev": "DATA_DIR=demo-data node --watch src/server.mjs",
     "test": "vitest run",
     "test:watch": "vitest"

@@ -2,14 +2,18 @@
 - [x] Add test for reading logs of completed pipelines in Docker
 - [x] Review the status format (is it generic enough, does it support links)
 - [x] Add test for updating pipeline status in the hub
-- [ ] Make a test project for e2e testing
-- [ ] Create a .env file for various credentials
+- [x] Make a test project for e2e testing
+- [x] Create a .env file for various credentials
 - [ ] Periodically check the status of pipelines and update the hub (in case of crashes etc.)
 - [ ] Add playwright tests for the hub
+- [ ] Analyse code for any issues
+- [ ] Ensure documentation is up to date
 - [ ] Create feature branches for each pipeline
 - [ ] Add to deploy the test project and add the link into the status updates
 - [ ] Create a PR and add the PR link into the status updates
 - [ ] Add Claude Code as coding agent (allow selecting)
+- [ ] Add ability to associate a plan to a pipeline run (and display it in the status updates)
+- [ ] Add planning stage (agent should wait for plan approval before executing)
 - [ ] Capture logs on AWS ECS using CloudWatch
 - [ ] Custom pipeline definition
 - [ ] Containerized Pipeline stages
