@@ -134,8 +134,9 @@ case $COMMAND in
         }
         
         # Run the container
-        docker run -d --name "$FULL_CONTAINER_NAME" \
+        docker run -d --rm --name "$FULL_CONTAINER_NAME" \
             -v "$VOLUME:/workspace" \
+            --network=host \
             "${ENV_VARS[@]}" \
             "$IMAGE_NAME" \
             $CONTAINER_OPTION

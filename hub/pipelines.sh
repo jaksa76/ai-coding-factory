@@ -106,7 +106,7 @@ case $COMMAND in
         # Define volume name and container name based on pipeline ID
         VOLUME_NAME="vol-$TASK_ID-$PIPELINE_ID"
         CONTAINER_NAME="pipe-$TASK_ID-$PIPELINE_ID"
-        IMAGE_NAME="coding-pipeline:latest" # Assuming the image is tagged as 'coding-pipeline:latest'
+        IMAGE_NAME="${PIPELINE_IMAGE:-coding-pipeline:latest}"
 
         # 1. Create a volume
         echo "Creating volume '$VOLUME_NAME'..."
@@ -142,6 +142,14 @@ case $COMMAND in
         if [ -n "$GH_USERNAME" ]; then
             AGENT_COMMAND="$AGENT_COMMAND --env \"GH_USERNAME=$GH_USERNAME\""
             echo "GitHub username (Copilot): $GH_USERNAME"
+        fi
+
+        if [ -n "$HUB_URL" ]; then
+            AGENT_COMMAND="$AGENT_COMMAND --env \"HUB_URL=$HUB_URL\""
+        fi
+
+        if [ -n "$MOCK_MODE" ]; then
+            AGENT_COMMAND="$AGENT_COMMAND --env \"MOCK_MODE=$MOCK_MODE\""
         fi
 
         # Execute the command
