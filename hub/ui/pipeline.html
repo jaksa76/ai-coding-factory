@@ -140,6 +140,78 @@
         .details-summary:hover {
             color: var(--primary);
         }
+
+        /* Stages */
+        .stages-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .stage-item {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .stage-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            background: #fafbfc;
+        }
+        .stage-name {
+            font-weight: 600;
+            text-transform: capitalize;
+            flex: 1;
+        }
+        .status {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            padding: 2px 8px;
+            border-radius: 999px;
+            display: inline-block;
+        }
+        .st-pending     { background: #ebecf0; color: #42526e; }
+        .st-in_progress { background: #deebff; color: #0747a6; }
+        .st-completed   { background: #e3fcef; color: #006644; }
+        .st-failed      { background: #ffebe6; color: #bf2600; }
+        .stage-body {
+            padding: 0 14px 12px;
+        }
+        .stage-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .stage-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 13px;
+            color: var(--primary);
+            text-decoration: none;
+            border: 1px solid #c0d8f5;
+            border-radius: 4px;
+            padding: 3px 9px;
+            background: #f0f7ff;
+        }
+        .stage-link:hover { background: #dbeeff; text-decoration: underline; }
+        .stage-content-details summary {
+            cursor: pointer;
+            color: var(--muted);
+            font-size: 13px;
+            padding: 4px 0;
+            user-select: none;
+        }
+        .stage-content-details summary:hover { color: var(--text); }
+        .stage-content-details pre {
+            margin-top: 6px;
+            font-size: 12px;
+            max-height: 200px;
+            overflow: auto;
+        }
     </style>
 </head>
 <body>
@@ -163,6 +235,11 @@
         </div>
 
         <section class="card">
+            <h2>Stages</h2>
+            <div id="stages"><div class="loading">Loading stages…</div></div>
+        </section>
+
+        <section class="card">
             <h2>Logs</h2>
             <div id="logs"><div class="loading">Loading logs…</div></div>
         </section>
@@ -183,6 +260,7 @@
         const els = {
             status: document.getElementById('status'),
             logs: document.getElementById('logs'),
+            stages: document.getElementById('stages'),
             pipelineSelect: document.getElementById('pipeline-select')
         };
 
@@ -318,6 +396,68 @@
             }
         }
 
+        // Validate that a string is a safe http/https URL before rendering as a link
+        function isSafeUrl(url) {
+            try {
+                const u = new URL(url);
+                return u.protocol === 'https:' || u.protocol === 'http:';
+            } catch {
+                return false;
+            }
+        }
+
+        async function loadStages(pipelineId) {
+            pipelineId = pipelineId || currentPipelineId;
+            if (!pipelineId) {
+                els.stages.innerHTML = '<div class="empty">No pipeline selected.</div>';
+                return;
+            }
+            try {
+                const res = await fetch(`${PIPELINES_API}/${encodeURIComponent(pipelineId)}`);
+                if (!res.ok) throw new Error('Failed to load pipeline');
+                const pipeline = await res.json();
+                const stages = Array.isArray(pipeline.stages) ? pipeline.stages : [];
+                if (!stages.length) {
+                    els.stages.innerHTML = '<div class="empty">No stages yet.</div>';
+                    return;
+                }
+
+                const items = stages.map((stage, i) => {
+                    const name = escapeHtml(stage.name || `Stage ${i}`);
+                    const status = String(stage.status || 'pending');
+                    const statusLabel = escapeHtml(status.replace(/_/g, ' '));
+                    const statusClass = `st-${escapeHtml(status)}`;
+
+                    let linksHtml = '';
+                    if (Array.isArray(stage.links) && stage.links.length > 0) {
+                        const linkTags = stage.links
+                            .filter(l => l && isSafeUrl(l.url))
+                            .map(l => `<a href="${escapeHtml(l.url)}" class="stage-link" target="_blank" rel="noopener noreferrer"><i class="fa fa-external-link-alt" aria-hidden="true"></i>${escapeHtml(l.label || l.url)}</a>`)
+                            .join('');
+                        if (linkTags) linksHtml = `<div class="stage-links">${linkTags}</div>`;
+                    }
+
+                    let contentHtml = '';
+                    if (stage.content) {
+                        contentHtml = `<details class="stage-content-details"><summary>Output</summary><pre>${escapeHtml(stage.content)}</pre></details>`;
+                    }
+
+                    const hasBody = linksHtml || contentHtml;
+                    return `<div class="stage-item">
+                        <div class="stage-header">
+                            <span class="stage-name">${name}</span>
+                            <span class="status ${statusClass}">${statusLabel}</span>
+                        </div>
+                        ${hasBody ? `<div class="stage-body">${linksHtml}${contentHtml}</div>` : ''}
+                    </div>`;
+                }).join('');
+
+                els.stages.innerHTML = `<div class="stages-list">${items}</div>`;
+            } catch (e) {
+                els.stages.innerHTML = `<div class="empty">Could not load stages. ${escapeHtml(e.message)}</div>`;
+            }
+        }
+
         // Update only the inner <pre> inside #logs to preserve scroll position and avoid reflows
         async function loadLogs(pipelineId) {
             pipelineId = pipelineId || currentPipelineId;
@@ -375,6 +515,7 @@
             currentPipelineId = val || null;
             updateUrlPipelineParam(currentPipelineId);
             loadStatus(currentPipelineId);
+            loadStages(currentPipelineId);
             loadLogs(currentPipelineId);
         });
 
@@ -383,10 +524,14 @@
             await fetchPipelinesAndPopulate();
             if (currentPipelineId) {
                 loadStatus(currentPipelineId);
+                loadStages(currentPipelineId);
                 loadLogs(currentPipelineId);
             }
             setInterval(() => {
-                if (currentPipelineId) loadLogs(currentPipelineId);
+                if (currentPipelineId) {
+                    loadStages(currentPipelineId);
+                    loadLogs(currentPipelineId);
+                }
             }, 3000);
         })();
     </script>
