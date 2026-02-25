@@ -40,10 +40,11 @@ RUN mkdir -p /home/worker/.claude && chown worker:worker /home/worker/.claude
 #   CLAUDE_TOKEN_EXPIRES_AT   — Token expiry timestamp (epoch ms, numeric)
 #   CLAUDE_SUBSCRIPTION_TYPE  — Subscription type (e.g. "pro")
 #   JIRA_SITE / JIRA_EMAIL / JIRA_TOKEN / JIRA_ASSIGNEE_ACCOUNT_ID
+#   JIRA_PROJECT              — Jira project key to pull issues from (e.g. MYPROJ)
 #   GIT_REPO_URL / GIT_USERNAME / GIT_TOKEN
 
 USER worker
 ENV HOME=/home/worker
 ENV PATH="/home/worker/.local/bin:$PATH"
 
-ENTRYPOINT ["bash", "-c", "init-claude && exec loop --agent 'claude --dangerously-skip-permissions -p'"]
+ENTRYPOINT ["bash", "-c", "init-claude && exec loop --project \"$JIRA_PROJECT\" --agent 'claude --dangerously-skip-permissions -p'"]

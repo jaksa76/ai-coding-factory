@@ -45,6 +45,7 @@ COPY workers/copilot/copilot-config.json /root/.copilot/config.json
 # Runtime env vars (must be supplied via docker run -e / --env-file):
 #   GH_TOKEN / GH_USERNAME    — GitHub credentials for Copilot authentication
 #   JIRA_SITE / JIRA_EMAIL / JIRA_TOKEN / JIRA_ASSIGNEE_ACCOUNT_ID
+#   JIRA_PROJECT              — Jira project key to pull issues from (e.g. MYPROJ)
 #   GIT_REPO_URL / GIT_USERNAME / GIT_TOKEN
 
-ENTRYPOINT ["bash", "-c", "init-copilot && exec loop --agent copilot"]
+ENTRYPOINT ["bash", "-c", "init-copilot && exec loop --project \"$JIRA_PROJECT\" --agent copilot"]

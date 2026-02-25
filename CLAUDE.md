@@ -38,6 +38,7 @@ legacy/         Previous hub-based implementation (reference only)
 | `JIRA_EMAIL` | Jira account email |
 | `JIRA_TOKEN` | Jira API token |
 | `JIRA_ASSIGNEE_ACCOUNT_ID` | Jira account ID used for self-assignment |
+| `JIRA_PROJECT` | Jira project key to pull issues from, e.g. `MYPROJ` |
 | `GIT_REPO_URL` | Repository to work on |
 | `GIT_USERNAME` | Git push credentials |
 | `GIT_TOKEN` | Git push credentials |
