@@ -1,5 +1,5 @@
 - [x] Implement `claim` assign issue, wait 10 s, re-fetch and verify assignee
-- [ ] Implement automated tests for `claim` using a dummy jira project
+- [x] Implement automated tests for `claim` using a dummy jira project
 - [ ] Implement `loop` with cloning/pulling repo, running agent command, pushing changes, updating Jira
 - [ ] Implement a dummy agent that appends the issue description to a file and commits it, for testing `loop` without real AI calls
 - [ ] Implement a test for `loop` with a real Jira ticket and the `echo` agent, verify Jira state transitions correctly
