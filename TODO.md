@@ -2,7 +2,7 @@
 - [x] Implement automated tests for `claim` using a dummy jira project
 - [x] Implement a mock agent that appends the issue description to a file and commits it, for testing `loop` without real AI calls
 - [x] Implement `loop` with cloning/pulling repo, running agent command, pushing changes, updating Jira
-- [ ] Implement a test for `loop` with a real Jira ticket and the mock agent, verify Jira state transitions correctly
+- [x] Implement a test for `loop` with a real Jira ticket and the mock agent, verify Jira state transitions correctly
 - [ ] Create the copilot worker Dockerfile (install @github/copilot and use gpt-4.1 model)
 - [ ] Write a test for the copilot worker image
 - [ ] Write the `factory` CLI with `status` command
