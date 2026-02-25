@@ -17,10 +17,10 @@ Worker-based pull model where agents poll Jira directly for work. Jira is the si
 ## Repository layout
 
 ```
-jira/           CLI tool — query, claim, transition, and comment on Jira issues
+claim/          CLI tool — claim Jira issues
 loop/           CLI tool — agent-agnostic claim/work loop
 worker-builder/ CLI tool — build worker Docker images from a project devcontainer
-manager/        CLI tool — start/stop/scale/monitor worker containers
+factory/        CLI tool — start/stop/scale/monitor worker containers
 
 workers/
   claude/       Dockerfile: loop + Claude CLI
@@ -30,19 +30,27 @@ workers/
 legacy/         Previous hub-based implementation (reference only)
 ```
 
-## `jira` — Jira CLI tool
+## `claim` — Tool for claiming Jira issues
 
 A standalone CLI for interacting with Jira. Usable independently of the rest of the system.
 
 ```bash
-jira issues --project MYPROJ --status "To Do" --unassigned
-jira assign MYPROJ-42 --account-id <id>
-jira get MYPROJ-42
-jira transition MYPROJ-42 --to "In Progress"
-jira comment MYPROJ-42 --body "Implemented in commit abc123"
+claim --project MYPROJ --account-id <id>  # claim an issue by assigning it to self
 ```
 
+Implemented as a bash script on top of `acli`, the Atlassian command line tool.
 Reads `JIRA_SITE`, `JIRA_EMAIL`, `JIRA_TOKEN` from environment.
+
+### Claim flow (optimistic locking via Jira)
+
+```
+  1. list available issues and pick one
+  2. assign to self
+  3. wait 10 seconds
+  4. re-fetch issue, if assignee != self, goto 1
+  5. transition to "In Progress"
+  6. print issue details
+```
 
 ## `loop` — Agent-agnostic work loop
 
@@ -50,23 +58,19 @@ A standalone CLI that implements the claim/work/report cycle. The agent to run i
 
 ```bash
 loop --project MYPROJ --agent "claude --dangerously-skip-permissions -p"
-loop --project MYPROJ --agent "gh copilot suggest -t shell"
+loop --project MYPROJ --agent "copilot -p"
 ```
 
-### Claim flow (optimistic locking via Jira)
+### Loop flow
 
 ```
 loop:
-  1. jira issues --project $PROJECT --unassigned → pick one
-  2. jira assign <issueKey>
-  3. wait 10 seconds
-  4. jira get <issueKey> — if assignee != self, goto 1
-  5. jira transition <issueKey> "In Progress"
-  6. git pull / clone $GIT_REPO_URL
-  7. invoke $AGENT with issue title + description as prompt
-  8. git commit + push to trunk
-  9. jira comment <issueKey> with summary
-  10. jira transition <issueKey> "Done"
+  1. jira pick --project $PROJECT --account-id $JIRA_ASSIGNEE_ACCOUNT_ID
+  2. git pull / clone $GIT_REPO_URL
+  3. invoke $AGENT with issue title + description as prompt
+  4. git commit + push to trunk
+  5. jira comment <issueKey> with summary
+  6. jira transition <issueKey> "Done"
   goto 1
 ```
 
@@ -81,11 +85,12 @@ loop:
 | `JIRA_TOKEN` | Jira API token |
 | `JIRA_ASSIGNEE_ACCOUNT_ID` | Account ID used for self-assignment |
 | `GIT_REPO_URL` | Repository to work on |
+| `GIT_USERNAME` | Push credentials |
 | `GIT_TOKEN` | Push credentials |
 
 ### Git strategy
 
-- Push directly to trunk (main/master) initially.
+- Push directly to main initially.
 - Feature branches and PRs to be introduced later.
 
 ## `worker-builder` — Worker image builder
@@ -93,38 +98,35 @@ loop:
 A CLI tool that generates a project-specific worker Docker image by layering a chosen agent on top of the project's devcontainer. Workers run inside the same environment as the project's developers — same tools, same dependencies.
 
 ```bash
-worker-builder \
-  --devcontainer ./path/to/project/.devcontainer \
-  --type claude \
-  --tag myorg/myproject-worker:latest
+worker-builder --project <url> --agent claude
 ```
 
 **Flow:**
-1. Read `.devcontainer/devcontainer.json` to determine base image and setup commands
-2. Generate a Dockerfile that extends the devcontainer base with:
+1. Retrieve the project's `devcontainer.json` (using `git archive`).
+2. Read `.devcontainer/devcontainer.json` to determine base image and setup commands
+3. Generate a Dockerfile that extends the devcontainer base with:
    - The chosen agent CLI installed (`claude`, `gh copilot`, `codex`, …)
    - The `loop` and `jira` tools installed
-3. Build (and optionally push) the image
+4. Build (and optionally push) the image
 
-## `manager` — Worker pool CLI
+## factory
 
 A CLI for operating the worker pool. Talks directly to Docker, no server process.
 
 ```bash
-manager start --image myorg/myproject-worker:latest --type claude --count 3
-manager stop <worker-id>
-manager stop --all
-manager scale --type claude --count 5
-manager status                 # list workers + current Jira ticket
-manager logs <worker-id>
-manager logs --all
+factory status                           # list workers
+factory add --image <img> -- count <n>   # start n workers with the given image
+factory logs <worker-id>
+factory logs --all
+factory stop <worker-id>
+factory stop --all
 ```
 
 Reads config (Jira credentials, git URL, image name, etc.) from a local config file or env vars.
 
 ## Workers (`workers/`)
 
-Thin Dockerfiles. Each one installs a specific agent CLI on top of a base image, then sets `loop` as the entrypoint with the appropriate `--agent` flag. The heavy lifting is in `loop` and `jira`.
+Predefined Dockerfiles for nodejs development. Each one installs a specific agent CLI on top of a base image, then sets `loop` as the entrypoint with the appropriate `--agent` flag. The heavy lifting is in `loop` and `jira`.
 
 | Worker | Agent installed | Entrypoint |
 |---|---|---|
@@ -142,10 +144,7 @@ For project-specific images, use `worker-builder` instead of these generic ones.
 - No background sync loop reconciling Docker ↔ file state
 - No web server or browser UI
 
-## Open questions
+## Other notes
+- All workers share the same Jira and Git credentials, read from environment variables. No per-worker authentication.
+- All tools implemented as bash scripts
 
-- Should all workers share one Jira account, or have individual accounts? Individual accounts make the assignee field meaningful but require more Jira setup.
-- Automatic recovery for crashed/stuck "In Progress" tickets (e.g. requeue after N minutes with no heartbeat).
-- When to introduce feature branches and PRs instead of pushing to trunk.
-- Config file format for `manager` and `loop` (TOML / YAML / `.env`?).
-- Implementation language for the CLI tools (shell scripts, Node.js, Python, Go?).
