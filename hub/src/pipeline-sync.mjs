@@ -3,8 +3,6 @@ import path from 'node:path';
 import { chalk } from 'zx';
 import * as pipelinesStore from './routes/pipelines.mjs';
 
-$.verbose = !!process.env.DEBUG;
-
 const pipelineScript = path.resolve(process.cwd(), 'pipelines.sh');
 
 function dockerStatusToPipelineStatus(dockerStatus, exitCode) {

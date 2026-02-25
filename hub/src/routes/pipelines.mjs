@@ -11,9 +11,6 @@ export const getPipelinesDir = () => path.join(getDataDir(), 'pipelines');
 
 export const pipelinePath = (pipelineId) => path.join(getPipelinesDir(), `${pipelineId}.json`);
 
-// Ensure zx doesn't print commands in tests unless DEBUG
-$.verbose = !!process.env.DEBUG;
-
 // Monotonically increasing timestamp so same-millisecond concurrent requests still get unique IDs.
 // Node is single-threaded so this read-modify-write is safe with no lock.
 let _lastTs = 0;

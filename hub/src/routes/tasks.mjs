@@ -32,9 +32,6 @@ const generateId = () => `task_${Date.now()}_${process.pid}`;
 
 const router = express.Router();
 
-// Ensure zx doesn't print commands in tests unless DEBUG
-$.verbose = !!process.env.DEBUG;
-
 router.get('/', async (req, res) => {
   const list = await listTasks();
   res.json(list);

@@ -9,7 +9,7 @@
 - [x] Analyse architecture of the app and identify areas for improvement (e.g. better separation of concerns, more modular design)
 - [x] The variable `TASKS_DIR` is passed to `jira.sh` but is never declared in scope. Use DATA_DIR/tasks instead of TASKS_DIR
 - [x] Remove Dead code block in `routes/tasks.mjs` PUT handler
-- [ ] Set `$.verbose = !!process.env.DEBUG` once at startup in server.mjs instead of in every file that imports zx
+- [x] Set `$.verbose = !!process.env.DEBUG` once at startup in server.mjs instead of in every file that imports zx
 - [ ] `pipelineScript` path repeated in multiple places: `path.resolve(process.cwd(), 'pipelines.sh')` is repeated four times inside `routes/pipelines.mjs` (start, stop, status, logs handlers) and once more in `pipeline-sync.mjs`. It should be a single module-level constant.
 - [ ] add title to task schema and display it in the task view list of the description
 - [ ] Pipeline detail page polls unconditionally: `pipeline.html` polls stages and logs every 3 seconds via `setInterval` regardless of pipeline status. It should stop polling once a terminal state (`completed`, `failed`, `stopped`) is reached.

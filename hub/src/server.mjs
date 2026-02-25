@@ -1,5 +1,8 @@
+import { $ } from 'zx';
 import { createApp } from './app.mjs';
 import { startPipelineSync } from './pipeline-sync.mjs';
+
+$.verbose = !!process.env.DEBUG;
 
 const app = createApp();
 const PORT = process.env.HUB_PORT || 8080;
