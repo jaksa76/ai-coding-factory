@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# worker-builder — generate a project-specific worker Docker image
+#
+# Usage:
+#   worker-builder --project <url> --agent <claude|copilot|codex> [--tag <tag>] [--push]
+#
+# Fetches the project's .devcontainer/devcontainer.json via git archive (with
+# sparse-clone fallback), extracts the base image, then generates and builds a
+# Dockerfile that layers the chosen agent CLI + loop + claim on top of it.
+
+# Resolve the ai-coding-factory repo root (two levels up from this script)
+TOOL_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$TOOL_DIR/.." && pwd)"
+
+usage() {
+    echo "Usage: worker-builder --project <url> --agent <type> [--tag <tag>] [--push]"
+    echo ""
+    echo "Options:"
+    echo "  --project <url>   Git repository URL of the target project"
+    echo "  --agent <type>    Agent type: claude, copilot, or codex"
+    echo "  --tag <tag>       Docker image tag (default: worker-<repo>-<agent>:latest)"
+    echo "  --push            Push the image after building"
+    exit 1
+}
+
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+# ── argument parsing ──────────────────────────────────────────────────────────
+
+PROJECT=""
+AGENT=""
+TAG=""
+PUSH=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --project)
+            [[ -z "${2:-}" || "${2:-}" == --* ]] && error_exit "--project requires a value"
+            PROJECT="$2"; shift 2
+            ;;
+        --agent)
+            [[ -z "${2:-}" || "${2:-}" == --* ]] && error_exit "--agent requires a value"
+            AGENT="$2"; shift 2
+            ;;
+        --tag)
+            [[ -z "${2:-}" || "${2:-}" == --* ]] && error_exit "--tag requires a value"
+            TAG="$2"; shift 2
+            ;;
+        --push)
+            PUSH=true; shift
+            ;;
+        --help|-h)
+            usage
+            ;;
+        *)
+            error_exit "Unknown option: $1"
+            ;;
+    esac
+done
+
+[[ -z "$PROJECT" ]] && error_exit "--project <url> is required"
+[[ -z "$AGENT" ]]   && error_exit "--agent <type> is required"
+
+case "$AGENT" in
+    claude|copilot|codex) ;;
+    *) error_exit "Unknown agent type '$AGENT' (must be claude, copilot, or codex)" ;;
+esac
+
+[[ -z "$TAG" ]] && TAG="worker-$(basename "$PROJECT" .git)-${AGENT}:latest"
+
+echo "Building worker image for project: $PROJECT"
+echo "Agent: $AGENT"
+echo "Tag:   $TAG"
+
+# ── fetch devcontainer.json ───────────────────────────────────────────────────
+
+WORK_DIR="$(mktemp -d)"
+trap 'rm -rf "$WORK_DIR"' EXIT
+
+DEVCONTAINER_PATH=".devcontainer/devcontainer.json"
+
+echo "Fetching $DEVCONTAINER_PATH from $PROJECT..."
+
+DEVCONTAINER_FILE=""
+if git archive --remote="$PROJECT" HEAD "$DEVCONTAINER_PATH" 2>/dev/null \
+        | tar -x -C "$WORK_DIR"; then
+    DEVCONTAINER_FILE="$WORK_DIR/$DEVCONTAINER_PATH"
+else
+    echo "git archive not supported by remote; falling back to sparse clone..."
+    git clone --depth=1 --filter=blob:none --no-checkout "$PROJECT" "$WORK_DIR/repo" 2>/dev/null
+    git -C "$WORK_DIR/repo" sparse-checkout set "$DEVCONTAINER_PATH" 2>/dev/null
+    git -C "$WORK_DIR/repo" checkout 2>/dev/null
+    if [[ -f "$WORK_DIR/repo/$DEVCONTAINER_PATH" ]]; then
+        DEVCONTAINER_FILE="$WORK_DIR/repo/$DEVCONTAINER_PATH"
+    fi
+fi
+
+# ── parse base image from devcontainer.json ───────────────────────────────────
+
+DEFAULT_BASE="mcr.microsoft.com/devcontainers/base:bullseye"
+BASE_IMAGE="$DEFAULT_BASE"
+
+if [[ -n "$DEVCONTAINER_FILE" && -f "$DEVCONTAINER_FILE" ]]; then
+    # Strip // line comments (devcontainer.json allows them; jq does not)
+    CLEAN_JSON="$(sed 's|[[:space:]]//.*$||g; s|^//.*$||g' "$DEVCONTAINER_FILE")"
+    PARSED_IMAGE="$(printf '%s' "$CLEAN_JSON" | jq -r '.image // empty' 2>/dev/null || true)"
+    if [[ -n "$PARSED_IMAGE" ]]; then
+        BASE_IMAGE="$PARSED_IMAGE"
+        echo "Using devcontainer image: $BASE_IMAGE"
+    else
+        echo "No image field in devcontainer.json; using default: $BASE_IMAGE"
+    fi
+else
+    echo "devcontainer.json not found; using default base image: $BASE_IMAGE"
+fi
+
+# ── generate Dockerfile ───────────────────────────────────────────────────────
+
+DOCKERFILE="$WORK_DIR/Dockerfile"
+
+{
+    printf 'FROM %s\n' "$BASE_IMAGE"
+    printf '\n'
+    printf '# Install system dependencies\n'
+    printf 'RUN apt-get update && apt-get install -y \\\n'
+    printf '    bash curl git jq wget gnupg2 \\\n'
+    printf '    && rm -rf /var/lib/apt/lists/*\n'
+    printf '\n'
+    printf '# Install acli (Atlassian CLI) for Jira operations\n'
+    printf 'RUN mkdir -p -m 755 /etc/apt/keyrings \\\n'
+    printf '    && wget -nv -O- https://acli.atlassian.com/gpg/public-key.asc \\\n'
+    printf '        | gpg --dearmor -o /etc/apt/keyrings/acli-archive-keyring.gpg \\\n'
+    printf '    && chmod go+r /etc/apt/keyrings/acli-archive-keyring.gpg \\\n'
+    printf '    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/acli-archive-keyring.gpg] https://acli.atlassian.com/linux/deb stable main" \\\n'
+    printf '        | tee /etc/apt/sources.list.d/acli.list > /dev/null \\\n'
+    printf '    && apt-get update \\\n'
+    printf '    && apt-get install -y acli \\\n'
+    printf '    && rm -rf /var/lib/apt/lists/*\n'
+    printf '\n'
+
+    case "$AGENT" in
+        claude)
+            printf '# Install Claude Code CLI\n'
+            printf 'RUN curl -fsSL https://claude.ai/install.sh | sh\n'
+            ;;
+        copilot)
+            printf '# Install gh CLI\n'
+            printf 'RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \\\n'
+            printf '        | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \\\n'
+            printf '    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \\\n'
+            printf '    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \\\n'
+            printf '        | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \\\n'
+            printf '    && apt-get update \\\n'
+            printf '    && apt-get install -y gh \\\n'
+            printf '    && rm -rf /var/lib/apt/lists/*\n'
+            printf '\n'
+            printf '# Install @github/copilot CLI\n'
+            printf 'RUN npm install -g @github/copilot && \\\n'
+            printf '    printf '"'"'#!/bin/sh\\nexec node /usr/local/lib/node_modules/@github/copilot/index.js "$$@"\\n'"'"' > /usr/local/bin/copilot && \\\n'
+            printf '    chmod +x /usr/local/bin/copilot\n'
+            ;;
+        codex)
+            printf '# Install OpenAI Codex CLI\n'
+            printf 'RUN npm install -g @openai/codex\n'
+            ;;
+    esac
+
+    printf '\n'
+    printf '# Install loop and claim tools\n'
+    printf '# Build context: repository root (docker build -f <dockerfile> <repo-root>)\n'
+    printf 'COPY claim/claim /usr/local/bin/claim\n'
+    printf 'COPY loop/loop /usr/local/bin/loop\n'
+    printf 'RUN chmod +x /usr/local/bin/claim /usr/local/bin/loop\n'
+    printf '\n'
+
+    case "$AGENT" in
+        claude)
+            printf 'ENTRYPOINT ["bash", "-c", "loop --project \"$JIRA_PROJECT\" --agent '"'"'claude --dangerously-skip-permissions -p'"'"'"]\n'
+            ;;
+        copilot)
+            printf 'ENTRYPOINT ["bash", "-c", "loop --project \"$JIRA_PROJECT\" --agent copilot"]\n'
+            ;;
+        codex)
+            printf 'ENTRYPOINT ["bash", "-c", "loop --project \"$JIRA_PROJECT\" --agent '"'"'codex -q'"'"'"]\n'
+            ;;
+    esac
+} > "$DOCKERFILE"
+
+echo "Generated Dockerfile:"
+cat "$DOCKERFILE"
+
+# ── build the image ───────────────────────────────────────────────────────────
+
+echo "Building Docker image $TAG..."
+docker build -t "$TAG" -f "$DOCKERFILE" "$REPO_ROOT"
+
+# ── optionally push ───────────────────────────────────────────────────────────
+
+if [[ "$PUSH" == "true" ]]; then
+    echo "Pushing image $TAG..."
+    docker push "$TAG"
+fi
+
+echo "Done. Image: $TAG"
