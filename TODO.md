@@ -5,10 +5,10 @@
 - [x] Implement a test for `loop` with a real Jira ticket and the mock agent, verify Jira state transitions correctly
 - [x] Create the copilot worker Dockerfile (install @github/copilot and use gpt-4.1 model)
 - [x] Write a test for the copilot worker image
+- [x] Write `workers/claude/Dockerfile` and test end-to-end
 - [ ] Write the `factory` CLI with `status` command
 - [ ] Implement `factory add --image <img> --count <n>` — launch worker containers
 - [ ] Test full cycle: start workers via `manager`, watch them process tickets, stop them
-- [ ] Write `workers/claude/Dockerfile` and test end-to-end
 - [ ] Scaffold `worker-builder`
 - [ ] Implement devcontainer.json parsing (git archive)
 - [ ] Implement Dockerfile generation layering agent + `loop` + `jira` on the devcontainer base
