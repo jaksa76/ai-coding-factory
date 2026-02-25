@@ -164,3 +164,99 @@ stub_script() {
     run "$FACTORY" add --image myimage 1
     [ "$status" -ne 0 ]
 }
+
+# ── logs ──────────────────────────────────────────────────────────────────────
+
+@test "logs: requires worker-id" {
+    run "$FACTORY" logs
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"worker-id is required"* ]]
+}
+
+@test "logs: calls docker logs -f with worker-id" {
+    local calls_file
+    calls_file="$(mktemp)"
+    stub_script docker "echo \"\$@\" > '$calls_file'"
+
+    run "$FACTORY" logs abc123
+    [ "$status" -eq 0 ]
+
+    local docker_args
+    docker_args="$(cat "$calls_file")"
+    [[ "$docker_args" == *"logs"* ]]
+    [[ "$docker_args" == *"-f"* ]]
+    [[ "$docker_args" == *"abc123"* ]]
+
+    rm -f "$calls_file"
+}
+
+@test "logs: docker failure propagates non-zero exit" {
+    stub_exit docker 1 "No such container"
+    run "$FACTORY" logs nonexistent
+    [ "$status" -ne 0 ]
+}
+
+# ── stop ──────────────────────────────────────────────────────────────────────
+
+@test "stop: requires worker-id or --all" {
+    run "$FACTORY" stop
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"worker-id or --all is required"* ]]
+}
+
+@test "stop: stops a specific worker" {
+    local calls_file
+    calls_file="$(mktemp)"
+    stub_script docker "echo \"\$@\" > '$calls_file'"
+
+    run "$FACTORY" stop abc123
+    [ "$status" -eq 0 ]
+
+    local docker_args
+    docker_args="$(cat "$calls_file")"
+    [[ "$docker_args" == *"stop"* ]]
+    [[ "$docker_args" == *"abc123"* ]]
+
+    rm -f "$calls_file"
+}
+
+@test "stop --all: stops all running workers" {
+    local calls_file
+    calls_file="$(mktemp)"
+    stub_script docker "
+        if [[ \"\$1\" == 'ps' ]]; then
+            echo 'abc123'
+            echo 'def456'
+        else
+            echo \"\$@\" >> '$calls_file'
+        fi
+    "
+
+    run "$FACTORY" stop --all
+    [ "$status" -eq 0 ]
+
+    local docker_args
+    docker_args="$(cat "$calls_file")"
+    [[ "$docker_args" == *"stop"* ]]
+    [[ "$docker_args" == *"abc123"* ]]
+
+    rm -f "$calls_file"
+}
+
+@test "stop --all: prints message when no workers running" {
+    stub_script docker "
+        if [[ \"\$1\" == 'ps' ]]; then
+            echo ''
+        fi
+    "
+
+    run "$FACTORY" stop --all
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"No running workers"* ]]
+}
+
+@test "stop: docker failure propagates non-zero exit" {
+    stub_exit docker 1 "No such container"
+    run "$FACTORY" stop nonexistent
+    [ "$status" -ne 0 ]
+}

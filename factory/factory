@@ -8,6 +8,7 @@ set -euo pipefail
 #   factory add --image <img> --count <n> # start n workers
 #   factory logs <worker-id>              # stream logs for a worker
 #   factory stop <worker-id>              # stop a worker
+#   factory stop --all                    # stop all workers
 
 WORKER_LABEL="ai-coding-factory.worker=true"
 
@@ -19,6 +20,7 @@ usage() {
     echo "  add --image <img> --count <n> Start n workers with the given image"
     echo "  logs <worker-id>              Stream logs for a worker"
     echo "  stop <worker-id>              Stop a worker"
+    echo "  stop --all                    Stop all workers"
     exit 1
 }
 
@@ -35,6 +37,7 @@ cmd_status() {
 cmd_add() {
     local image=""
     local count=""
+    local extra_args=()
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -42,6 +45,11 @@ cmd_add() {
                 [[ -z "${2:-}" ]] && error_exit "--image requires a value"
                 image="$2"
                 shift 2
+                ;;
+            --)
+                shift
+                extra_args=("$@")
+                break
                 ;;
             --*)
                 error_exit "Unknown option: $1"
@@ -65,8 +73,33 @@ cmd_add() {
         docker run -d \
             --label "$WORKER_LABEL" \
             --name "$name" \
-            "$image"
+            "$image" \
+            "${extra_args[@]+"${extra_args[@]}"}"
     done
+}
+
+cmd_logs() {
+    local worker_id="${1:-}"
+    [[ -z "$worker_id" ]] && error_exit "worker-id is required"
+    docker logs -f "$worker_id"
+}
+
+cmd_stop() {
+    local target="${1:-}"
+    [[ -z "$target" ]] && error_exit "worker-id or --all is required"
+
+    if [[ "$target" == "--all" ]]; then
+        local ids
+        ids="$(docker ps --filter "label=$WORKER_LABEL" --quiet)"
+        if [[ -z "$ids" ]]; then
+            echo "No running workers to stop."
+            return 0
+        fi
+        # shellcheck disable=SC2086
+        docker stop $ids
+    else
+        docker stop "$target"
+    fi
 }
 
 [[ $# -eq 0 ]] && usage
@@ -79,6 +112,14 @@ case "$1" in
     add)
         shift
         cmd_add "$@"
+        ;;
+    logs)
+        shift
+        cmd_logs "$@"
+        ;;
+    stop)
+        shift
+        cmd_stop "$@"
         ;;
     --help|-h)
         usage
