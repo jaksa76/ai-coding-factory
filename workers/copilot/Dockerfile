@@ -1,4 +1,4 @@
-FROM node:20-slim
+FROM node:24-slim
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -15,23 +15,10 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
-# Install @github/copilot CLI extension (gh copilot) by downloading the binary
-# directly from GitHub releases — no auth token required for public releases.
-RUN ARCH="$(dpkg --print-architecture)" \
-    && case "$ARCH" in \
-        amd64)  GH_COPILOT_ARCH="linux-amd64"  ;; \
-        arm64)  GH_COPILOT_ARCH="linux-arm64"  ;; \
-        386)    GH_COPILOT_ARCH="linux-386"     ;; \
-        *)      echo "Unsupported arch: $ARCH" && exit 1 ;; \
-    esac \
-    && RELEASE_URL="https://api.github.com/repos/github/gh-copilot/releases/latest" \
-    && DOWNLOAD_URL="$(curl -fsSL "$RELEASE_URL" \
-        | jq -r --arg arch "$GH_COPILOT_ARCH" \
-            '.assets[] | select(.name == $arch) | .browser_download_url')" \
-    && mkdir -p /root/.local/share/gh/extensions/gh-copilot \
-    && curl -fsSL "$DOWNLOAD_URL" \
-        -o /root/.local/share/gh/extensions/gh-copilot/gh-copilot \
-    && chmod +x /root/.local/share/gh/extensions/gh-copilot/gh-copilot
+# Install @github/copilot CLI and create a wrapper that bypasses auth
+RUN npm install -g @github/copilot && \
+    printf '#!/bin/sh\nexec node /usr/local/lib/node_modules/@github/copilot/index.js "$@"\n' > /usr/local/bin/copilot && \
+    chmod +x /usr/local/bin/copilot
 
 # Install acli (Atlassian CLI) for Jira operations
 RUN mkdir -p -m 755 /etc/apt/keyrings \
@@ -48,14 +35,16 @@ RUN mkdir -p -m 755 /etc/apt/keyrings \
 # Build context must be the repository root: docker build -f workers/copilot/Dockerfile .
 COPY claim/claim /usr/local/bin/claim
 COPY loop/loop /usr/local/bin/loop
-RUN chmod +x /usr/local/bin/claim /usr/local/bin/loop
+COPY workers/copilot/init-copilot.sh /usr/local/bin/init-copilot
+RUN chmod +x /usr/local/bin/claim /usr/local/bin/loop /usr/local/bin/init-copilot
+
+# Bake in the copilot config template (credentials injected at runtime by init-copilot)
+RUN mkdir -p /root/.copilot
+COPY workers/copilot/copilot-config.json /root/.copilot/config.json
 
 # Runtime env vars (must be supplied via docker run -e / --env-file):
-#   GH_TOKEN                  — GitHub token for Copilot authentication
+#   GH_TOKEN / GH_USERNAME    — GitHub credentials for Copilot authentication
 #   JIRA_SITE / JIRA_EMAIL / JIRA_TOKEN / JIRA_ASSIGNEE_ACCOUNT_ID
 #   GIT_REPO_URL / GIT_USERNAME / GIT_TOKEN
 
-# Use gpt-4.1 as the Copilot model
-ENV GH_COPILOT_MODEL="gpt-4.1"
-
-ENTRYPOINT ["loop", "--agent", "gh copilot suggest --model gpt-4.1 -t shell"]
+ENTRYPOINT ["bash", "-c", "init-copilot && exec loop --agent copilot"]
