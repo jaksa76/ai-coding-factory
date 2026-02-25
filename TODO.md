@@ -10,6 +10,6 @@
 - [ ] Implement `factory add --image <img> --count <n>` — launch worker containers
 - [ ] Test full cycle: start workers via `manager`, watch them process tickets, stop them
 - [ ] Scaffold `worker-builder`
-- [ ] Implement devcontainer.json parsing (git archive)
+- [x] Implement devcontainer.json parsing (git archive)
 - [ ] Implement Dockerfile generation layering agent + `loop` + `jira` on the devcontainer base
 - [ ] Implement `worker-builder build --devcontainer <path> --type <agent> --tag <tag>`

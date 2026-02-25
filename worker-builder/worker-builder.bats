@@ -214,6 +214,83 @@ esac
     [[ "$output" == *"mcr.microsoft.com/devcontainers/base:bullseye"* ]]
 }
 
+@test "git archive: uses image field from devcontainer.json" {
+    stub_script git '
+case "$1" in
+    archive)
+        tmpdir=$(mktemp -d)
+        mkdir -p "$tmpdir/.devcontainer"
+        printf '"'"'{"image": "node:18-bullseye"}'"'"' > "$tmpdir/.devcontainer/devcontainer.json"
+        tar -c -C "$tmpdir" .devcontainer/devcontainer.json
+        rm -rf "$tmpdir"
+        ;;
+    *) ;;
+esac
+'
+    stub_script docker "echo \"\$@\""
+    # Use the real jq for this test
+    rm -f "$STUB_DIR/jq"
+
+    run "$WORKER_BUILDER" \
+        --project https://github.com/org/repo.git \
+        --agent claude
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"node:18-bullseye"* ]]
+    [[ "$output" == *"FROM node:18-bullseye"* ]]
+}
+
+@test "git archive: strips // comments from devcontainer.json before parsing" {
+    stub_script git '
+case "$1" in
+    archive)
+        tmpdir=$(mktemp -d)
+        mkdir -p "$tmpdir/.devcontainer"
+        printf '"'"'// project devcontainer\n{"image": "ubuntu:22.04" // base image\n}'"'"' \
+            > "$tmpdir/.devcontainer/devcontainer.json"
+        tar -c -C "$tmpdir" .devcontainer/devcontainer.json
+        rm -rf "$tmpdir"
+        ;;
+    *) ;;
+esac
+'
+    stub_script docker "echo \"\$@\""
+    rm -f "$STUB_DIR/jq"
+
+    run "$WORKER_BUILDER" \
+        --project https://github.com/org/repo.git \
+        --agent claude
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"ubuntu:22.04"* ]]
+    [[ "$output" == *"FROM ubuntu:22.04"* ]]
+}
+
+@test "sparse clone: uses image field from devcontainer.json" {
+    stub_script git "
+case \"\$1\" in
+    archive) exit 1 ;;
+    clone)
+        # Destination is the last argument
+        dest=\"\${@: -1}\"
+        mkdir -p \"\$dest/.devcontainer\"
+        printf '{\"image\": \"python:3.11-slim\"}' > \"\$dest/.devcontainer/devcontainer.json\"
+        ;;
+    -C) ;;   # sparse-checkout set / checkout — no-op
+    *) ;;
+esac
+"
+    stub_script docker "echo \"\$@\""
+    rm -f "$STUB_DIR/jq"
+
+    run "$WORKER_BUILDER" \
+        --project https://github.com/org/repo.git \
+        --agent claude
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"python:3.11-slim"* ]]
+}
+
 # ── Dockerfile generation ─────────────────────────────────────────────────────
 
 @test "generated Dockerfile starts with FROM <base-image>" {
