@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# claim — claim an unassigned Jira issue by assigning it to self
+#
+# Usage:
+#   claim --project <key> --account-id <id>
+#
+# Environment variables:
+#   JIRA_SITE   — Jira host, e.g. mycompany.atlassian.net
+#   JIRA_EMAIL  — Jira account email
+#   JIRA_TOKEN  — Jira API token
+
+usage() {
+    echo "Usage: claim --project <key> --account-id <id>"
+    echo ""
+    echo "Environment variables required:"
+    echo "  JIRA_SITE   Jira host (e.g. mycompany.atlassian.net)"
+    echo "  JIRA_EMAIL  Jira account email"
+    echo "  JIRA_TOKEN  Jira API token"
+    exit 1
+}
+
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+# Parse arguments
+PROJECT=""
+ACCOUNT_ID=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --project)
+            PROJECT="$2"
+            shift 2
+            ;;
+        --account-id)
+            ACCOUNT_ID="$2"
+            shift 2
+            ;;
+        --help|-h)
+            usage
+            ;;
+        *)
+            error_exit "Unknown option: $1"
+            ;;
+    esac
+done
+
+[[ -z "$PROJECT" ]]    && error_exit "--project <key> is required"
+[[ -z "$ACCOUNT_ID" ]] && error_exit "--account-id <id> is required"
+[[ -z "${JIRA_SITE:-}" ]]  && error_exit "JIRA_SITE environment variable is not set"
+[[ -z "${JIRA_EMAIL:-}" ]] && error_exit "JIRA_EMAIL environment variable is not set"
+[[ -z "${JIRA_TOKEN:-}" ]] && error_exit "JIRA_TOKEN environment variable is not set"
+
+# Authenticate with Jira if not already logged in
+if ! acli jira auth status 2>/dev/null | grep -q "Authenticated"; then
+    echo "$JIRA_TOKEN" | acli jira auth login \
+        --site "$JIRA_SITE" \
+        --email "$JIRA_EMAIL" \
+        --token
+fi
+
+# Attempt to claim an issue (optimistic locking loop)
+while true; do
+    echo "Searching for unassigned open issues in project $PROJECT..."
+
+    # Find unassigned, non-done issues; take the first one
+    ISSUE_KEY=$(acli jira workitem search \
+        --jql "project = \"$PROJECT\" AND assignee is EMPTY AND statusCategory != Done ORDER BY created ASC" \
+        --json --paginate 2>/dev/null \
+        | jq -r 'if type == "array" then .[0].key // empty else empty end')
+
+    if [[ -z "$ISSUE_KEY" ]]; then
+        echo "No unassigned open issues found in project $PROJECT. Waiting 30s..."
+        sleep 30
+        continue
+    fi
+
+    echo "Attempting to claim $ISSUE_KEY..."
+
+    # Assign to self
+    acli jira workitem assign "$ISSUE_KEY" --account-id "$ACCOUNT_ID" >/dev/null
+
+    # Wait 10 seconds for Jira to settle (optimistic locking check)
+    echo "Waiting 10s to verify assignment..."
+    sleep 10
+
+    # Re-fetch and verify assignee
+    ASSIGNEE=$(acli jira workitem view "$ISSUE_KEY" --json 2>/dev/null \
+        | jq -r '.fields.assignee.accountId // empty')
+
+    if [[ "$ASSIGNEE" != "$ACCOUNT_ID" ]]; then
+        echo "Assignment race detected on $ISSUE_KEY (assignee is now ${ASSIGNEE:-unassigned}). Retrying..."
+        continue
+    fi
+
+    echo "Successfully claimed $ISSUE_KEY."
+
+    # Transition to "In Progress"
+    echo "Transitioning $ISSUE_KEY to In Progress..."
+    acli jira workitem transition "$ISSUE_KEY" "In Progress" >/dev/null 2>&1 || \
+        echo "Warning: could not transition $ISSUE_KEY to In Progress (transition may not be available)"
+
+    # Print issue details
+    acli jira workitem view "$ISSUE_KEY" --json \
+        | jq '{key: .key, summary: .fields.summary, description: (.fields.description // ""), status: .fields.status.name}'
+
+    break
+done
