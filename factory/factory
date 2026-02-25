@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# factory — manage AI coding worker containers
+#
+# Usage:
+#   factory status                        # list running workers
+#   factory add --image <img> --count <n> # start n workers
+#   factory logs <worker-id>              # stream logs for a worker
+#   factory stop <worker-id>              # stop a worker
+
+WORKER_LABEL="ai-coding-factory.worker=true"
+
+usage() {
+    echo "Usage: factory <command> [options]"
+    echo ""
+    echo "Commands:"
+    echo "  status                        List running workers"
+    echo "  add --image <img> --count <n> Start n workers with the given image"
+    echo "  logs <worker-id>              Stream logs for a worker"
+    echo "  stop <worker-id>              Stop a worker"
+    exit 1
+}
+
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+cmd_status() {
+    docker ps --filter "label=$WORKER_LABEL" \
+        --format "table {{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Names}}"
+}
+
+[[ $# -eq 0 ]] && usage
+
+case "$1" in
+    status)
+        shift
+        cmd_status
+        ;;
+    --help|-h)
+        usage
+        ;;
+    *)
+        error_exit "Unknown command: $1"
+        ;;
+esac
