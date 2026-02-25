@@ -32,12 +32,53 @@ cmd_status() {
         --format "table {{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Names}}"
 }
 
+cmd_add() {
+    local image=""
+    local count=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --image)
+                [[ -z "${2:-}" ]] && error_exit "--image requires a value"
+                image="$2"
+                shift 2
+                ;;
+            --*)
+                error_exit "Unknown option: $1"
+                ;;
+            *)
+                count="$1"
+                shift
+                ;;
+        esac
+    done
+
+    [[ -z "$image" ]] && error_exit "--image is required"
+    [[ -z "$count" ]] && error_exit "count is required"
+    [[ ! "$count" =~ ^[0-9]+$ ]] && error_exit "count must be a positive integer"
+    [[ "$count" -lt 1 ]] && error_exit "count must be at least 1"
+
+    local ts
+    ts="$(date +%s)"
+    for ((i = 1; i <= count; i++)); do
+        local name="factory-worker-${ts}-${i}"
+        docker run -d \
+            --label "$WORKER_LABEL" \
+            --name "$name" \
+            "$image"
+    done
+}
+
 [[ $# -eq 0 ]] && usage
 
 case "$1" in
     status)
         shift
         cmd_status
+        ;;
+    add)
+        shift
+        cmd_add "$@"
         ;;
     --help|-h)
         usage

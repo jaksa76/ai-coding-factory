@@ -95,3 +95,72 @@ stub_script() {
     run "$FACTORY" status
     [ "$status" -ne 0 ]
 }
+
+# ── add ───────────────────────────────────────────────────────────────────────
+
+@test "add: requires --image" {
+    run "$FACTORY" add 3
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"--image is required"* ]]
+}
+
+@test "add: requires count" {
+    stub docker ""
+    run "$FACTORY" add --image myimage
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"count is required"* ]]
+}
+
+@test "add: count must be numeric" {
+    stub docker ""
+    run "$FACTORY" add --image myimage notanumber
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"must be a positive integer"* ]]
+}
+
+@test "add: launches N containers" {
+    local calls_file
+    calls_file="$(mktemp)"
+    stub_script docker "echo \"\$@\" >> '$calls_file'"
+
+    run "$FACTORY" add --image myimage 3
+    [ "$status" -eq 0 ]
+
+    local call_count
+    call_count="$(wc -l < "$calls_file")"
+    [ "$call_count" -eq 3 ]
+
+    rm -f "$calls_file"
+}
+
+@test "add: passes worker label to docker run" {
+    local calls_file
+    calls_file="$(mktemp)"
+    stub_script docker "echo \"\$@\" >> '$calls_file'"
+
+    run "$FACTORY" add --image myimage 1
+    [ "$status" -eq 0 ]
+
+    [[ "$(cat "$calls_file")" == *"ai-coding-factory.worker"* ]]
+
+    rm -f "$calls_file"
+}
+
+@test "add: passes image name to docker run" {
+    local calls_file
+    calls_file="$(mktemp)"
+    stub_script docker "echo \"\$@\" >> '$calls_file'"
+
+    run "$FACTORY" add --image my-worker-image 1
+    [ "$status" -eq 0 ]
+
+    [[ "$(cat "$calls_file")" == *"my-worker-image"* ]]
+
+    rm -f "$calls_file"
+}
+
+@test "add: docker failure propagates non-zero exit" {
+    stub_exit docker 1 "Unable to find image"
+    run "$FACTORY" add --image myimage 1
+    [ "$status" -ne 0 ]
+}
