@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# mock-agent — fake agent for testing loop without real AI calls
+#
+# Usage:
+#   mock-agent <prompt>
+#
+# Appends the prompt to work-log.md in the current directory,
+# then commits the change with git.
+
+usage() {
+    echo "Usage: mock-agent <prompt>"
+    exit 1
+}
+
+[[ $# -eq 0 ]] && usage
+[[ "$1" == "--help" || "$1" == "-h" ]] && usage
+
+PROMPT="$*"
+LOG_FILE="work-log.md"
+
+printf '%s\n' "$PROMPT" >> "$LOG_FILE"
+
+git add "$LOG_FILE"
+git commit -m "mock agent: process issue"
