@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(npm test:*)",
+      "Bash(cd /workspaces/ai-coding-factory && docker build -t mock-coding-pipeline:test mock-coding-pipeline/ 2>&1)",
+      "Bash(cd /workspaces/ai-coding-factory/hub && npm run test:integration 2>&1)",
+      "Bash(docker run:*)",
+      "Bash(head:*)",
+      "Bash(node:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker ps -a --filter \"name=ai-coding-factory-container-pipe\" --format \"{{.Names}}\" | xargs -r docker rm -f 2>&1)",
+      "Bash(cd /workspaces/ai-coding-factory && docker build -t mock-coding-pipeline:test mock-coding-pipeline/ -q 2>&1)"
+    ]
+  }
+}

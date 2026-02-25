@@ -81,7 +81,7 @@ while true; do
     echo "Attempting to claim $ISSUE_KEY..."
 
     # Assign to self
-    acli jira workitem assign "$ISSUE_KEY" --account-id "$ACCOUNT_ID" >/dev/null
+    acli jira workitem assign --key "$ISSUE_KEY" --assignee "$ACCOUNT_ID" --yes >/dev/null
 
     # Wait 10 seconds for Jira to settle (optimistic locking check)
     echo "Waiting 10s to verify assignment..."
@@ -100,7 +100,7 @@ while true; do
 
     # Transition to "In Progress"
     echo "Transitioning $ISSUE_KEY to In Progress..."
-    acli jira workitem transition "$ISSUE_KEY" "In Progress" >/dev/null 2>&1 || \
+    acli jira workitem transition --key "$ISSUE_KEY" --status "In Progress" --yes >/dev/null 2>&1 || \
         echo "Warning: could not transition $ISSUE_KEY to In Progress (transition may not be available)"
 
     # Print issue details
