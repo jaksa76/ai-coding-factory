@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# loop — agent-agnostic claim/work loop
+#
+# Usage:
+#   loop --project <key> --agent <command>
+#
+# Environment variables:
+#   JIRA_SITE                 — Jira host, e.g. mycompany.atlassian.net
+#   JIRA_EMAIL                — Jira account email
+#   JIRA_TOKEN                — Jira API token
+#   JIRA_ASSIGNEE_ACCOUNT_ID  — Jira account ID used for self-assignment
+#   GIT_REPO_URL              — Repository to work on
+#   GIT_USERNAME              — Git push credentials
+#   GIT_TOKEN                 — Git push credentials
+
+usage() {
+    echo "Usage: loop --project <key> --agent <command>"
+    echo ""
+    echo "Environment variables required:"
+    echo "  JIRA_SITE                 Jira host (e.g. mycompany.atlassian.net)"
+    echo "  JIRA_EMAIL                Jira account email"
+    echo "  JIRA_TOKEN                Jira API token"
+    echo "  JIRA_ASSIGNEE_ACCOUNT_ID  Jira account ID for self-assignment"
+    echo "  GIT_REPO_URL              Repository URL to work on"
+    echo "  GIT_USERNAME              Git push credentials"
+    echo "  GIT_TOKEN                 Git push credentials"
+    exit 1
+}
+
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+# Parse arguments
+PROJECT=""
+AGENT_CMD=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --project)
+            PROJECT="$2"
+            shift 2
+            ;;
+        --agent)
+            AGENT_CMD="$2"
+            shift 2
+            ;;
+        --help|-h)
+            usage
+            ;;
+        *)
+            error_exit "Unknown option: $1"
+            ;;
+    esac
+done
+
+[[ -z "$PROJECT" ]]   && error_exit "--project <key> is required"
+[[ -z "$AGENT_CMD" ]] && error_exit "--agent <command> is required"
+
+[[ -z "${JIRA_SITE:-}" ]]                && error_exit "JIRA_SITE environment variable is not set"
+[[ -z "${JIRA_EMAIL:-}" ]]               && error_exit "JIRA_EMAIL environment variable is not set"
+[[ -z "${JIRA_TOKEN:-}" ]]               && error_exit "JIRA_TOKEN environment variable is not set"
+[[ -z "${JIRA_ASSIGNEE_ACCOUNT_ID:-}" ]] && error_exit "JIRA_ASSIGNEE_ACCOUNT_ID environment variable is not set"
+[[ -z "${GIT_REPO_URL:-}" ]]             && error_exit "GIT_REPO_URL environment variable is not set"
+[[ -z "${GIT_USERNAME:-}" ]]             && error_exit "GIT_USERNAME environment variable is not set"
+[[ -z "${GIT_TOKEN:-}" ]]                && error_exit "GIT_TOKEN environment variable is not set"
+
+# Build authenticated git URL (inject username:token into https URL)
+AUTH_URL="${GIT_REPO_URL/#https:\/\//https://$GIT_USERNAME:$GIT_TOKEN@}"
+
+# Derive local repo directory name from URL
+REPO_NAME="$(basename "$GIT_REPO_URL" .git)"
+# LOOP_WORK_DIR allows tests to override the base directory; defaults to cwd
+BASE_DIR="${LOOP_WORK_DIR:-$(pwd)}"
+WORK_DIR="$BASE_DIR/$REPO_NAME"
+
+while true; do
+    # Step 1: Claim a Jira issue
+    echo "Claiming issue from project $PROJECT..."
+    CLAIM_OUTPUT="$(claim --project "$PROJECT" --account-id "$JIRA_ASSIGNEE_ACCOUNT_ID")"
+    echo "$CLAIM_OUTPUT"
+
+    # Extract the JSON block (lines from first '{' onward)
+    ISSUE_JSON="$(printf '%s\n' "$CLAIM_OUTPUT" | awk '/^\{/{f=1} f')"
+    ISSUE_KEY="$(printf '%s\n' "$ISSUE_JSON" | jq -r '.key')"
+    ISSUE_SUMMARY="$(printf '%s\n' "$ISSUE_JSON" | jq -r '.summary')"
+    ISSUE_DESCRIPTION="$(printf '%s\n' "$ISSUE_JSON" | jq -r '.description // ""')"
+
+    echo "Working on $ISSUE_KEY: $ISSUE_SUMMARY"
+
+    # Step 2: Clone or pull the repository
+    if [[ -d "$WORK_DIR/.git" ]]; then
+        echo "Pulling latest changes for $REPO_NAME..."
+        git -C "$WORK_DIR" remote set-url origin "$AUTH_URL"
+        git -C "$WORK_DIR" pull
+    else
+        echo "Cloning $GIT_REPO_URL..."
+        git clone "$AUTH_URL" "$WORK_DIR"
+    fi
+
+    # Step 3: Invoke the agent with the issue as prompt
+    PROMPT="[$ISSUE_KEY] $ISSUE_SUMMARY"
+    [[ -n "$ISSUE_DESCRIPTION" ]] && PROMPT="$PROMPT
+$ISSUE_DESCRIPTION"
+    echo "Running agent for $ISSUE_KEY..."
+    (cd "$WORK_DIR" && $AGENT_CMD "$PROMPT")
+
+    # Step 4: Push changes
+    echo "Pushing changes..."
+    git -C "$WORK_DIR" push "$AUTH_URL" HEAD
+
+    # Step 5: Comment on the Jira issue
+    echo "Posting comment on $ISSUE_KEY..."
+    acli jira workitem comment \
+        --key "$ISSUE_KEY" \
+        --comment "Automated agent completed work. Changes pushed to repository." \
+        --yes >/dev/null 2>&1 || \
+        echo "Warning: could not post comment on $ISSUE_KEY"
+
+    # Step 6: Transition to Done
+    echo "Transitioning $ISSUE_KEY to Done..."
+    acli jira workitem transition \
+        --key "$ISSUE_KEY" \
+        --status "Done" \
+        --yes >/dev/null 2>&1 || \
+        echo "Warning: could not transition $ISSUE_KEY to Done"
+
+    echo "Completed $ISSUE_KEY."
+done
