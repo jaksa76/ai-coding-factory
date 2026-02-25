@@ -136,6 +136,26 @@ Predefined Dockerfiles for nodejs development. Each one installs a specific agen
 
 For project-specific images, use `worker-builder` instead of these generic ones.
 
+## Configuration
+
+At the root of the project there is a `.env` file (not checked in) that contains all necessary environment variables for Jira, Git and Copilot authentication.
+
+```bash
+# credentials for Jira
+export JIRA_SITE=
+export JIRA_EMAIL=
+export JIRA_TOKEN=
+
+# credentials for the project repository
+export GIT_REPO_URL=
+export GIT_USERNAME=
+export GIT_TOKEN=
+
+# credentials for Github Copilot
+export GH_USERNAME=
+export GH_TOKEN=
+```
+
 ## What this drops vs. the legacy hub
 
 - No local task store (Jira is the store)

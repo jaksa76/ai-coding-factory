@@ -101,31 +101,12 @@ while true; do
     fi
 
     # Step 3: Invoke the agent with the issue as prompt
-    PROMPT="[$ISSUE_KEY] $ISSUE_SUMMARY"
+    PROMPT="Implement the issue described below. Make sure to run all necessary tests. Once the issue is implemented, commit the change with a brief description of the change and push the changes. After pushing, update the Jira issue by commenting what was performed and transition the issue to Done. You have the acli tool available for Jira interactions.\n\n"
+    PROMPT="$PROMPT [$ISSUE_KEY] $ISSUE_SUMMARY"
     [[ -n "$ISSUE_DESCRIPTION" ]] && PROMPT="$PROMPT
 $ISSUE_DESCRIPTION"
     echo "Running agent for $ISSUE_KEY..."
     (cd "$WORK_DIR" && $AGENT_CMD "$PROMPT")
-
-    # Step 4: Push changes
-    echo "Pushing changes..."
-    git -C "$WORK_DIR" push "$AUTH_URL" HEAD
-
-    # Step 5: Comment on the Jira issue
-    echo "Posting comment on $ISSUE_KEY..."
-    acli jira workitem comment \
-        --key "$ISSUE_KEY" \
-        --comment "Automated agent completed work. Changes pushed to repository." \
-        --yes >/dev/null 2>&1 || \
-        echo "Warning: could not post comment on $ISSUE_KEY"
-
-    # Step 6: Transition to Done
-    echo "Transitioning $ISSUE_KEY to Done..."
-    acli jira workitem transition \
-        --key "$ISSUE_KEY" \
-        --status "Done" \
-        --yes >/dev/null 2>&1 || \
-        echo "Warning: could not transition $ISSUE_KEY to Done"
 
     echo "Completed $ISSUE_KEY."
 done

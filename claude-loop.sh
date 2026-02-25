@@ -9,5 +9,5 @@ for i in $(seq 1 "$TOTAL"); do
   echo $(date) "=== Invocation $i / $TOTAL ==="  
   INVOCATION_NUMBER=$i claude --dangerously-skip-permissions -p "$PROMPT"
   echo $(date) "Finished invocation $i / $TOTAL"
-  sleep $((20*60))
+  sleep $((10*60))
 done
