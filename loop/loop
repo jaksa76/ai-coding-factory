@@ -111,4 +111,6 @@ $ISSUE_DESCRIPTION"
     echo "=== AGENT END: $ISSUE_KEY ==="
 
     echo "Completed $ISSUE_KEY."
+
+    sleep 1200 # Sleep for 20 minutes before claiming the next issue
 done
