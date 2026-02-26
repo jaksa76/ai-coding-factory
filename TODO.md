@@ -6,16 +6,18 @@
 - [x] Create the copilot worker Dockerfile (install @github/copilot and use gpt-4.1 model)
 - [x] Write a test for the copilot worker image
 - [x] Write `workers/claude/Dockerfile` and test end-to-end
-- [ ] Write the `factory` CLI with `status` command
-- [ ] Implement `factory add --image <img> --count <n>` — launch worker containers
-- [ ] Test full cycle: start workers via `manager`, watch them process tickets, stop them
-- [ ] Scaffold `worker-builder`
+- [x] Write the `factory` CLI with `status` command
+- [x] Implement `factory add --image <img> --count <n>` — launch worker containers
+- [x] Scaffold `worker-builder`
 - [x] Implement devcontainer.json parsing (git archive)
 - [x] Implement Dockerfile generation layering agent + `loop` + `jira` on the devcontainer base
+- [x] Analyse architecture for potential technical debt and suggest improvements
 - [ ] Implement `worker-builder build --devcontainer <path> --type <agent> --tag <tag>`
-- [ ] Analyse testability of the system and suggest improvements
-- [ ] Analyse reliability of the worker and suggest improvements
+- [ ] Analyse testability of the system and produce a document with suggested improvements
 - [ ] If the agent has hit the rate limit, have it wait and retry after the appropriate time
 - [ ] If there are no issues to work on, have the agent wait and poll again after a certain interval
+- [ ] Analyse reliability of the worker and produce a document with suggested improvements
 - [ ] Claude may need to refresh the token periodically, implement logic to handle this in the worker
 - [ ] Claude code logs are still not appearing in the worker logs, investigate and fix this issue
+- [ ] Investiage use of credential helper for git and produce a document with possible approaches and their tradeoffs
+- [ ] Missing input validation on $PROJECT
