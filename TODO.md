@@ -13,3 +13,9 @@
 - [x] Implement devcontainer.json parsing (git archive)
 - [x] Implement Dockerfile generation layering agent + `loop` + `jira` on the devcontainer base
 - [ ] Implement `worker-builder build --devcontainer <path> --type <agent> --tag <tag>`
+- [ ] Analyse testability of the system and suggest improvements
+- [ ] Analyse reliability of the worker and suggest improvements
+- [ ] If the agent has hit the rate limit, have it wait and retry after the appropriate time
+- [ ] If there are no issues to work on, have the agent wait and poll again after a certain interval
+- [ ] Claude may need to refresh the token periodically, implement logic to handle this in the worker
+- [ ] Claude code logs are still not appearing in the worker logs, investigate and fix this issue
