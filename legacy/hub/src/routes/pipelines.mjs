@@ -1,4 +1,5 @@
 import express from 'express';
+import { body, validationResult } from 'express-validator';
 import { $, chalk } from 'zx';
 import path from 'node:path';
 import fs from 'fs-extra';
@@ -104,52 +105,54 @@ router.get('/:pipelineId', async (req, res) => {
 });
 
 // POST /pipelines - Create and start a new pipeline for a task
-router.post('/', async (req, res) => {
-  try {
-    const { taskId, description, gitUrl, gitUsername, gitToken, mockMode, mockScript } = req.body || {};
-
-    if (!taskId) {
-      return res.status(400).json({ error: 'Missing required field', message: 'taskId is required' });
-    }
-
-    if (!description) {
-      return res.status(400).json({ error: 'Missing required field', message: 'description is required' });
-    }
-
-    const pipelineId = await allocatePipeline(taskId, {
-      taskId,
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      stages: [],
-    });
-
-    console.log(chalk.green(`Starting pipeline ${pipelineId} for task ${taskId}...`));
-
+router.post('/',
+  body('taskId').isString().trim().notEmpty().withMessage('taskId is required'),
+  body('description').isString().trim().isLength({ min: 1, max: 500 }).withMessage('description is required and must be 1-500 chars.'),
+  body('gitUrl').optional().isURL().withMessage('gitUrl must be a valid URL'),
+  body('gitUsername').optional().isString().trim().isLength({ min: 1, max: 100 }).withMessage('gitUsername must be 1-100 chars.'),
+  body('gitToken').optional().isString().trim().isLength({ min: 1, max: 100 }).withMessage('gitToken must be 1-100 chars.'),
+  async (req, res) => {
     try {
-      const pipelineScript = path.resolve(process.cwd(), 'pipelines.sh');
-      const args = ['start', '--task-id', taskId, '--pipeline-id', pipelineId, '--task-description', description];
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+      const { taskId, description, gitUrl, gitUsername, gitToken, mockMode, mockScript } = req.body || {};
 
-      if (gitUrl) args.push('--git-url', gitUrl);
-      if (gitUsername) args.push('--git-username', gitUsername);
-      if (gitToken) args.push('--git-token', gitToken);
-
-      await $({ env: { ...process.env, MOCK_MODE: mockMode || '', MOCK_SCRIPT: mockScript || '' } })`${pipelineScript} ${args}`;
-
-      await updatePipeline(pipelineId, { status: 'running' });
-
-      res.status(201).json(await getPipeline(pipelineId));
-    } catch (err) {
-      console.error(chalk.red(`Pipeline ${pipelineId} failed to start:`), err);
-      res.status(500).json({
-        error: 'Pipeline start failed',
-        message: 'Failed to start pipeline',
+      const pipelineId = await allocatePipeline(taskId, {
+        taskId,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        stages: [],
       });
+
+      console.log(chalk.green(`Starting pipeline ${pipelineId} for task ${taskId}...`));
+
+      try {
+        const pipelineScript = path.resolve(process.cwd(), 'pipelines.sh');
+        const args = ['start', '--task-id', taskId, '--pipeline-id', pipelineId, '--task-description', description];
+
+        if (gitUrl) args.push('--git-url', gitUrl);
+        if (gitUsername) args.push('--git-username', gitUsername);
+        if (gitToken) args.push('--git-token', gitToken);
+
+        await $({ env: { ...process.env, MOCK_MODE: mockMode || '', MOCK_SCRIPT: mockScript || '' } })`${pipelineScript} ${args}`;
+
+        await updatePipeline(pipelineId, { status: 'running' });
+
+        res.status(201).json(await getPipeline(pipelineId));
+      } catch (err) {
+        console.error(chalk.red(`Pipeline ${pipelineId} failed to start:`), err);
+        res.status(500).json({
+          error: 'Pipeline start failed',
+          message: 'Failed to start pipeline',
+        });
+      }
+    } catch (error) {
+      console.error('Error creating pipeline:', error);
+      res.status(500).json({ error: 'Internal server error', message: 'Failed to create pipeline' });
     }
-  } catch (error) {
-    console.error('Error creating pipeline:', error);
-    res.status(500).json({ error: 'Internal server error', message: 'Failed to create pipeline' });
-  }
-});
+  });
 
 // PUT /pipelines/:pipelineId - Update pipeline status (agent write-back)
 router.put('/:pipelineId', async (req, res) => {

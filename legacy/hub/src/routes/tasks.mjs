@@ -1,4 +1,5 @@
 import express from 'express';
+import { body, validationResult } from 'express-validator';
 import { $, chalk } from 'zx';
 import fs from 'fs-extra';
 import path from 'node:path';
@@ -48,34 +49,45 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.post(['/', '/:id'], async (req, res) => {
-  if (req.params.id) {
-    return res.status(405).json({ error: 'Method not allowed', message: 'POST with task ID is not allowed. Use PUT to update.' });
-  }
-  const { description = '' } = req.body || {};
-  if (req.headers['content-type']?.includes('application/json') === false) {
-    // keep compatible behavior but not strictly necessary
-  }
-  const id = generateId();
-  const task = { id, description, status: 'pending' };
-  await writeJSON(tasksPath(id), task);
-  res.json(task);
-});
+router.post(['/', '/:id'],
+  body('description').isString().trim().isLength({ min: 1, max: 500 }).withMessage('Description is required and must be 1-500 chars.'),
+  async (req, res) => {
+    if (req.params.id) {
+      return res.status(405).json({ error: 'Method not allowed', message: 'POST with task ID is not allowed. Use PUT to update.' });
+    }
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+    const { description = '' } = req.body || {};
+    const id = generateId();
+    const task = { id, description, status: 'pending' };
+    await writeJSON(tasksPath(id), task);
+    res.json(task);
+  });
 
-router.put('/:id?', async (req, res) => {
-  const id = req.params.id;
-  if (!id) return res.status(400).json({ error: 'Missing task ID', message: 'Task ID is required for PUT requests' });
-  const file = tasksPath(id);
-  if (!(await fs.pathExists(file))) return res.status(404).json({ error: 'Task not found', message: 'Task with specified ID does not exist' });
+router.put('/:id?',
+  body('description').optional().isString().trim().isLength({ min: 1, max: 500 }).withMessage('Description must be 1-500 chars.'),
+  body('status').optional().isIn(['pending', 'in_progress', 'done', 'blocked']).withMessage('Invalid status.'),
+  async (req, res) => {
+    const id = req.params.id;
+    if (!id) return res.status(400).json({ error: 'Missing task ID', message: 'Task ID is required for PUT requests' });
+    const file = tasksPath(id);
+    if (!(await fs.pathExists(file))) return res.status(404).json({ error: 'Task not found', message: 'Task with specified ID does not exist' });
 
-  const current = await readJSON(file);
-  const description = req.body?.description ?? current.description;
-  const status = req.body?.status ?? current.status;
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
 
-  const updated = { ...current, description, status };
-  await writeJSON(file, updated);
-  res.json(updated);
-});
+    const current = await readJSON(file);
+    const description = req.body?.description ?? current.description;
+    const status = req.body?.status ?? current.status;
+
+    const updated = { ...current, description, status };
+    await writeJSON(file, updated);
+    res.json(updated);
+  });
 
 router.delete('/:id?', async (req, res) => {
   const id = req.params.id;
