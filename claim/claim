@@ -67,10 +67,12 @@ while true; do
     echo "Searching for unassigned open issues in project $PROJECT..."
 
     # Find unassigned, non-done issues; take the first one
-    ISSUE_KEY=$(acli jira workitem search \
-        --jql "project = \"$PROJECT\" AND assignee is EMPTY AND statusCategory != Done ORDER BY created ASC" \
-        --json --paginate 2>/dev/null \
-        | jq -r 'if type == "array" then .[0].key // empty else empty end')
+    SEARCH_JQL="project = \"$PROJECT\" AND assignee is EMPTY AND statusCategory != Done ORDER BY created ASC"
+    echo "Running JQL: $SEARCH_JQL"
+    SEARCH_OUTPUT=$(acli jira workitem search --jql "$SEARCH_JQL" --json --paginate 2>&1)
+    echo "Search result: $SEARCH_OUTPUT"
+    ISSUE_KEY=$(printf '%s\n' "$SEARCH_OUTPUT" \
+        | jq -r 'if type == "array" then .[0].key // empty else empty end' 2>/dev/null || true)
 
     if [[ -z "$ISSUE_KEY" ]]; then
         echo "No unassigned open issues found in project $PROJECT. Waiting 30s..."
@@ -81,15 +83,17 @@ while true; do
     echo "Attempting to claim $ISSUE_KEY..."
 
     # Assign to self
-    acli jira workitem assign --key "$ISSUE_KEY" --assignee "$ACCOUNT_ID" --yes >/dev/null
+    acli jira workitem assign --key "$ISSUE_KEY" --assignee "$ACCOUNT_ID" --yes
 
     # Wait 10 seconds for Jira to settle (optimistic locking check)
     echo "Waiting 10s to verify assignment..."
     sleep 10
 
     # Re-fetch and verify assignee
-    ASSIGNEE=$(acli jira workitem view "$ISSUE_KEY" --json 2>/dev/null \
-        | jq -r '.fields.assignee.accountId // empty')
+    VERIFY_OUTPUT=$(acli jira workitem view "$ISSUE_KEY" --json 2>&1)
+    echo "Verify output: $VERIFY_OUTPUT"
+    ASSIGNEE=$(printf '%s\n' "$VERIFY_OUTPUT" | jq -r '.fields.assignee.accountId // empty' 2>/dev/null || true)
+    echo "Assigned to: ${ASSIGNEE:-<nobody>}"
 
     if [[ "$ASSIGNEE" != "$ACCOUNT_ID" ]]; then
         echo "Assignment race detected on $ISSUE_KEY (assignee is now ${ASSIGNEE:-unassigned}). Retrying..."
@@ -100,8 +104,12 @@ while true; do
 
     # Transition to "In Progress"
     echo "Transitioning $ISSUE_KEY to In Progress..."
-    acli jira workitem transition --key "$ISSUE_KEY" --status "In Progress" --yes >/dev/null 2>&1 || \
+    TRANSITION_STATUS=0
+    TRANSITION_OUTPUT=$(acli jira workitem transition --key "$ISSUE_KEY" --status "In Progress" --yes 2>&1) || TRANSITION_STATUS=$?
+    echo "Transition output: $TRANSITION_OUTPUT"
+    if [[ $TRANSITION_STATUS -ne 0 ]]; then
         echo "Warning: could not transition $ISSUE_KEY to In Progress (transition may not be available)"
+    fi
 
     # Print issue details
     acli jira workitem view "$ISSUE_KEY" --json \

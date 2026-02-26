@@ -96,7 +96,8 @@ make_docker_env_file() {
 @test "entrypoint invokes loop --agent claude" {
     run docker inspect --format '{{json .Config.Entrypoint}}' "$IMAGE_TAG"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"loop --agent"* ]]
+    [[ "$output" == *"loop --project"* ]]
+    [[ "$output" == *"--agent"* ]]
     [[ "$output" == *"claude"* ]]
 }
 

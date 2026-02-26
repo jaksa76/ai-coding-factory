@@ -201,6 +201,35 @@ esac
     rm -f "$counter_file"
 }
 
+@test "successful claim: transitions issue to In Progress" {
+    local transition_args_file
+    transition_args_file="$(mktemp)"
+
+    stub_script acli "
+case \"\$*\" in
+  'jira auth status')        echo 'Authenticated' ;;
+  'jira workitem search'*)   echo '[{\"key\":\"PROJ-6\"}]' ;;
+  'jira workitem assign'*)   ;;
+  'jira workitem view PROJ-6 --json')
+      echo '{\"key\":\"PROJ-6\",\"fields\":{\"assignee\":{\"accountId\":\"acc1\"},\"summary\":\"Task\",\"description\":null,\"status\":{\"name\":\"To Do\"}}}' ;;
+  'jira workitem transition'*)
+      echo \"\$*\" > '$transition_args_file'
+      ;;
+esac
+"
+    run "$CLAIM" --project "PROJ" --account-id "acc1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Successfully claimed PROJ-6"* ]]
+
+    local transition_args
+    transition_args="$(cat "$transition_args_file")"
+    [[ "$transition_args" == *"--key PROJ-6"* ]]
+    [[ "$transition_args" == *"--status"* ]]
+    [[ "$transition_args" == *"In Progress"* ]]
+
+    rm -f "$transition_args_file"
+}
+
 @test "transition failure is non-fatal: warning printed but exits 0" {
     stub_script acli '
 case "$*" in

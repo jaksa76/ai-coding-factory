@@ -141,6 +141,22 @@ teardown() {
     [[ "$assignee" == "$ACCOUNT_ID" ]]
 }
 
+@test "claim: issue is transitioned to In Progress after claim" {
+    run "$CLAIM" --project "$PROJECT" --account-id "$ACCOUNT_ID"
+    [ "$status" -eq 0 ]
+
+    local claimed_key
+    claimed_key=$(printf '%s\n' "$output" | awk '/^\{/,/^\}/' | jq -r '.key // empty')
+    echo "# claimed key: $claimed_key" >&3
+    [[ -n "$claimed_key" ]]
+
+    local status_name
+    status_name=$(acli jira workitem view "$claimed_key" --json 2>/dev/null \
+        | jq -r '.fields.status.name // empty')
+    echo "# status: $status_name" >&3
+    [[ "$status_name" == "In Progress" ]]
+}
+
 @test "claim: no unassigned issues — exits once an issue becomes available" {
     # Unassign the test issue so we know there's exactly one available,
     # then re-run claim against that specific project

@@ -44,6 +44,7 @@ RUN mkdir -p /home/worker/.claude && chown worker:worker /home/worker/.claude
 #   GIT_REPO_URL / GIT_USERNAME / GIT_TOKEN
 
 USER worker
+WORKDIR /home/worker
 ENV HOME=/home/worker
 ENV PATH="/home/worker/.local/bin:$PATH"
 

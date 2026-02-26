@@ -106,7 +106,9 @@ while true; do
     [[ -n "$ISSUE_DESCRIPTION" ]] && PROMPT="$PROMPT
 $ISSUE_DESCRIPTION"
     echo "Running agent for $ISSUE_KEY..."
+    echo "=== AGENT START: $ISSUE_KEY ==="
     (cd "$WORK_DIR" && $AGENT_CMD "$PROMPT")
+    echo "=== AGENT END: $ISSUE_KEY ==="
 
     echo "Completed $ISSUE_KEY."
 done
