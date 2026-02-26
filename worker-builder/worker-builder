@@ -4,24 +4,27 @@ set -euo pipefail
 # worker-builder — generate a project-specific worker Docker image
 #
 # Usage:
-#   worker-builder --project <url> --agent <claude|copilot|codex> [--tag <tag>] [--push]
+#   worker-builder build --devcontainer <path> --type <claude|copilot|codex> [--tag <tag>] [--push]
 #
-# Fetches the project's .devcontainer/devcontainer.json via git archive (with
-# sparse-clone fallback), extracts the base image, then generates and builds a
-# Dockerfile that layers the chosen agent CLI + loop + claim on top of it.
+# Reads the supplied devcontainer.json, extracts the base image, then generates
+# and builds a Dockerfile that layers the chosen agent CLI + loop + claim on top
+# of it.
 
 # Resolve the ai-coding-factory repo root (two levels up from this script)
 TOOL_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$TOOL_DIR/.." && pwd)"
 
 usage() {
-    echo "Usage: worker-builder --project <url> --agent <type> [--tag <tag>] [--push]"
+    echo "Usage: worker-builder build --devcontainer <path> --type <agent> [--tag <tag>] [--push]"
+    echo ""
+    echo "Subcommands:"
+    echo "  build   Build a worker image from a local devcontainer.json"
     echo ""
     echo "Options:"
-    echo "  --project <url>   Git repository URL of the target project"
-    echo "  --agent <type>    Agent type: claude, copilot, or codex"
-    echo "  --tag <tag>       Docker image tag (default: worker-<repo>-<agent>:latest)"
-    echo "  --push            Push the image after building"
+    echo "  --devcontainer <path>  Path to devcontainer.json file"
+    echo "  --type <type>          Agent type: claude, copilot, or codex"
+    echo "  --tag <tag>            Docker image tag (default: worker-<type>:latest)"
+    echo "  --push                 Push the image after building"
     exit 1
 }
 
@@ -30,21 +33,43 @@ error_exit() {
     exit 1
 }
 
-# ── argument parsing ──────────────────────────────────────────────────────────
+# ── subcommand dispatch ───────────────────────────────────────────────────────
 
-PROJECT=""
+SUBCOMMAND=""
+if [[ $# -gt 0 && "$1" != --* && "$1" != -* ]]; then
+    SUBCOMMAND="$1"
+    shift
+fi
+
+case "$SUBCOMMAND" in
+    build) ;;
+    "")
+        # No subcommand — show usage
+        usage
+        ;;
+    --help|-h)
+        usage
+        ;;
+    *)
+        error_exit "Unknown subcommand: $SUBCOMMAND"
+        ;;
+esac
+
+# ── argument parsing (build subcommand) ──────────────────────────────────────
+
+DEVCONTAINER_ARG=""
 AGENT=""
 TAG=""
 PUSH=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --project)
-            [[ -z "${2:-}" || "${2:-}" == --* ]] && error_exit "--project requires a value"
-            PROJECT="$2"; shift 2
+        --devcontainer)
+            [[ -z "${2:-}" || "${2:-}" == --* ]] && error_exit "--devcontainer requires a value"
+            DEVCONTAINER_ARG="$2"; shift 2
             ;;
-        --agent)
-            [[ -z "${2:-}" || "${2:-}" == --* ]] && error_exit "--agent requires a value"
+        --type)
+            [[ -z "${2:-}" || "${2:-}" == --* ]] && error_exit "--type requires a value"
             AGENT="$2"; shift 2
             ;;
         --tag)
@@ -63,51 +88,34 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-[[ -z "$PROJECT" ]] && error_exit "--project <url> is required"
-[[ -z "$AGENT" ]]   && error_exit "--agent <type> is required"
+[[ -z "$DEVCONTAINER_ARG" ]] && error_exit "--devcontainer <path> is required"
+[[ -z "$AGENT" ]]            && error_exit "--type <agent> is required"
 
 case "$AGENT" in
     claude|copilot|codex) ;;
     *) error_exit "Unknown agent type '$AGENT' (must be claude, copilot, or codex)" ;;
 esac
 
-[[ -z "$TAG" ]] && TAG="worker-$(basename "$PROJECT" .git)-${AGENT}:latest"
+[[ -z "$TAG" ]] && TAG="worker-${AGENT}:latest"
 
-echo "Building worker image for project: $PROJECT"
+echo "Building worker image"
+echo "Devcontainer: $DEVCONTAINER_ARG"
 echo "Agent: $AGENT"
 echo "Tag:   $TAG"
 
-# ── fetch devcontainer.json ───────────────────────────────────────────────────
+# ── read devcontainer.json from local path ────────────────────────────────────
 
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
-
-DEVCONTAINER_PATH=".devcontainer/devcontainer.json"
-
-echo "Fetching $DEVCONTAINER_PATH from $PROJECT..."
-
-DEVCONTAINER_FILE=""
-if git archive --remote="$PROJECT" HEAD "$DEVCONTAINER_PATH" 2>/dev/null \
-        | tar -x -C "$WORK_DIR"; then
-    DEVCONTAINER_FILE="$WORK_DIR/$DEVCONTAINER_PATH"
-else
-    echo "git archive not supported by remote; falling back to sparse clone..."
-    git clone --depth=1 --filter=blob:none --no-checkout "$PROJECT" "$WORK_DIR/repo" 2>/dev/null
-    git -C "$WORK_DIR/repo" sparse-checkout set "$DEVCONTAINER_PATH" 2>/dev/null
-    git -C "$WORK_DIR/repo" checkout 2>/dev/null
-    if [[ -f "$WORK_DIR/repo/$DEVCONTAINER_PATH" ]]; then
-        DEVCONTAINER_FILE="$WORK_DIR/repo/$DEVCONTAINER_PATH"
-    fi
-fi
 
 # ── parse base image from devcontainer.json ───────────────────────────────────
 
 DEFAULT_BASE="mcr.microsoft.com/devcontainers/base:bullseye"
 BASE_IMAGE="$DEFAULT_BASE"
 
-if [[ -n "$DEVCONTAINER_FILE" && -f "$DEVCONTAINER_FILE" ]]; then
+if [[ -f "$DEVCONTAINER_ARG" ]]; then
     # Strip // line comments (devcontainer.json allows them; jq does not)
-    CLEAN_JSON="$(sed 's|[[:space:]]//.*$||g; s|^//.*$||g' "$DEVCONTAINER_FILE")"
+    CLEAN_JSON="$(sed 's|[[:space:]]//.*$||g; s|^//.*$||g' "$DEVCONTAINER_ARG")"
     PARSED_IMAGE="$(printf '%s' "$CLEAN_JSON" | jq -r '.image // empty' 2>/dev/null || true)"
     if [[ -n "$PARSED_IMAGE" ]]; then
         BASE_IMAGE="$PARSED_IMAGE"
@@ -116,7 +124,7 @@ if [[ -n "$DEVCONTAINER_FILE" && -f "$DEVCONTAINER_FILE" ]]; then
         echo "No image field in devcontainer.json; using default: $BASE_IMAGE"
     fi
 else
-    echo "devcontainer.json not found; using default base image: $BASE_IMAGE"
+    echo "devcontainer.json not found at $DEVCONTAINER_ARG; using default base image: $BASE_IMAGE"
 fi
 
 # ── generate Dockerfile ───────────────────────────────────────────────────────

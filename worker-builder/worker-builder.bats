@@ -10,7 +10,6 @@ setup() {
     export PATH="$STUB_DIR:$PATH"
 
     # Default stubs — overridden per test as needed
-    stub git ""
     stub docker ""
     stub jq ""
 
@@ -40,57 +39,28 @@ stub_script() {
     chmod +x "$STUB_DIR/$cmd"
 }
 
-# ── argument / option validation ──────────────────────────────────────────────
+# ── subcommand validation ─────────────────────────────────────────────────────
 
-@test "error: missing --project" {
-    run "$WORKER_BUILDER" --agent claude
+@test "error: no subcommand prints usage" {
+    run "$WORKER_BUILDER"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"--project"* ]]
+    [[ "$output" == *"Usage:"* ]]
+    [[ "$output" == *"build"* ]]
 }
 
-@test "error: missing --agent" {
-    run "$WORKER_BUILDER" --project https://github.com/org/repo.git
+@test "error: unknown subcommand" {
+    run "$WORKER_BUILDER" frobnicate
     [ "$status" -eq 1 ]
-    [[ "$output" == *"--agent"* ]]
-}
-
-@test "error: unknown option" {
-    run "$WORKER_BUILDER" --project https://github.com/org/repo.git --agent claude --unknown
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"Unknown option"* ]]
-}
-
-@test "error: unknown agent type" {
-    run "$WORKER_BUILDER" --project https://github.com/org/repo.git --agent llama
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"Unknown agent type"* ]]
-    [[ "$output" == *"llama"* ]]
-}
-
-@test "error: --project requires a value" {
-    run "$WORKER_BUILDER" --project --agent claude
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"--project requires a value"* ]]
-}
-
-@test "error: --agent requires a value" {
-    run "$WORKER_BUILDER" --project https://github.com/org/repo.git --agent --push
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"--agent requires a value"* ]]
-}
-
-@test "error: --tag requires a value" {
-    run "$WORKER_BUILDER" --project https://github.com/org/repo.git --agent claude --tag
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"--tag requires a value"* ]]
+    [[ "$output" == *"Unknown subcommand"* ]]
+    [[ "$output" == *"frobnicate"* ]]
 }
 
 @test "--help prints usage" {
     run "$WORKER_BUILDER" --help
     [ "$status" -eq 1 ]
     [[ "$output" == *"Usage:"* ]]
-    [[ "$output" == *"--project"* ]]
-    [[ "$output" == *"--agent"* ]]
+    [[ "$output" == *"--devcontainer"* ]]
+    [[ "$output" == *"--type"* ]]
 }
 
 @test "-h prints usage" {
@@ -99,327 +69,280 @@ stub_script() {
     [[ "$output" == *"Usage:"* ]]
 }
 
+# ── argument / option validation ──────────────────────────────────────────────
+
+@test "error: missing --devcontainer" {
+    run "$WORKER_BUILDER" build --type claude
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"--devcontainer"* ]]
+}
+
+@test "error: missing --type" {
+    run "$WORKER_BUILDER" build --devcontainer /some/path/devcontainer.json
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"--type"* ]]
+}
+
+@test "error: unknown option" {
+    run "$WORKER_BUILDER" build --devcontainer /some/path/devcontainer.json --type claude --unknown
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Unknown option"* ]]
+}
+
+@test "error: unknown agent type" {
+    run "$WORKER_BUILDER" build --devcontainer /some/path/devcontainer.json --type llama
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Unknown agent type"* ]]
+    [[ "$output" == *"llama"* ]]
+}
+
+@test "error: --devcontainer requires a value" {
+    run "$WORKER_BUILDER" build --devcontainer --type claude
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"--devcontainer requires a value"* ]]
+}
+
+@test "error: --type requires a value" {
+    run "$WORKER_BUILDER" build --devcontainer /some/path/devcontainer.json --type --push
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"--type requires a value"* ]]
+}
+
+@test "error: --tag requires a value" {
+    run "$WORKER_BUILDER" build --devcontainer /some/path/devcontainer.json --type claude --tag
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"--tag requires a value"* ]]
+}
+
 # ── default tag derivation ─────────────────────────────────────────────────────
 
-@test "default tag includes repo name and agent" {
-    local docker_log
+@test "default tag includes agent type" {
+    local docker_log devcontainer_file
     docker_log="$(mktemp)"
+    devcontainer_file="$(mktemp)"
+    printf '{}' > "$devcontainer_file"
 
-    # git archive fails → sparse clone path
-    stub_script git '
-case "$1" in
-    archive) exit 1 ;;
-    clone)   ;;
-    -C)      ;;
-    *)       ;;
-esac
-'
     stub_script docker "echo \"\$@\" >> '$docker_log'"
     stub_script jq 'printf ""'
 
-    run "$WORKER_BUILDER" --project https://github.com/org/myrepo.git --agent claude
+    run "$WORKER_BUILDER" build --devcontainer "$devcontainer_file" --type claude
 
-    [[ "$(cat "$docker_log")" == *"worker-myrepo-claude:latest"* ]]
+    [[ "$(cat "$docker_log")" == *"worker-claude:latest"* ]]
 
-    rm -f "$docker_log"
+    rm -f "$docker_log" "$devcontainer_file"
 }
 
 @test "--tag overrides the default image tag" {
-    local docker_log
+    local docker_log devcontainer_file
     docker_log="$(mktemp)"
+    devcontainer_file="$(mktemp)"
+    printf '{}' > "$devcontainer_file"
 
-    stub_script git '
-case "$1" in
-    archive) exit 1 ;;
-    *) ;;
-esac
-'
     stub_script docker "echo \"\$@\" >> '$docker_log'"
     stub_script jq 'printf ""'
 
-    run "$WORKER_BUILDER" \
-        --project https://github.com/org/repo.git \
-        --agent claude \
+    run "$WORKER_BUILDER" build \
+        --devcontainer "$devcontainer_file" \
+        --type claude \
         --tag my-custom-tag:v1
 
     [[ "$(cat "$docker_log")" == *"my-custom-tag:v1"* ]]
 
-    rm -f "$docker_log"
+    rm -f "$docker_log" "$devcontainer_file"
 }
 
-# ── devcontainer fetch / parse ────────────────────────────────────────────────
-
-@test "uses git archive when available" {
-    local git_log
-    git_log="$(mktemp)"
-
-    stub_script git "
-echo \"\$@\" >> '$git_log'
-# Simulate git archive piping an empty tar (no devcontainer.json)
-case \"\$1\" in
-    archive) exit 0 ;;
-    *) ;;
-esac
-"
-    stub_script docker "echo \"\$@\""
-    stub_script jq 'printf ""'
-
-    run "$WORKER_BUILDER" \
-        --project https://github.com/org/repo.git \
-        --agent claude
-
-    [[ "$(cat "$git_log")" == *"archive"* ]]
-
-    rm -f "$git_log"
-}
-
-@test "falls back to sparse clone when git archive fails" {
-    local git_log
-    git_log="$(mktemp)"
-
-    stub_script git "
-echo \"\$@\" >> '$git_log'
-case \"\$1\" in
-    archive) exit 1 ;;
-    *) ;;
-esac
-"
-    stub_script docker "echo \"\$@\""
-    stub_script jq 'printf ""'
-
-    run "$WORKER_BUILDER" \
-        --project https://github.com/org/repo.git \
-        --agent claude
-
-    [[ "$(cat "$git_log")" == *"clone"* ]]
-
-    rm -f "$git_log"
-}
+# ── devcontainer.json parsing ─────────────────────────────────────────────────
 
 @test "falls back to default base image when devcontainer.json not found" {
-    stub_script git '
-case "$1" in
-    archive) exit 1 ;;
-    *) ;;
-esac
-'
     stub_script docker "echo \"\$@\""
     stub_script jq 'printf ""'
 
-    run "$WORKER_BUILDER" \
-        --project https://github.com/org/repo.git \
-        --agent claude
+    run "$WORKER_BUILDER" build \
+        --devcontainer /nonexistent/path/devcontainer.json \
+        --type claude
 
     [[ "$output" == *"devcontainer.json not found"* ]]
     [[ "$output" == *"mcr.microsoft.com/devcontainers/base:bullseye"* ]]
 }
 
-@test "git archive: uses image field from devcontainer.json" {
-    stub_script git '
-case "$1" in
-    archive)
-        tmpdir=$(mktemp -d)
-        mkdir -p "$tmpdir/.devcontainer"
-        printf '"'"'{"image": "node:18-bullseye"}'"'"' > "$tmpdir/.devcontainer/devcontainer.json"
-        tar -c -C "$tmpdir" .devcontainer/devcontainer.json
-        rm -rf "$tmpdir"
-        ;;
-    *) ;;
-esac
-'
+@test "uses image field from devcontainer.json" {
+    local devcontainer_file
+    devcontainer_file="$(mktemp)"
+    printf '{"image": "node:18-bullseye"}' > "$devcontainer_file"
+
     stub_script docker "echo \"\$@\""
     # Use the real jq for this test
     rm -f "$STUB_DIR/jq"
 
-    run "$WORKER_BUILDER" \
-        --project https://github.com/org/repo.git \
-        --agent claude
+    run "$WORKER_BUILDER" build \
+        --devcontainer "$devcontainer_file" \
+        --type claude
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"node:18-bullseye"* ]]
     [[ "$output" == *"FROM node:18-bullseye"* ]]
+
+    rm -f "$devcontainer_file"
 }
 
-@test "git archive: strips // comments from devcontainer.json before parsing" {
-    stub_script git '
-case "$1" in
-    archive)
-        tmpdir=$(mktemp -d)
-        mkdir -p "$tmpdir/.devcontainer"
-        printf '"'"'// project devcontainer\n{"image": "ubuntu:22.04" // base image\n}'"'"' \
-            > "$tmpdir/.devcontainer/devcontainer.json"
-        tar -c -C "$tmpdir" .devcontainer/devcontainer.json
-        rm -rf "$tmpdir"
-        ;;
-    *) ;;
-esac
-'
+@test "strips // comments from devcontainer.json before parsing" {
+    local devcontainer_file
+    devcontainer_file="$(mktemp)"
+    printf '// project devcontainer\n{"image": "ubuntu:22.04" // base image\n}' > "$devcontainer_file"
+
     stub_script docker "echo \"\$@\""
     rm -f "$STUB_DIR/jq"
 
-    run "$WORKER_BUILDER" \
-        --project https://github.com/org/repo.git \
-        --agent claude
+    run "$WORKER_BUILDER" build \
+        --devcontainer "$devcontainer_file" \
+        --type claude
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"ubuntu:22.04"* ]]
     [[ "$output" == *"FROM ubuntu:22.04"* ]]
+
+    rm -f "$devcontainer_file"
 }
 
-@test "sparse clone: uses image field from devcontainer.json" {
-    stub_script git "
-case \"\$1\" in
-    archive) exit 1 ;;
-    clone)
-        # Destination is the last argument
-        dest=\"\${@: -1}\"
-        mkdir -p \"\$dest/.devcontainer\"
-        printf '{\"image\": \"python:3.11-slim\"}' > \"\$dest/.devcontainer/devcontainer.json\"
-        ;;
-    -C) ;;   # sparse-checkout set / checkout — no-op
-    *) ;;
-esac
-"
+@test "falls back to default when devcontainer.json has no image field" {
+    local devcontainer_file
+    devcontainer_file="$(mktemp)"
+    printf '{"name": "My Project"}' > "$devcontainer_file"
+
     stub_script docker "echo \"\$@\""
     rm -f "$STUB_DIR/jq"
 
-    run "$WORKER_BUILDER" \
-        --project https://github.com/org/repo.git \
-        --agent claude
+    run "$WORKER_BUILDER" build \
+        --devcontainer "$devcontainer_file" \
+        --type claude
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"python:3.11-slim"* ]]
+    [[ "$output" == *"No image field in devcontainer.json"* ]]
+    [[ "$output" == *"mcr.microsoft.com/devcontainers/base:bullseye"* ]]
+
+    rm -f "$devcontainer_file"
 }
 
 # ── Dockerfile generation ─────────────────────────────────────────────────────
 
 @test "generated Dockerfile starts with FROM <base-image>" {
-    local docker_log
-    docker_log="$(mktemp)"
+    local devcontainer_file
+    devcontainer_file="$(mktemp)"
+    printf '{}' > "$devcontainer_file"
 
-    stub_script git '
-case "$1" in
-    archive) exit 1 ;;
-    *) ;;
-esac
-'
-    stub_script docker "echo \"\$@\" >> '$docker_log'; cat /dev/stdin 2>/dev/null || true"
+    stub_script docker "echo \"\$@\""
     stub_script jq 'printf ""'
 
-    run "$WORKER_BUILDER" \
-        --project https://github.com/org/repo.git \
-        --agent claude
+    run "$WORKER_BUILDER" build \
+        --devcontainer "$devcontainer_file" \
+        --type claude
 
     [[ "$output" == *"FROM mcr.microsoft.com/devcontainers/base:bullseye"* ]]
 
-    rm -f "$docker_log"
+    rm -f "$devcontainer_file"
 }
 
 @test "claude: Dockerfile installs Claude Code CLI" {
-    stub_script git '
-case "$1" in
-    archive) exit 1 ;;
-    *) ;;
-esac
-'
+    local devcontainer_file
+    devcontainer_file="$(mktemp)"
+    printf '{}' > "$devcontainer_file"
+
     stub_script docker "echo \"\$@\""
     stub_script jq 'printf ""'
 
-    run "$WORKER_BUILDER" \
-        --project https://github.com/org/repo.git \
-        --agent claude
+    run "$WORKER_BUILDER" build \
+        --devcontainer "$devcontainer_file" \
+        --type claude
 
     [[ "$output" == *"claude.ai/install.sh"* ]]
+
+    rm -f "$devcontainer_file"
 }
 
 @test "copilot: Dockerfile installs gh CLI and @github/copilot" {
-    stub_script git '
-case "$1" in
-    archive) exit 1 ;;
-    *) ;;
-esac
-'
+    local devcontainer_file
+    devcontainer_file="$(mktemp)"
+    printf '{}' > "$devcontainer_file"
+
     stub_script docker "echo \"\$@\""
     stub_script jq 'printf ""'
 
-    run "$WORKER_BUILDER" \
-        --project https://github.com/org/repo.git \
-        --agent copilot
+    run "$WORKER_BUILDER" build \
+        --devcontainer "$devcontainer_file" \
+        --type copilot
 
     [[ "$output" == *"gh"* ]]
     [[ "$output" == *"@github/copilot"* ]]
+
+    rm -f "$devcontainer_file"
 }
 
 @test "codex: Dockerfile installs @openai/codex" {
-    stub_script git '
-case "$1" in
-    archive) exit 1 ;;
-    *) ;;
-esac
-'
+    local devcontainer_file
+    devcontainer_file="$(mktemp)"
+    printf '{}' > "$devcontainer_file"
+
     stub_script docker "echo \"\$@\""
     stub_script jq 'printf ""'
 
-    run "$WORKER_BUILDER" \
-        --project https://github.com/org/repo.git \
-        --agent codex
+    run "$WORKER_BUILDER" build \
+        --devcontainer "$devcontainer_file" \
+        --type codex
 
     [[ "$output" == *"@openai/codex"* ]]
+
+    rm -f "$devcontainer_file"
 }
 
 @test "generated Dockerfile installs acli" {
-    stub_script git '
-case "$1" in
-    archive) exit 1 ;;
-    *) ;;
-esac
-'
+    local devcontainer_file
+    devcontainer_file="$(mktemp)"
+    printf '{}' > "$devcontainer_file"
+
     stub_script docker "echo \"\$@\""
     stub_script jq 'printf ""'
 
-    run "$WORKER_BUILDER" \
-        --project https://github.com/org/repo.git \
-        --agent claude
+    run "$WORKER_BUILDER" build \
+        --devcontainer "$devcontainer_file" \
+        --type claude
 
     [[ "$output" == *"acli"* ]]
+
+    rm -f "$devcontainer_file"
 }
 
 @test "generated Dockerfile copies loop and claim" {
-    stub_script git '
-case "$1" in
-    archive) exit 1 ;;
-    *) ;;
-esac
-'
+    local devcontainer_file
+    devcontainer_file="$(mktemp)"
+    printf '{}' > "$devcontainer_file"
+
     stub_script docker "echo \"\$@\""
     stub_script jq 'printf ""'
 
-    run "$WORKER_BUILDER" \
-        --project https://github.com/org/repo.git \
-        --agent claude
+    run "$WORKER_BUILDER" build \
+        --devcontainer "$devcontainer_file" \
+        --type claude
 
     [[ "$output" == *"COPY claim/claim"* ]]
     [[ "$output" == *"COPY loop/loop"* ]]
+
+    rm -f "$devcontainer_file"
 }
 
 # ── docker build / push ───────────────────────────────────────────────────────
 
 @test "docker build is called with the generated tag" {
-    local docker_log
+    local docker_log devcontainer_file
     docker_log="$(mktemp)"
+    devcontainer_file="$(mktemp)"
+    printf '{}' > "$devcontainer_file"
 
-    stub_script git '
-case "$1" in
-    archive) exit 1 ;;
-    *) ;;
-esac
-'
     stub_script docker "echo \"\$@\" >> '$docker_log'"
     stub_script jq 'printf ""'
 
-    run "$WORKER_BUILDER" \
-        --project https://github.com/org/repo.git \
-        --agent claude \
+    run "$WORKER_BUILDER" build \
+        --devcontainer "$devcontainer_file" \
+        --type claude \
         --tag test-image:v2
 
     local docker_args
@@ -427,25 +350,21 @@ esac
     [[ "$docker_args" == *"build"* ]]
     [[ "$docker_args" == *"test-image:v2"* ]]
 
-    rm -f "$docker_log"
+    rm -f "$docker_log" "$devcontainer_file"
 }
 
 @test "--push: docker push is called after build" {
-    local docker_log
+    local docker_log devcontainer_file
     docker_log="$(mktemp)"
+    devcontainer_file="$(mktemp)"
+    printf '{}' > "$devcontainer_file"
 
-    stub_script git '
-case "$1" in
-    archive) exit 1 ;;
-    *) ;;
-esac
-'
     stub_script docker "echo \"\$@\" >> '$docker_log'"
     stub_script jq 'printf ""'
 
-    run "$WORKER_BUILDER" \
-        --project https://github.com/org/repo.git \
-        --agent claude \
+    run "$WORKER_BUILDER" build \
+        --devcontainer "$devcontainer_file" \
+        --type claude \
         --tag test-image:v2 \
         --push
 
@@ -454,65 +373,61 @@ esac
     [[ "$docker_args" == *"push"* ]]
     [[ "$docker_args" == *"test-image:v2"* ]]
 
-    rm -f "$docker_log"
+    rm -f "$docker_log" "$devcontainer_file"
 }
 
 @test "without --push: docker push is NOT called" {
-    local docker_log
+    local docker_log devcontainer_file
     docker_log="$(mktemp)"
+    devcontainer_file="$(mktemp)"
+    printf '{}' > "$devcontainer_file"
 
-    stub_script git '
-case "$1" in
-    archive) exit 1 ;;
-    *) ;;
-esac
-'
     stub_script docker "echo \"\$@\" >> '$docker_log'"
     stub_script jq 'printf ""'
 
-    run "$WORKER_BUILDER" \
-        --project https://github.com/org/repo.git \
-        --agent claude \
+    run "$WORKER_BUILDER" build \
+        --devcontainer "$devcontainer_file" \
+        --type claude \
         --tag test-image:v2
 
     [[ "$(cat "$docker_log")" != *"push"* ]]
 
-    rm -f "$docker_log"
+    rm -f "$docker_log" "$devcontainer_file"
 }
 
 @test "docker build failure propagates non-zero exit" {
-    stub_script git '
-case "$1" in
-    archive) exit 1 ;;
-    *) ;;
-esac
-'
+    local devcontainer_file
+    devcontainer_file="$(mktemp)"
+    printf '{}' > "$devcontainer_file"
+
     stub_exit docker 1 "Build failed"
     stub_script jq 'printf ""'
 
-    run "$WORKER_BUILDER" \
-        --project https://github.com/org/repo.git \
-        --agent claude
+    run "$WORKER_BUILDER" build \
+        --devcontainer "$devcontainer_file" \
+        --type claude
 
     [ "$status" -ne 0 ]
+
+    rm -f "$devcontainer_file"
 }
 
 @test "prints Done message with image tag on success" {
-    stub_script git '
-case "$1" in
-    archive) exit 1 ;;
-    *) ;;
-esac
-'
+    local devcontainer_file
+    devcontainer_file="$(mktemp)"
+    printf '{}' > "$devcontainer_file"
+
     stub_script docker "echo \"\$@\""
     stub_script jq 'printf ""'
 
-    run "$WORKER_BUILDER" \
-        --project https://github.com/org/repo.git \
-        --agent claude \
+    run "$WORKER_BUILDER" build \
+        --devcontainer "$devcontainer_file" \
+        --type claude \
         --tag final-image:latest
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"Done"* ]]
     [[ "$output" == *"final-image:latest"* ]]
+
+    rm -f "$devcontainer_file"
 }
