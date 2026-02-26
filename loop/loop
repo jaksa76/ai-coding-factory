@@ -26,6 +26,10 @@ usage() {
     echo "  GIT_REPO_URL              Repository URL to work on"
     echo "  GIT_USERNAME              Git push credentials"
     echo "  GIT_TOKEN                 Git push credentials"
+    echo ""
+    echo "Optional environment variables:"
+    echo "  NO_ISSUES_WAIT            Seconds to wait when no issues are available (default: 60)"
+    echo "  RATE_LIMIT_WAIT           Seconds to wait on agent rate limit (default: 60)"
     exit 1
 }
 
@@ -118,8 +122,20 @@ run_agent_with_retry() {
 while true; do
     # Step 1: Claim a Jira issue
     echo "Claiming issue from project $PROJECT..."
+    set +e
     CLAIM_OUTPUT="$(claim --project "$PROJECT" --account-id "$JIRA_ASSIGNEE_ACCOUNT_ID")"
+    CLAIM_EXIT=$?
+    set -e
     echo "$CLAIM_OUTPUT"
+
+    if [[ "$CLAIM_EXIT" -eq 2 ]]; then
+        no_issues_wait="${NO_ISSUES_WAIT:-60}"
+        echo "No issues available in project $PROJECT. Waiting ${no_issues_wait}s before polling again..."
+        sleep "$no_issues_wait"
+        continue
+    elif [[ "$CLAIM_EXIT" -ne 0 ]]; then
+        exit "$CLAIM_EXIT"
+    fi
 
     # Extract the JSON block (lines from first '{' onward)
     ISSUE_JSON="$(printf '%s\n' "$CLAIM_OUTPUT" | awk '/^\{/{f=1} f')"

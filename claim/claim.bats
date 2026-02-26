@@ -137,36 +137,16 @@ esac
     [[ "$output" == *"Successfully claimed PROJ-2"* ]]
 }
 
-@test "no issues found: retries after waiting, then claims on second attempt" {
-    # Counter file to simulate: first call returns empty, second returns an issue
-    local counter_file
-    counter_file="$(mktemp)"
-    echo "0" > "$counter_file"
-
+@test "no issues found: exits with code 2" {
     stub_script acli "
 case \"\$*\" in
-  'jira auth status')       echo 'Authenticated' ;;
-  'jira workitem search'*)
-      count=\$(cat '$counter_file')
-      echo \$((count + 1)) > '$counter_file'
-      if [ \"\$count\" -eq 0 ]; then
-          echo '[]'
-      else
-          echo '[{\"key\":\"PROJ-3\"}]'
-      fi
-      ;;
-  'jira workitem assign'*)  ;;
-  'jira workitem view PROJ-3 --json')
-      echo '{\"key\":\"PROJ-3\",\"fields\":{\"assignee\":{\"accountId\":\"acc1\"},\"summary\":\"Task\",\"description\":null,\"status\":{\"name\":\"To Do\"}}}' ;;
-  'jira workitem transition'*) ;;
+  'jira auth status')      echo 'Authenticated' ;;
+  'jira workitem search'*) echo '[]' ;;
 esac
 "
     run "$CLAIM" --project "PROJ" --account-id "acc1"
-    [ "$status" -eq 0 ]
+    [ "$status" -eq 2 ]
     [[ "$output" == *"No unassigned open issues found"* ]]
-    [[ "$output" == *"Successfully claimed PROJ-3"* ]]
-
-    rm -f "$counter_file"
 }
 
 @test "race condition: retries when assignee does not match" {

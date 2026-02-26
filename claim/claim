@@ -75,9 +75,8 @@ while true; do
         | jq -r 'if type == "array" then .[0].key // empty else empty end' 2>/dev/null || true)
 
     if [[ -z "$ISSUE_KEY" ]]; then
-        echo "No unassigned open issues found in project $PROJECT. Waiting 30s..."
-        sleep 30
-        continue
+        echo "No unassigned open issues found in project $PROJECT."
+        exit 2
     fi
 
     echo "Attempting to claim $ISSUE_KEY..."

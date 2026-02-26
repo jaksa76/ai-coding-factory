@@ -411,6 +411,90 @@ fi
     [[ "$output" != *"Completed PROJ-1"* ]]
 }
 
+@test "no issues: waits and polls again when claim exits 2" {
+    local counter_file
+    counter_file="$(mktemp)"
+    echo "0" > "$counter_file"
+
+    stub_script claim "
+count=\$(cat '$counter_file')
+echo \$((count + 1)) > '$counter_file'
+if [ \"\$count\" -eq 0 ]; then
+    echo 'No unassigned open issues found in project PROJ.'
+    exit 2
+elif [ \"\$count\" -eq 1 ]; then
+    printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\",\"description\":\"Bug details\",\"status\":\"In Progress\"}\n'
+else
+    exit 1
+fi
+"
+    run "$LOOP" --project PROJ --agent agent
+
+    [[ "$output" == *"No issues available"* ]]
+    [[ "$output" == *"Waiting"* ]]
+    [[ "$output" == *"Working on PROJ-1"* ]]
+    [[ "$output" == *"Completed PROJ-1"* ]]
+
+    rm -f "$counter_file"
+}
+
+@test "no issues: default wait is 60 seconds" {
+    local counter_file sleep_log
+    counter_file="$(mktemp)"
+    sleep_log="$(mktemp)"
+    echo "0" > "$counter_file"
+
+    stub_script sleep "echo \"\$*\" >> '$sleep_log'"
+
+    stub_script claim "
+count=\$(cat '$counter_file')
+echo \$((count + 1)) > '$counter_file'
+if [ \"\$count\" -eq 0 ]; then
+    echo 'No unassigned open issues found in project PROJ.'
+    exit 2
+elif [ \"\$count\" -eq 1 ]; then
+    printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\",\"description\":\"Bug details\",\"status\":\"In Progress\"}\n'
+else
+    exit 1
+fi
+"
+    run "$LOOP" --project PROJ --agent agent
+
+    [[ "$output" == *"Waiting 60s"* ]]
+    [[ "$(cat "$sleep_log")" == *"60"* ]]
+
+    rm -f "$counter_file" "$sleep_log"
+}
+
+@test "no issues: NO_ISSUES_WAIT overrides default wait" {
+    local counter_file sleep_log
+    counter_file="$(mktemp)"
+    sleep_log="$(mktemp)"
+    echo "0" > "$counter_file"
+
+    stub_script sleep "echo \"\$*\" >> '$sleep_log'"
+
+    stub_script claim "
+count=\$(cat '$counter_file')
+echo \$((count + 1)) > '$counter_file'
+if [ \"\$count\" -eq 0 ]; then
+    echo 'No unassigned open issues found in project PROJ.'
+    exit 2
+elif [ \"\$count\" -eq 1 ]; then
+    printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\",\"description\":\"Bug details\",\"status\":\"In Progress\"}\n'
+else
+    exit 1
+fi
+"
+    export NO_ISSUES_WAIT=120
+    run "$LOOP" --project PROJ --agent agent
+
+    [[ "$output" == *"Waiting 120s"* ]]
+    [[ "$(cat "$sleep_log")" == *"120"* ]]
+
+    rm -f "$counter_file" "$sleep_log"
+}
+
 @test "rate limit: 'overloaded' in output triggers retry" {
     local counter_file
     counter_file="$(mktemp)"
