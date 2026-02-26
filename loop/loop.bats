@@ -166,20 +166,18 @@ stub_script() {
 
     stub_script git '
     echo "$*" >> '$git_log'
-    case "$1" in
-      clone) mkdir -p "${@: -1}/.git" ;;
-      symbolic-ref) echo "refs/remotes/origin/main" ;;
-      show-ref) exit 1 ;;
-      checkout) : ;;
-      branch) : ;;
+    case "$*" in
+      clone*) mkdir -p "${@: -1}/.git" ;;
+      *symbolic-ref*) echo "refs/remotes/origin/main" ;;
+      *show-ref*) exit 1 ;;
       *) ;;
     esac
     '
-    stub_script acli 'if [[ "$*" == *"issue get"* ]]; then echo '["needs-branch"]'; else echo "$*" >> '$acli_log'; fi'
+    stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
     export FEATURE_BRANCHES=true
     run "$LOOP" --project PROJ --agent agent
     [[ "$output" == *"Feature branch flow enabled for PROJ-1."* ]]
-    [[ "$git_log" == *"checkout -b feature/PROJ-1 main"* ]]
+    [[ "$(cat "$git_log")" == *"checkout -b feature/PROJ-1 main"* ]]
     rm -f "$git_log" "$acli_log"
 }
 
@@ -190,20 +188,18 @@ stub_script() {
 
     stub_script git '
     echo "$*" >> '$git_log'
-    case "$1" in
-      clone) mkdir -p "${@: -1}/.git" ;;
-      symbolic-ref) echo "refs/remotes/origin/main" ;;
-      show-ref) exit 0 ;;
-      checkout) : ;;
-      branch) : ;;
+    case "$*" in
+      clone*) mkdir -p "${@: -1}/.git" ;;
+      *symbolic-ref*) echo "refs/remotes/origin/main" ;;
+      *show-ref*) exit 0 ;;
       *) ;;
     esac
     '
-    stub_script acli 'if [[ "$*" == *"issue get"* ]]; then echo '["needs-branch"]'; else echo "$*" >> '$acli_log'; fi'
+    stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
     export FEATURE_BRANCHES=true
     run "$LOOP" --project PROJ --agent agent
     [[ "$output" == *"Resetting existing feature/PROJ-1 to main..."* ]]
-    [[ "$git_log" == *"branch -f feature/PROJ-1 main"* ]]
+    [[ "$(cat "$git_log")" == *"branch -f feature/PROJ-1 main"* ]]
     rm -f "$git_log" "$acli_log"
 }
 
@@ -211,8 +207,8 @@ stub_script() {
     local git_log acli_log
     git_log="$(mktemp)"
     acli_log="$(mktemp)"
-    stub_script git 'echo "$*" >> '$git_log''
-    stub_script acli 'if [[ "$*" == *"issue get"* ]]; then echo '["skip-branch"]'; else echo "$*" >> '$acli_log'; fi'
+    stub_script git 'echo "$*" >> '$git_log'; case "$*" in clone*) mkdir -p "${@: -1}/.git" ;; *) ;; esac'
+    stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["skip-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
     export FEATURE_BRANCHES=true
     run "$LOOP" --project PROJ --agent agent
     [[ "$output" != *"Feature branch flow enabled"* ]]
@@ -223,8 +219,8 @@ stub_script() {
     local git_log acli_log
     git_log="$(mktemp)"
     acli_log="$(mktemp)"
-    stub_script git 'echo "$*" >> '$git_log''
-    stub_script acli 'if [[ "$*" == *"issue get"* ]]; then echo '["needs-branch"]'; else echo "$*" >> '$acli_log'; fi'
+    stub_script git 'echo "$*" >> '$git_log'; case "$*" in clone*) mkdir -p "${@: -1}/.git" ;; *) ;; esac'
+    stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
     unset FEATURE_BRANCHES
     run "$LOOP" --project PROJ --agent agent
     [[ "$output" == *"Feature branch flow enabled for PROJ-1."* ]]
@@ -235,8 +231,8 @@ stub_script() {
     local git_log acli_log
     git_log="$(mktemp)"
     acli_log="$(mktemp)"
-    stub_script git 'echo "$*" >> '$git_log''
-    stub_script acli 'if [[ "$*" == *"issue get"* ]]; then echo '["needs-branch","skip-branch"]'; else echo "$*" >> '$acli_log'; fi'
+    stub_script git 'echo "$*" >> '$git_log'; case "$*" in clone*) mkdir -p "${@: -1}/.git" ;; *) ;; esac'
+    stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch","skip-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
     export FEATURE_BRANCHES=true
     run "$LOOP" --project PROJ --agent agent
     [[ "$output" != *"Feature branch flow enabled"* ]]
@@ -656,4 +652,153 @@ fi
     [[ "$output" == *"Completed PROJ-1"* ]]
 
     rm -f "$counter_file"
+}
+
+# ── pull request ──────────────────────────────────────────────────────────────
+
+# Helper: shared setup for feature-branch PR tests
+# Sets up git, acli, and gh stubs; FEATURE_BRANCHES=true
+_setup_feature_branch_pr_test() {
+    local git_log="$1" acli_log="$2" gh_log="$3"
+
+    stub_script git '
+    echo "$*" >> '$git_log'
+    case "$*" in
+      clone*) mkdir -p "${@: -1}/.git" ;;
+      *symbolic-ref*) echo "refs/remotes/origin/main" ;;
+      *show-ref*) exit 1 ;;
+      *) ;;
+    esac
+    '
+    stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
+    stub_script gh 'echo "$*" >> '$gh_log'; echo "https://github.com/org/repo/pull/42"'
+    export FEATURE_BRANCHES=true
+}
+
+@test "feature branch: opens PR with gh after agent completes" {
+    local git_log acli_log gh_log
+    git_log="$(mktemp)"
+    acli_log="$(mktemp)"
+    gh_log="$(mktemp)"
+
+    _setup_feature_branch_pr_test "$git_log" "$acli_log" "$gh_log"
+
+    run "$LOOP" --project PROJ --agent agent
+
+    [[ "$output" == *"Opening pull request for PROJ-1"* ]]
+    [[ "$output" == *"Pull request opened"* ]]
+    # gh pr create called with correct base, head, and title
+    [[ "$(cat "$gh_log")" == *"--base main"* ]]
+    [[ "$(cat "$gh_log")" == *"--head feature/PROJ-1"* ]]
+    [[ "$(cat "$gh_log")" == *"[PROJ-1] Fix the bug"* ]]
+
+    rm -f "$git_log" "$acli_log" "$gh_log"
+}
+
+@test "feature branch: PR body contains Jira link" {
+    local git_log acli_log gh_log
+    git_log="$(mktemp)"
+    acli_log="$(mktemp)"
+    gh_log="$(mktemp)"
+
+    _setup_feature_branch_pr_test "$git_log" "$acli_log" "$gh_log"
+
+    run "$LOOP" --project PROJ --agent agent
+
+    [[ "$(cat "$gh_log")" == *"test.atlassian.net/browse/PROJ-1"* ]]
+
+    rm -f "$git_log" "$acli_log" "$gh_log"
+}
+
+@test "feature branch: posts Jira comment with PR URL after PR opened" {
+    local git_log acli_log gh_log
+    git_log="$(mktemp)"
+    acli_log="$(mktemp)"
+    gh_log="$(mktemp)"
+
+    _setup_feature_branch_pr_test "$git_log" "$acli_log" "$gh_log"
+
+    run "$LOOP" --project PROJ --agent agent
+
+    [[ "$output" == *"Posting comment on PROJ-1"* ]]
+    [[ "$(cat "$acli_log")" == *"comment"* ]]
+    # comment includes the PR URL
+    [[ "$(cat "$acli_log")" == *"https://github.com/org/repo/pull/42"* ]]
+
+    rm -f "$git_log" "$acli_log" "$gh_log"
+}
+
+@test "feature branch: transitions issue to In Review after PR opened" {
+    local git_log acli_log gh_log
+    git_log="$(mktemp)"
+    acli_log="$(mktemp)"
+    gh_log="$(mktemp)"
+
+    _setup_feature_branch_pr_test "$git_log" "$acli_log" "$gh_log"
+
+    run "$LOOP" --project PROJ --agent agent
+
+    [[ "$output" == *"Transitioning PROJ-1 to In Review"* ]]
+    [[ "$(cat "$acli_log")" == *"transition"* ]]
+    [[ "$(cat "$acli_log")" == *"In Review"* ]]
+
+    rm -f "$git_log" "$acli_log" "$gh_log"
+}
+
+@test "feature branch: PR failure is non-fatal - warning printed, loop continues" {
+    local git_log acli_log
+    git_log="$(mktemp)"
+    acli_log="$(mktemp)"
+
+    stub_script git '
+    echo "$*" >> '$git_log'
+    case "$*" in
+      clone*) mkdir -p "${@: -1}/.git" ;;
+      *symbolic-ref*) echo "refs/remotes/origin/main" ;;
+      *show-ref*) exit 1 ;;
+      *) ;;
+    esac
+    '
+    stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
+    stub_script gh 'exit 1'
+    export FEATURE_BRANCHES=true
+
+    run "$LOOP" --project PROJ --agent agent
+
+    [[ "$output" == *"Warning: could not open pull request for PROJ-1"* ]]
+    [[ "$output" == *"Completed PROJ-1"* ]]
+
+    rm -f "$git_log" "$acli_log"
+}
+
+@test "feature branch: In Review transition failure is non-fatal" {
+    local git_log gh_log
+    git_log="$(mktemp)"
+    gh_log="$(mktemp)"
+
+    stub_script git '
+    echo "$*" >> '$git_log'
+    case "$*" in
+      clone*) mkdir -p "${@: -1}/.git" ;;
+      *symbolic-ref*) echo "refs/remotes/origin/main" ;;
+      *show-ref*) exit 1 ;;
+      *) ;;
+    esac
+    '
+    stub_script acli '
+case "$*" in
+  *"--field labels"*) printf '"'"'["needs-branch"]\n'"'"' ;;
+  *transition*) exit 1 ;;
+  *) ;;
+esac
+'
+    stub_script gh 'echo "https://github.com/org/repo/pull/42"'
+    export FEATURE_BRANCHES=true
+
+    run "$LOOP" --project PROJ --agent agent
+
+    [[ "$output" == *"Warning: could not transition PROJ-1 to In Review"* ]]
+    [[ "$output" == *"Completed PROJ-1"* ]]
+
+    rm -f "$git_log" "$gh_log"
 }

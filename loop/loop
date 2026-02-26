@@ -191,7 +191,11 @@ while true; do
     fi
 
     # Step 3: Invoke the agent with the issue as prompt
-    PROMPT="Implement the issue described below. Make sure to run all necessary tests. Once the issue is implemented, commit the change with a brief description of the change and push the changes. After pushing, update the Jira issue by commenting what was performed and transition the issue to Done. You have the acli tool available for Jira interactions.\n\n"
+    if [[ "$USE_FEATURE_BRANCH" == "true" ]]; then
+        PROMPT="Implement the issue described below. Make sure to run all necessary tests. Once the issue is implemented, commit all changes to the feature branch feature/$ISSUE_KEY and push the branch. You have the acli tool available for Jira interactions.\n\n"
+    else
+        PROMPT="Implement the issue described below. Make sure to run all necessary tests. Once the issue is implemented, commit the change with a brief description of the change and push the changes. After pushing, update the Jira issue by commenting what was performed and transition the issue to Done. You have the acli tool available for Jira interactions.\n\n"
+    fi
     PROMPT="$PROMPT [$ISSUE_KEY] $ISSUE_SUMMARY"
     [[ -n "$ISSUE_DESCRIPTION" ]] && PROMPT="$PROMPT
 $ISSUE_DESCRIPTION"
@@ -211,6 +215,81 @@ $PLAN_CONTENTS"
     echo "=== AGENT START: $ISSUE_KEY ==="
     run_agent_with_retry "$PROMPT" "$ISSUE_KEY"
     echo "=== AGENT END: $ISSUE_KEY ==="
+
+    # Step 4: Push changes
+    echo "Pushing changes for $ISSUE_KEY..."
+    if [[ "$USE_FEATURE_BRANCH" == "true" ]]; then
+        git -C "$WORK_DIR" push "$AUTH_URL" "$FEATURE_BRANCH"
+    else
+        git -C "$WORK_DIR" push "$AUTH_URL" HEAD
+    fi
+
+    if [[ "$USE_FEATURE_BRANCH" == "true" ]]; then
+        # Step 5: Open a pull request
+        JIRA_URL="https://$JIRA_SITE/browse/$ISSUE_KEY"
+        PR_BODY="Jira: $JIRA_URL
+
+Implements [$ISSUE_KEY] $ISSUE_SUMMARY"
+        echo "Opening pull request for $ISSUE_KEY..."
+        set +e
+        PR_URL="$(cd "$WORK_DIR" && gh pr create \
+            --base "$DEFAULT_BRANCH" \
+            --head "$FEATURE_BRANCH" \
+            --title "[$ISSUE_KEY] $ISSUE_SUMMARY" \
+            --body "$PR_BODY" 2>&1)"
+        PR_EXIT=$?
+        set -e
+
+        if [[ "$PR_EXIT" -ne 0 ]]; then
+            echo "Warning: could not open pull request for $ISSUE_KEY: $PR_URL"
+        else
+            echo "Pull request opened: $PR_URL"
+
+            # Step 6: Comment on Jira with PR link
+            echo "Posting comment on $ISSUE_KEY..."
+            set +e
+            acli jira comment add --issue "$ISSUE_KEY" \
+                --comment "Pull request opened: $PR_URL" 2>/dev/null
+            COMMENT_EXIT=$?
+            set -e
+            if [[ "$COMMENT_EXIT" -ne 0 ]]; then
+                echo "Warning: could not post comment on $ISSUE_KEY"
+            fi
+
+            # Step 7: Transition to "In Review" (graceful fallback if status absent)
+            echo "Transitioning $ISSUE_KEY to In Review..."
+            set +e
+            acli jira issue transition --issue "$ISSUE_KEY" \
+                --status "In Review" --yes 2>/dev/null
+            IN_REVIEW_EXIT=$?
+            set -e
+            if [[ "$IN_REVIEW_EXIT" -ne 0 ]]; then
+                echo "Warning: could not transition $ISSUE_KEY to In Review, leaving in current state"
+            fi
+        fi
+    else
+        # Step 5: Comment on Jira
+        echo "Posting comment on $ISSUE_KEY..."
+        set +e
+        acli jira comment add --issue "$ISSUE_KEY" \
+            --comment "Implemented: $ISSUE_SUMMARY" 2>/dev/null
+        COMMENT_EXIT=$?
+        set -e
+        if [[ "$COMMENT_EXIT" -ne 0 ]]; then
+            echo "Warning: could not post comment on $ISSUE_KEY"
+        fi
+
+        # Step 6: Transition to Done
+        echo "Transitioning $ISSUE_KEY to Done..."
+        set +e
+        acli jira issue transition --issue "$ISSUE_KEY" \
+            --status "Done" --yes 2>/dev/null
+        TRANSITION_EXIT=$?
+        set -e
+        if [[ "$TRANSITION_EXIT" -ne 0 ]]; then
+            echo "Warning: could not transition $ISSUE_KEY to Done"
+        fi
+    fi
 
     echo "Completed $ISSUE_KEY."
 
