@@ -160,6 +160,18 @@ while true; do
     PROMPT="$PROMPT [$ISSUE_KEY] $ISSUE_SUMMARY"
     [[ -n "$ISSUE_DESCRIPTION" ]] && PROMPT="$PROMPT
 $ISSUE_DESCRIPTION"
+
+    # If a plan file exists for this issue, include its contents in the prompt
+    PLAN_FILE="$WORK_DIR/plans/$ISSUE_KEY.md"
+    if [[ -f "$PLAN_FILE" ]]; then
+        echo "Plan file found for $ISSUE_KEY, including in prompt..."
+        PLAN_CONTENTS="$(cat "$PLAN_FILE")"
+        PROMPT="$PROMPT
+
+The following implementation plan has been approved for this issue. Implement according to this plan:
+
+$PLAN_CONTENTS"
+    fi
     echo "Running agent for $ISSUE_KEY..."
     echo "=== AGENT START: $ISSUE_KEY ==="
     run_agent_with_retry "$PROMPT" "$ISSUE_KEY"

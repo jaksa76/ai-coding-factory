@@ -495,6 +495,62 @@ fi
     rm -f "$counter_file" "$sleep_log"
 }
 
+# ── plan file handling ────────────────────────────────────────────────────────
+
+@test "plan file: contents included in agent prompt when plans/<ISSUE-KEY>.md exists" {
+    local agent_log
+    agent_log="$(mktemp)"
+    stub_script agent "echo \"\$*\" >> '$agent_log'"
+
+    # Create the plans directory and plan file in the work dir that git clone will create
+    stub_script git "
+case \"\$1\" in
+  clone) mkdir -p \"\${@: -1}/.git\" \"\${@: -1}/plans\"
+         echo 'This is the approved plan.' > \"\${@: -1}/plans/PROJ-1.md\" ;;
+  *) ;;
+esac
+"
+    run "$LOOP" --project PROJ --agent agent
+
+    [[ "$output" == *"Plan file found for PROJ-1"* ]]
+    [[ "$(cat "$agent_log")" == *"This is the approved plan."* ]]
+
+    rm -f "$agent_log"
+}
+
+@test "plan file: agent proceeds normally when no plan file exists" {
+    local agent_log
+    agent_log="$(mktemp)"
+    stub_script agent "echo \"\$*\" >> '$agent_log'"
+
+    run "$LOOP" --project PROJ --agent agent
+
+    [[ "$output" != *"Plan file found"* ]]
+    [[ "$(cat "$agent_log")" == *"PROJ-1"* ]]
+
+    rm -f "$agent_log"
+}
+
+@test "plan file: plan file for a different issue key is not used" {
+    local agent_log
+    agent_log="$(mktemp)"
+    stub_script agent "echo \"\$*\" >> '$agent_log'"
+
+    stub_script git "
+case \"\$1\" in
+  clone) mkdir -p \"\${@: -1}/.git\" \"\${@: -1}/plans\"
+         echo 'Other issue plan.' > \"\${@: -1}/plans/PROJ-99.md\" ;;
+  *) ;;
+esac
+"
+    run "$LOOP" --project PROJ --agent agent
+
+    [[ "$output" != *"Plan file found"* ]]
+    [[ "$(cat "$agent_log")" != *"Other issue plan."* ]]
+
+    rm -f "$agent_log"
+}
+
 @test "rate limit: 'overloaded' in output triggers retry" {
     local counter_file
     counter_file="$(mktemp)"
