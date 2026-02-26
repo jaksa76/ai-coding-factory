@@ -91,13 +91,54 @@ while true; do
     echo "Running JQL: $SEARCH_JQL"
     SEARCH_OUTPUT=$(acli jira workitem search --jql "$SEARCH_JQL" --json --paginate 2>&1)
     echo "Search result: $SEARCH_OUTPUT"
-    ISSUE_KEY=$(printf '%s\n' "$SEARCH_OUTPUT" \
-        | jq -r 'if type == "array" then .[0].key // empty else empty end' 2>/dev/null || true)
 
-    if [[ -z "$ISSUE_KEY" ]]; then
-        echo "No unassigned open issues found in project $PROJECT."
-        exit 2
-    fi
+    # Loop through issues to find one matching planning logic
+    while :; do
+        ISSUE_KEY=$(printf '%s\n' "$SEARCH_OUTPUT" \
+            | jq -r 'if type == "array" then .[0].key // empty else empty end' 2>/dev/null || true)
+        if [[ -z "$ISSUE_KEY" ]]; then
+            if [[ "$FOR_PLANNING" -eq 1 ]]; then
+                echo "No unassigned open issues requiring planning found in project $PROJECT."
+            else
+                echo "No unassigned open issues found in project $PROJECT."
+            fi
+            exit 2
+        fi
+        # Fetch labels for this issue
+        ISSUE_LABELS=$(printf '%s\n' "$SEARCH_OUTPUT" | jq -r 'if type == "array" and .[0] then .[0].fields.labels // [] | @sh else "" end' 2>/dev/null || true)
+        PLAN_BY_DEFAULT=${PLAN_BY_DEFAULT:-false}
+        NEEDS_PLAN=false
+        SKIP_PLAN=false
+        # shellcheck disable=SC2086
+        for label in $ISSUE_LABELS; do
+            case $label in
+                "needs-plan"|needs-plan) NEEDS_PLAN=true ;;
+                "skip-plan"|skip-plan) SKIP_PLAN=true ;;
+            esac
+        done
+        # Decision matrix for planning requirement
+        REQUIRE_PLAN=false
+        if [[ "$SKIP_PLAN" == true ]]; then
+            REQUIRE_PLAN=false
+        elif [[ "$NEEDS_PLAN" == true ]]; then
+            REQUIRE_PLAN=true
+        elif [[ "$PLAN_BY_DEFAULT" == true ]]; then
+            REQUIRE_PLAN=true
+        fi
+        # Only claim if planning is required when --for-planning is set
+        if [[ "$FOR_PLANNING" -eq 1 && "$REQUIRE_PLAN" != true ]]; then
+            echo "Skipping $ISSUE_KEY: planning not required by PLAN_BY_DEFAULT/labels."
+            # Remove this issue from SEARCH_OUTPUT and try next
+            SEARCH_OUTPUT=$(printf '%s\n' "$SEARCH_OUTPUT" | jq 'del(.[0])')
+            continue
+        fi
+        if [[ "$FOR_PLANNING" -eq 0 && "$REQUIRE_PLAN" == true ]]; then
+            echo "Skipping $ISSUE_KEY: planning required but --for-planning not set."
+            SEARCH_OUTPUT=$(printf '%s\n' "$SEARCH_OUTPUT" | jq 'del(.[0])')
+            continue
+        fi
+        break
+    done
 
     echo "Attempting to claim $ISSUE_KEY..."
 
