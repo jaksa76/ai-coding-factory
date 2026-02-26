@@ -12,12 +12,27 @@
 - [x] Implement devcontainer.json parsing (git archive)
 - [x] Implement Dockerfile generation layering agent + `loop` + `jira` on the devcontainer base
 - [x] Analyse architecture for potential technical debt and suggest improvements
-- [ ] Implement `worker-builder build --devcontainer <path> --type <agent> --tag <tag>`
+- [x] Implement `worker-builder build --devcontainer <path> --type <agent> --tag <tag>`
 - [ ] Analyse testability of the system and produce a document with suggested improvements
-- [ ] If the agent has hit the rate limit, have it wait and retry after the appropriate time
-- [ ] If there are no issues to work on, have the agent wait and poll again after a certain interval
-- [ ] Analyse reliability of the worker and produce a document with suggested improvements
-- [ ] Claude may need to refresh the token periodically, implement logic to handle this in the worker
-- [ ] Claude code logs are still not appearing in the worker logs, investigate and fix this issue
-- [ ] Investiage use of credential helper for git and produce a document with possible approaches and their tradeoffs
+- [x] If the agent has hit the rate limit, have it wait and retry after the appropriate time
+- [x] If there are no issues to work on, have the agent wait and poll again after a certain interval
+- [x] Analyse reliability of the worker and produce a document with suggested improvements
+- [x] Claude may need to refresh the token periodically, implement logic to handle this in the worker
+- [x] Claude code logs are still not appearing in the worker logs, investigate and fix this issue
+- [x] Investiage use of credential helper for git and produce a document with possible approaches and their tradeoffs
 - [ ] Missing input validation on $PROJECT
+- [ ] Implement `claim --for-planning` it works just like 'claim' but uses the `Planning` status instead of `In Progress`
+- [ ] `claim --for-planning` should also check for the presence of the `Planning` status in the Jira workflow and error if it's not present
+- [ ] `claim --for-planning` should implement the logic defined by `PLAN_BY_DEFAULT` env var and `needs-plan`/`skip-plan` labels  (see docs/planning-phase.md)
+- [ ] Update claim to NOT pick up issues that need to be planned when claiming for implementation (see docs/planning-phase.md)
+- [ ] Implement a planner loop: worker that does just planning (see docs/planning-phase.md)
+- [ ] Planner should generate the plan file in a `plans/` directory at the repo root, named `<ISSUE-KEY>.md`
+- [ ] Planner should commit and push the plan file to the repo
+- [ ] Planner should post a Jira comment with a direct GitHub link to the plan file after it is pushed
+- [ ] Planner should transition issue from `Planning` to `Awaiting Plan Review` after the plan is committed and the comment is posted
+- [ ] Graceful fallback when required planning statuses (`Planning`, `Awaiting Plan Review`, `Plan Approved`) are absent
+- [ ] If present, the agent should use the plan when implementing an issue
+- [ ] loop should create feature branches for issues if the `USE_FEATURE_BRANCHES` env var is set to `true`
+- [ ] loop should create a PR for the feature branch
+- [ ] loop should link the PR in Jira when `USE_FEATURE_BRANCHES` is enabled
+- [ ] loop should transition the issue to `In Review` when the PR is created, with graceful fallback to `In Progress` if `In Review` status is absent

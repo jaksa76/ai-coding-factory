@@ -55,10 +55,10 @@ If both labels are present on the same issue, `skip-branch` takes precedence.
 Feature branches follow a predictable, machine-readable pattern:
 
 ```
-agent/<ISSUE-KEY>
+feature/<ISSUE-KEY>
 ```
 
-Examples: `agent/MYPROJ-42`, `agent/ACME-7`.
+Examples: `feature/MYPROJ-42`, `feature/ACME-7`.
 
 The branch is created from the tip of the current default branch at the time the worker starts implementation. If a branch with the same name already exists (e.g. a previous aborted attempt), the worker resets it to the current default branch tip before starting, so each run is always a clean slate.
 
@@ -69,7 +69,7 @@ The branch is created from the tip of the current default branch at the time the
 | Property | Value |
 |---|---|
 | Base branch | Repository default branch (e.g. `main`) |
-| Head branch | `agent/<ISSUE-KEY>` |
+| Head branch | `feature/<ISSUE-KEY>` |
 | Title | `[<ISSUE-KEY>] <issue summary>` |
 | Body | Links to the Jira issue; brief description of changes made |
 | Draft | No — opened as a ready-for-review PR |
@@ -88,7 +88,7 @@ When the feature-branch flow is active, the agent's prompt is adjusted to reflec
 > Implement the issue … commit the change … push the changes … comment on Jira … transition the issue to Done.
 
 **With feature branches:**
-> Implement the issue … create a feature branch named `agent/<ISSUE-KEY>` from the current default branch … commit all changes to that branch … push the branch … open a pull request against the default branch with the title `[<ISSUE-KEY>] <summary>` … add a Jira comment with the PR URL … transition the issue to `In Review` (if that status is available, otherwise leave it as `In Progress`).
+> Implement the issue … create a feature branch named `feature/<ISSUE-KEY>` from the current default branch … commit all changes to that branch … push the branch … open a pull request against the default branch with the title `[<ISSUE-KEY>] <summary>` … add a Jira comment with the PR URL … transition the issue to `In Review` (if that status is available, otherwise leave it as `In Progress`).
 
 The agent is responsible for all git and `gh` operations within the work directory.
 
@@ -175,6 +175,6 @@ When both are active, the planner worker generates and commits the plan to the *
 - **GitHub only.** PR creation uses `gh`; GitLab/Bitbucket support is not in scope.
 - **No auto-merge.** The worker opens the PR but never merges it.
 - **No branch protection enforcement.** The worker does not verify that branch protection rules are configured; it simply follows the flow.
-- **One branch per issue.** The branch is always named `agent/<ISSUE-KEY>`; multiple workers racing on the same issue would collide (the `claim` race-detection mechanism prevents this).
+- **One branch per issue.** The branch is always named `feature/<ISSUE-KEY>`; multiple workers racing on the same issue would collide (the `claim` race-detection mechanism prevents this).
 - **Workers do not delete branches.** Branch cleanup after merge is left to the team's repository settings (e.g. GitHub's "automatically delete head branches" option).
 - **The `Done` transition remains manual (or automated externally).** The worker is not involved in the final merge-to-Done step.
