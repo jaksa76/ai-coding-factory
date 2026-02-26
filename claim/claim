@@ -12,12 +12,15 @@ set -euo pipefail
 #   JIRA_TOKEN  — Jira API token
 
 usage() {
-    echo "Usage: claim --project <key> --account-id <id>"
+    echo "Usage: claim --project <key> --account-id <id> [--for-planning]"
     echo ""
     echo "Environment variables required:"
     echo "  JIRA_SITE   Jira host (e.g. mycompany.atlassian.net)"
     echo "  JIRA_EMAIL  Jira account email"
     echo "  JIRA_TOKEN  Jira API token"
+    echo ""
+    echo "Options:"
+    echo "  --for-planning   Transition claimed issue to Planning status instead of In Progress."
     exit 1
 }
 
@@ -29,6 +32,7 @@ error_exit() {
 # Parse arguments
 PROJECT=""
 ACCOUNT_ID=""
+FOR_PLANNING=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --project)
@@ -38,6 +42,10 @@ while [[ $# -gt 0 ]]; do
         --account-id)
             ACCOUNT_ID="$2"
             shift 2
+            ;;
+        --for-planning)
+            FOR_PLANNING=1
+            shift 1
             ;;
         --help|-h)
             usage
@@ -101,13 +109,18 @@ while true; do
 
     echo "Successfully claimed $ISSUE_KEY."
 
-    # Transition to "In Progress"
-    echo "Transitioning $ISSUE_KEY to In Progress..."
+    # Transition to "In Progress" or "Planning" if --for-planning is set
+    if [[ "$FOR_PLANNING" -eq 1 ]]; then
+        TARGET_STATUS="Planning"
+    else
+        TARGET_STATUS="In Progress"
+    fi
+    echo "Transitioning $ISSUE_KEY to $TARGET_STATUS..."
     TRANSITION_STATUS=0
-    TRANSITION_OUTPUT=$(acli jira workitem transition --key "$ISSUE_KEY" --status "In Progress" --yes 2>&1) || TRANSITION_STATUS=$?
+    TRANSITION_OUTPUT=$(acli jira workitem transition --key "$ISSUE_KEY" --status "$TARGET_STATUS" --yes 2>&1) || TRANSITION_STATUS=$?
     echo "Transition output: $TRANSITION_OUTPUT"
     if [[ $TRANSITION_STATUS -ne 0 ]]; then
-        echo "Warning: could not transition $ISSUE_KEY to In Progress (transition may not be available)"
+        echo "Warning: could not transition $ISSUE_KEY to $TARGET_STATUS (transition may not be available)"
     fi
 
     # Print issue details
