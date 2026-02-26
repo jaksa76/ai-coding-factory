@@ -257,6 +257,68 @@ esac
     rm -f "$transition_args_file"
 }
 
+# ── planning filter ───────────────────────────────────────────────────────────
+
+@test "standard claim: JQL excludes needs-plan issues when PLAN_BY_DEFAULT is unset" {
+    stub_script acli "
+case \"\$*\" in
+  'jira auth status')        echo 'Authenticated' ;;
+  'jira workitem search'*)   echo '[{\"key\":\"PROJ-1\"}]' ;;
+  'jira workitem assign'*)   ;;
+  'jira workitem view PROJ-1 --json')
+      echo '{\"key\":\"PROJ-1\",\"fields\":{\"assignee\":{\"accountId\":\"acc1\"},\"summary\":\"Task\",\"description\":null,\"status\":{\"name\":\"To Do\"}}}' ;;
+  'jira workitem transition'*) ;;
+esac
+"
+    unset PLAN_BY_DEFAULT
+    run "$CLAIM" --project "PROJ" --account-id "acc1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'needs-plan'* ]]
+}
+
+@test "standard claim: JQL restricts to skip-plan issues when PLAN_BY_DEFAULT=true" {
+    stub_script acli "
+case \"\$*\" in
+  'jira auth status')        echo 'Authenticated' ;;
+  'jira workitem search'*)   echo '[{\"key\":\"PROJ-1\"}]' ;;
+  'jira workitem assign'*)   ;;
+  'jira workitem view PROJ-1 --json')
+      echo '{\"key\":\"PROJ-1\",\"fields\":{\"assignee\":{\"accountId\":\"acc1\"},\"summary\":\"Task\",\"description\":null,\"status\":{\"name\":\"To Do\"}}}' ;;
+  'jira workitem transition'*) ;;
+esac
+"
+    export PLAN_BY_DEFAULT=true
+    run "$CLAIM" --project "PROJ" --account-id "acc1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'skip-plan'* ]]
+}
+
+@test "--for-planning: JQL has no planning label filter" {
+    local transition_args_file
+    transition_args_file="$(mktemp)"
+
+    stub_script acli "
+case \"\$*\" in
+  'jira auth status')        echo 'Authenticated' ;;
+  'jira workitem search'*)   echo '[{\"key\":\"PROJ-1\"}]' ;;
+  'jira workitem assign'*)   ;;
+  'jira workitem view PROJ-1 --json')
+      echo '{\"key\":\"PROJ-1\",\"fields\":{\"assignee\":{\"accountId\":\"acc1\"},\"summary\":\"Task\",\"description\":null,\"status\":{\"name\":\"To Do\"}}}' ;;
+  'jira workitem transitions'*)
+      echo '[{\"name\":\"In Progress\"},{\"name\":\"Planning\"},{\"name\":\"Done\"}]' ;;
+  'jira workitem transition'*)
+      echo \"\$*\" > '$transition_args_file' ;;
+esac
+"
+    export PLAN_BY_DEFAULT=true
+    run "$CLAIM" --project "PROJ" --account-id "acc1" --for-planning
+    [ "$status" -eq 0 ]
+    [[ "$output" != *'needs-plan'* ]]
+    [[ "$output" != *'skip-plan'* ]]
+
+    rm -f "$transition_args_file"
+}
+
 @test "transition failure is non-fatal: warning printed but exits 0" {
     stub_script acli '
 case "$*" in

@@ -75,7 +75,19 @@ while true; do
     echo "Searching for unassigned open issues in project $PROJECT..."
 
     # Find unassigned, non-done issues; take the first one
-    SEARCH_JQL="project = \"$PROJECT\" AND assignee is EMPTY AND statusCategory != Done ORDER BY created ASC"
+    # Exclude issues that require planning unless --for-planning is set
+    if [[ "$FOR_PLANNING" -eq 0 ]]; then
+        if [[ "${PLAN_BY_DEFAULT:-false}" == "true" ]]; then
+            # Planning is opt-out: only pick up issues explicitly marked skip-plan
+            PLANNING_FILTER=' AND labels IN ("skip-plan")'
+        else
+            # Planning is opt-in: skip issues explicitly marked needs-plan
+            PLANNING_FILTER=' AND labels NOT IN ("needs-plan")'
+        fi
+    else
+        PLANNING_FILTER=""
+    fi
+    SEARCH_JQL="project = \"$PROJECT\" AND assignee is EMPTY AND statusCategory != Done${PLANNING_FILTER} ORDER BY created ASC"
     echo "Running JQL: $SEARCH_JQL"
     SEARCH_OUTPUT=$(acli jira workitem search --jql "$SEARCH_JQL" --json --paginate 2>&1)
     echo "Search result: $SEARCH_OUTPUT"
