@@ -210,6 +210,53 @@ esac
     rm -f "$transition_args_file"
 }
 
+@test "--for-planning: exits with error when Planning status not in workflow" {
+    stub_script acli '
+case "$*" in
+  "jira auth status")        echo "Authenticated" ;;
+  "jira workitem search"*)   echo '"'"'[{"key":"PROJ-7"}]'"'"' ;;
+  "jira workitem assign"*)   ;;
+  "jira workitem view PROJ-7 --json")
+      echo '"'"'{"key":"PROJ-7","fields":{"assignee":{"accountId":"acc1"},"summary":"Task","description":null,"status":{"name":"To Do"}}}'"'"' ;;
+  "jira workitem transitions"*)
+      echo '"'"'[{"name":"In Progress"},{"name":"Done"}]'"'"' ;;
+esac
+'
+    run "$CLAIM" --project "PROJ" --account-id "acc1" --for-planning
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Planning status does not exist"* ]]
+}
+
+@test "--for-planning: transitions to Planning when status exists in workflow" {
+    local transition_args_file
+    transition_args_file="$(mktemp)"
+
+    stub_script acli "
+case \"\$*\" in
+  'jira auth status')        echo 'Authenticated' ;;
+  'jira workitem search'*)   echo '[{\"key\":\"PROJ-8\"}]' ;;
+  'jira workitem assign'*)   ;;
+  'jira workitem view PROJ-8 --json')
+      echo '{\"key\":\"PROJ-8\",\"fields\":{\"assignee\":{\"accountId\":\"acc1\"},\"summary\":\"Task\",\"description\":null,\"status\":{\"name\":\"To Do\"}}}' ;;
+  'jira workitem transitions'*)
+      echo '[{\"name\":\"In Progress\"},{\"name\":\"Planning\"},{\"name\":\"Done\"}]' ;;
+  'jira workitem transition'*)
+      echo \"\$*\" > '$transition_args_file'
+      ;;
+esac
+"
+    run "$CLAIM" --project "PROJ" --account-id "acc1" --for-planning
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Successfully claimed PROJ-8"* ]]
+
+    local transition_args
+    transition_args="$(cat "$transition_args_file")"
+    [[ "$transition_args" == *"--status"* ]]
+    [[ "$transition_args" == *"Planning"* ]]
+
+    rm -f "$transition_args_file"
+}
+
 @test "transition failure is non-fatal: warning printed but exits 0" {
     stub_script acli '
 case "$*" in

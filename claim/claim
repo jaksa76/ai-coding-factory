@@ -112,6 +112,14 @@ while true; do
     # Transition to "In Progress" or "Planning" if --for-planning is set
     if [[ "$FOR_PLANNING" -eq 1 ]]; then
         TARGET_STATUS="Planning"
+        # Verify the Planning status exists in the workflow before attempting transition
+        echo "Verifying Planning status exists in project workflow..."
+        TRANSITIONS_JSON=$(acli jira workitem transitions --key "$ISSUE_KEY" --json 2>&1)
+        PLANNING_AVAILABLE=$(printf '%s\n' "$TRANSITIONS_JSON" \
+            | jq -r '[.[].name] | map(select(. == "Planning")) | length' 2>/dev/null || echo "0")
+        if [[ "$PLANNING_AVAILABLE" -eq 0 ]]; then
+            error_exit "Planning status does not exist in the Jira workflow for project $PROJECT. Cannot use --for-planning."
+        fi
     else
         TARGET_STATUS="In Progress"
     fi
