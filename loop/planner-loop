@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# planner-loop — worker for planning phase only
+#
+# Usage:
+#   planner-loop --project <key> --agent <command>
+#
+# Environment variables:
+#   JIRA_SITE                 — Jira host, e.g. mycompany.atlassian.net
+#   JIRA_EMAIL                — Jira account email
+#   JIRA_TOKEN                — Jira API token
+#   JIRA_ASSIGNEE_ACCOUNT_ID  — Jira account ID used for self-assignment
+#   GIT_REPO_URL              — Repository to work on
+#   GIT_USERNAME              — Git push credentials
+#   GIT_TOKEN                 — Git push credentials
+#   PLAN_BY_DEFAULT           — Optional, see docs/planning-phase.md
+#
+# This loop claims issues in Planning status (via claim --for-planning), prompts the agent to generate a written implementation plan,
+# commits the plan to plans/<ISSUE-KEY>.md in the target repo, posts a Jira comment with the plan link, and transitions the issue to Awaiting Plan Review.
+# It does NOT write any code or proceed to implementation.
+
+usage() {
+    echo "Usage: planner-loop --project <key> --agent <command>"
+    echo ""
+    echo "Environment variables required:"
+    echo "  JIRA_SITE                 Jira host (e.g. mycompany.atlassian.net)"
+    echo "  JIRA_EMAIL                Jira account email"
+    echo "  JIRA_TOKEN                Jira API token"
+    echo "  JIRA_ASSIGNEE_ACCOUNT_ID  Jira account ID for self-assignment"
+    echo "  GIT_REPO_URL              Repository URL to work on"
+    echo "  GIT_USERNAME              Git push credentials"
+    echo "  GIT_TOKEN                 Git push credentials"
+    echo ""
+    echo "Optional environment variables:"
+    echo "  PLAN_BY_DEFAULT           Enable project-wide planning phase (see docs/planning-phase.md)"
+    echo "  NO_ISSUES_WAIT            Seconds to wait when no issues are available (default: 60)"
+    echo "  RATE_LIMIT_WAIT           Seconds to wait on agent rate limit (default: 60)"
+    exit 1
+}
+
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+# Parse args
+PROJECT_KEY=""
+AGENT_CMD=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --project)
+            PROJECT_KEY="$2"; shift 2;;
+        --agent)
+            AGENT_CMD="$2"; shift 2;;
+        *)
+            usage;;
+    esac
+done
+
+[[ -z "$PROJECT_KEY" || -z "$AGENT_CMD" ]] && usage
+
+NO_ISSUES_WAIT="${NO_ISSUES_WAIT:-60}"
+RATE_LIMIT_WAIT="${RATE_LIMIT_WAIT:-60}"
+
+while true; do
+    # Claim an issue in Planning status
+    ISSUE_JSON=$(claim --for-planning --project "$PROJECT_KEY" --output json || true)
+    if [[ -z "$ISSUE_JSON" || "$ISSUE_JSON" == "null" ]]; then
+        echo "No planning issues available. Waiting $NO_ISSUES_WAIT seconds."
+        sleep "$NO_ISSUES_WAIT"
+        continue
+    fi
+    ISSUE_KEY=$(echo "$ISSUE_JSON" | jq -r .key)
+    ISSUE_URL=$(echo "$ISSUE_JSON" | jq -r .url)
+    echo "Claimed planning issue: $ISSUE_KEY ($ISSUE_URL)"
+
+    # Prompt agent to generate plan
+    PLAN_FILE="plans/$ISSUE_KEY.md"
+    PLAN_CONTENT=$($AGENT_CMD "Generate a detailed implementation plan for $ISSUE_KEY. Do NOT write any code. Only produce a markdown plan." || error_exit "Agent failed to generate plan.")
+    echo "$PLAN_CONTENT" > "$PLAN_FILE"
+
+    # Commit and push plan file to target repo
+    git add "$PLAN_FILE"
+    git commit -m "Add implementation plan for $ISSUE_KEY"
+    git push
+
+    # Construct plan file URL (assume main branch, update if needed)
+    PLAN_URL="$(echo "$GIT_REPO_URL" | sed 's/.git$//')/blob/main/$PLAN_FILE"
+
+    # Comment on Jira issue with plan link
+    acli issue comment "$ISSUE_KEY" "Implementation plan published: $PLAN_URL"
+
+    # Transition issue to Awaiting Plan Review
+    acli issue transition "$ISSUE_KEY" "Awaiting Plan Review"
+
+    echo "Planning phase complete for $ISSUE_KEY. Moving to next issue."
+    sleep 2
+
+done
