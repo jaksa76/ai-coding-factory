@@ -157,6 +157,92 @@ stub_script() {
     [[ "$output" == *"GIT_TOKEN"* ]]
 }
 
+# ── feature branch ────────────────────────────────────────────────────────────
+
+@test "feature branch: creates feature/<ISSUE-KEY> when FEATURE_BRANCHES=true" {
+    local git_log acli_log
+    git_log="$(mktemp)"
+    acli_log="$(mktemp)"
+
+    stub_script git '
+    echo "$*" >> '$git_log'
+    case "$1" in
+      clone) mkdir -p "${@: -1}/.git" ;;
+      symbolic-ref) echo "refs/remotes/origin/main" ;;
+      show-ref) exit 1 ;;
+      checkout) : ;;
+      branch) : ;;
+      *) ;;
+    esac
+    '
+    stub_script acli 'if [[ "$*" == *"issue get"* ]]; then echo '["needs-branch"]'; else echo "$*" >> '$acli_log'; fi'
+    export FEATURE_BRANCHES=true
+    run "$LOOP" --project PROJ --agent agent
+    [[ "$output" == *"Feature branch flow enabled for PROJ-1."* ]]
+    [[ "$git_log" == *"checkout -b feature/PROJ-1 main"* ]]
+    rm -f "$git_log" "$acli_log"
+}
+
+@test "feature branch: resets existing feature branch if present" {
+    local git_log acli_log
+    git_log="$(mktemp)"
+    acli_log="$(mktemp)"
+
+    stub_script git '
+    echo "$*" >> '$git_log'
+    case "$1" in
+      clone) mkdir -p "${@: -1}/.git" ;;
+      symbolic-ref) echo "refs/remotes/origin/main" ;;
+      show-ref) exit 0 ;;
+      checkout) : ;;
+      branch) : ;;
+      *) ;;
+    esac
+    '
+    stub_script acli 'if [[ "$*" == *"issue get"* ]]; then echo '["needs-branch"]'; else echo "$*" >> '$acli_log'; fi'
+    export FEATURE_BRANCHES=true
+    run "$LOOP" --project PROJ --agent agent
+    [[ "$output" == *"Resetting existing feature/PROJ-1 to main..."* ]]
+    [[ "$git_log" == *"branch -f feature/PROJ-1 main"* ]]
+    rm -f "$git_log" "$acli_log"
+}
+
+@test "feature branch: skip-branch label disables feature branch even if FEATURE_BRANCHES=true" {
+    local git_log acli_log
+    git_log="$(mktemp)"
+    acli_log="$(mktemp)"
+    stub_script git 'echo "$*" >> '$git_log''
+    stub_script acli 'if [[ "$*" == *"issue get"* ]]; then echo '["skip-branch"]'; else echo "$*" >> '$acli_log'; fi'
+    export FEATURE_BRANCHES=true
+    run "$LOOP" --project PROJ --agent agent
+    [[ "$output" != *"Feature branch flow enabled"* ]]
+    rm -f "$git_log" "$acli_log"
+}
+
+@test "feature branch: needs-branch label enables feature branch even if FEATURE_BRANCHES is false" {
+    local git_log acli_log
+    git_log="$(mktemp)"
+    acli_log="$(mktemp)"
+    stub_script git 'echo "$*" >> '$git_log''
+    stub_script acli 'if [[ "$*" == *"issue get"* ]]; then echo '["needs-branch"]'; else echo "$*" >> '$acli_log'; fi'
+    unset FEATURE_BRANCHES
+    run "$LOOP" --project PROJ --agent agent
+    [[ "$output" == *"Feature branch flow enabled for PROJ-1."* ]]
+    rm -f "$git_log" "$acli_log"
+}
+
+@test "feature branch: skip-branch label takes precedence over needs-branch" {
+    local git_log acli_log
+    git_log="$(mktemp)"
+    acli_log="$(mktemp)"
+    stub_script git 'echo "$*" >> '$git_log''
+    stub_script acli 'if [[ "$*" == *"issue get"* ]]; then echo '["needs-branch","skip-branch"]'; else echo "$*" >> '$acli_log'; fi'
+    export FEATURE_BRANCHES=true
+    run "$LOOP" --project PROJ --agent agent
+    [[ "$output" != *"Feature branch flow enabled"* ]]
+    rm -f "$git_log" "$acli_log"
+}
+
 # ── happy path ────────────────────────────────────────────────────────────────
 
 @test "happy path: claims issue, clones repo, runs agent, pushes, comments, transitions" {

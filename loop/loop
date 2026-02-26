@@ -155,6 +155,41 @@ while true; do
         git clone "$AUTH_URL" "$WORK_DIR"
     fi
 
+    # Step 2.5: Feature branch logic (if enabled)
+    # Decision matrix: FEATURE_BRANCHES env, needs-branch/skip-branch labels
+    USE_FEATURE_BRANCH=false
+    LABELS_JSON="$(acli jira issue get "$ISSUE_KEY" --field labels --output json 2>/dev/null || echo '[]')"
+    if [[ "${FEATURE_BRANCHES:-false}" == "true" ]]; then
+        USE_FEATURE_BRANCH=true
+    fi
+    if echo "$LABELS_JSON" | grep -q '"needs-branch"'; then
+        USE_FEATURE_BRANCH=true
+    fi
+    if echo "$LABELS_JSON" | grep -q '"skip-branch"'; then
+        USE_FEATURE_BRANCH=false
+    fi
+    if [[ "$USE_FEATURE_BRANCH" == "true" ]]; then
+        echo "Feature branch flow enabled for $ISSUE_KEY."
+        # Determine default branch name
+        DEFAULT_BRANCH="$(git -C "$WORK_DIR" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')"
+        if [[ -z "$DEFAULT_BRANCH" ]]; then
+            DEFAULT_BRANCH="main"
+        fi
+        FEATURE_BRANCH="feature/$ISSUE_KEY"
+        # If branch exists, reset it; else create it from default branch
+        if git -C "$WORK_DIR" show-ref --verify --quiet refs/heads/$FEATURE_BRANCH; then
+            echo "Resetting existing $FEATURE_BRANCH to $DEFAULT_BRANCH..."
+            echo "branch -f $FEATURE_BRANCH $DEFAULT_BRANCH"
+            git -C "$WORK_DIR" branch -f "$FEATURE_BRANCH" "$DEFAULT_BRANCH"
+            echo "checkout $FEATURE_BRANCH"
+            git -C "$WORK_DIR" checkout "$FEATURE_BRANCH"
+        else
+            echo "Creating $FEATURE_BRANCH from $DEFAULT_BRANCH..."
+            echo "checkout -b $FEATURE_BRANCH $DEFAULT_BRANCH"
+            git -C "$WORK_DIR" checkout -b "$FEATURE_BRANCH" "$DEFAULT_BRANCH"
+        fi
+    fi
+
     # Step 3: Invoke the agent with the issue as prompt
     PROMPT="Implement the issue described below. Make sure to run all necessary tests. Once the issue is implemented, commit the change with a brief description of the change and push the changes. After pushing, update the Jira issue by commenting what was performed and transition the issue to Done. You have the acli tool available for Jira interactions.\n\n"
     PROMPT="$PROMPT [$ISSUE_KEY] $ISSUE_SUMMARY"
