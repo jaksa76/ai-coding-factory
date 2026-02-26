@@ -214,7 +214,7 @@ esac
     stub_script acli '
 case "$*" in
   "jira auth status")        echo "Authenticated" ;;
-  "jira workitem search"*)   echo '"'"'[{"key":"PROJ-7"}]'"'"' ;;
+  "jira workitem search"*)   echo '"'"'[{"key":"PROJ-7","fields":{"labels":["needs-plan"]}}]'"'"' ;;
   "jira workitem assign"*)   ;;
   "jira workitem view PROJ-7 --json")
       echo '"'"'{"key":"PROJ-7","fields":{"assignee":{"accountId":"acc1"},"summary":"Task","description":null,"status":{"name":"To Do"}}}'"'"' ;;
@@ -234,7 +234,7 @@ esac
     stub_script acli "
 case \"\$*\" in
   'jira auth status')        echo 'Authenticated' ;;
-  'jira workitem search'*)   echo '[{\"key\":\"PROJ-8\"}]' ;;
+  'jira workitem search'*)   echo '[{\"key\":\"PROJ-8\",\"fields\":{\"labels\":[\"needs-plan\"]}}]' ;;
   'jira workitem assign'*)   ;;
   'jira workitem view PROJ-8 --json')
       echo '{\"key\":\"PROJ-8\",\"fields\":{\"assignee\":{\"accountId\":\"acc1\"},\"summary\":\"Task\",\"description\":null,\"status\":{\"name\":\"To Do\"}}}' ;;
@@ -280,7 +280,7 @@ esac
     stub_script acli "
 case \"\$*\" in
   'jira auth status')        echo 'Authenticated' ;;
-  'jira workitem search'*)   echo '[{\"key\":\"PROJ-1\"}]' ;;
+  'jira workitem search'*)   echo '[{\"key\":\"PROJ-1\",\"fields\":{\"labels\":[\"skip-plan\"]}}]' ;;
   'jira workitem assign'*)   ;;
   'jira workitem view PROJ-1 --json')
       echo '{\"key\":\"PROJ-1\",\"fields\":{\"assignee\":{\"accountId\":\"acc1\"},\"summary\":\"Task\",\"description\":null,\"status\":{\"name\":\"To Do\"}}}' ;;

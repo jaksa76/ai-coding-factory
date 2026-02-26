@@ -105,7 +105,7 @@ while true; do
             exit 2
         fi
         # Fetch labels for this issue
-        ISSUE_LABELS=$(printf '%s\n' "$SEARCH_OUTPUT" | jq -r 'if type == "array" and .[0] then .[0].fields.labels // [] | @sh else "" end' 2>/dev/null || true)
+        ISSUE_LABELS=$(printf '%s\n' "$SEARCH_OUTPUT" | jq -r 'if type == "array" and .[0] then (.[0].fields.labels // [])[] else empty end' 2>/dev/null || true)
         PLAN_BY_DEFAULT=${PLAN_BY_DEFAULT:-false}
         NEEDS_PLAN=false
         SKIP_PLAN=false
