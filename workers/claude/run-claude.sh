@@ -3,9 +3,11 @@
 # invocation. This ensures the worker never fails with an expired token mid-loop.
 #
 # Any arguments are forwarded verbatim to `claude`.
+# --verbose is always passed so that tool calls and agent progress are visible
+# in docker logs.
 
 set -euo pipefail
 
 init-claude --refresh
 
-exec claude "$@"
+exec claude --verbose "$@"
