@@ -48,4 +48,4 @@ COPY workers/copilot/copilot-config.json /root/.copilot/config.json
 #   JIRA_PROJECT              — Jira project key to pull issues from (e.g. MYPROJ)
 #   GIT_REPO_URL / GIT_USERNAME / GIT_TOKEN
 
-ENTRYPOINT ["bash", "-c", "init-copilot && exec loop --project \"$JIRA_PROJECT\" --agent copilot"]
+ENTRYPOINT ["bash", "-c", "init-copilot && exec loop --project \"$JIRA_PROJECT\" --agent \"copilot --allow-all --no-ask-user -p\""]
