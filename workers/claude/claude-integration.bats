@@ -48,6 +48,12 @@ make_docker_env_file() {
     [[ "$output" == *"init-claude"* ]]
 }
 
+@test "run-claude is installed" {
+    run docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c "which run-claude"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"run-claude"* ]]
+}
+
 @test "image has loop installed" {
     run docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c "which loop"
     [ "$status" -eq 0 ]
@@ -93,12 +99,12 @@ make_docker_env_file() {
     [[ "$output" == *'"bash"'* ]]
 }
 
-@test "entrypoint invokes loop --agent claude" {
+@test "entrypoint invokes loop --agent run-claude" {
     run docker inspect --format '{{json .Config.Entrypoint}}' "$IMAGE_TAG"
     [ "$status" -eq 0 ]
     [[ "$output" == *"loop --project"* ]]
     [[ "$output" == *"--agent"* ]]
-    [[ "$output" == *"claude"* ]]
+    [[ "$output" == *"run-claude"* ]]
 }
 
 # ── loop behaviour ────────────────────────────────────────────────────────────
