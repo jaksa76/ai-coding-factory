@@ -157,14 +157,21 @@ $ISSUE_DESCRIPTION"
         echo "Warning: could not post plan comment on $ISSUE_KEY"
     fi
 
-    # Transition issue to Awaiting Plan Review
-    echo "Transitioning $ISSUE_KEY to Awaiting Plan Review..."
-    set +e
-    acli jira workitem transition --key "$ISSUE_KEY" --status "Awaiting Plan Review" --yes
-    TRANSITION_EXIT=$?
-    set -e
-    if [[ "$TRANSITION_EXIT" -ne 0 ]]; then
-        echo "Warning: could not transition $ISSUE_KEY to Awaiting Plan Review"
+    # Transition issue to Awaiting Plan Review (only if the status exists in the workflow)
+    TRANSITIONS_JSON=$(acli jira workitem transitions --key "$ISSUE_KEY" --json 2>&1) || true
+    APR_AVAILABLE=$(printf '%s\n' "$TRANSITIONS_JSON" \
+        | jq -r '[.[].name] | map(select(. == "Awaiting Plan Review")) | length' 2>/dev/null || echo "0")
+    if [[ "$APR_AVAILABLE" -eq 0 ]]; then
+        echo "Warning: Awaiting Plan Review status is absent from the workflow for $ISSUE_KEY, skipping transition"
+    else
+        echo "Transitioning $ISSUE_KEY to Awaiting Plan Review..."
+        set +e
+        acli jira workitem transition --key "$ISSUE_KEY" --status "Awaiting Plan Review" --yes
+        TRANSITION_EXIT=$?
+        set -e
+        if [[ "$TRANSITION_EXIT" -ne 0 ]]; then
+            echo "Warning: could not transition $ISSUE_KEY to Awaiting Plan Review"
+        fi
     fi
 
     echo "Planning phase complete for $ISSUE_KEY. Moving to next issue."

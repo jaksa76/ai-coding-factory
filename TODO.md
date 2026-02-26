@@ -30,7 +30,7 @@
 - [ ] Planner should commit and push the plan file to the repo
 - [ ] Planner should post a Jira comment with a direct GitHub link to the plan file after it is pushed
 - [ ] Planner should transition issue from `Planning` to `Awaiting Plan Review` after the plan is committed and the comment is posted
-- [ ] Graceful fallback when required planning statuses (`Planning`, `Awaiting Plan Review`, `Plan Approved`) are absent
+- [x] Graceful fallback when required planning statuses (`Planning`, `Awaiting Plan Review`, `Plan Approved`) are absent
 - [ ] If present, the agent should use the plan when implementing an issue
 - [ ] loop should create feature branches for issues if the `USE_FEATURE_BRANCHES` env var is set to `true`
 - [ ] loop should create a PR for the feature branch

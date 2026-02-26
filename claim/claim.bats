@@ -319,6 +319,58 @@ esac
     rm -f "$transition_args_file"
 }
 
+@test "implementer: Plan Approved issue is claimed when Plan Approved status exists in JQL result" {
+    # An issue with needs-plan label but status = Plan Approved should be claimed by implementer
+    stub_script acli "
+case \"\$*\" in
+  'jira auth status')        echo 'Authenticated' ;;
+  'jira workitem search'*)   echo '[{\"key\":\"PROJ-9\",\"fields\":{\"labels\":[\"needs-plan\"],\"status\":{\"name\":\"Plan Approved\"}}}]' ;;
+  'jira workitem assign'*)   ;;
+  'jira workitem view PROJ-9 --json')
+      echo '{\"key\":\"PROJ-9\",\"fields\":{\"assignee\":{\"accountId\":\"acc1\"},\"summary\":\"Task\",\"description\":null,\"status\":{\"name\":\"Plan Approved\"}}}' ;;
+  'jira workitem transition'*) ;;
+esac
+"
+    run "$CLAIM" --project "PROJ" --account-id "acc1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Plan Approved state"* ]]
+    [[ "$output" == *"Successfully claimed PROJ-9"* ]]
+}
+
+@test "implementer: Plan Approved queue skipped gracefully when Plan Approved status absent" {
+    # When the JQL with Plan Approved fails, warn and fall back to standard JQL
+    local search_count_file
+    search_count_file="$(mktemp)"
+    echo "0" > "$search_count_file"
+
+    stub_script acli "
+case \"\$*\" in
+  'jira auth status')        echo 'Authenticated' ;;
+  'jira workitem search'*)
+      count=\$(cat '$search_count_file')
+      echo \$((count + 1)) > '$search_count_file'
+      if [ \"\$count\" -eq 0 ]; then
+          # First search (with Plan Approved in JQL) fails — status absent
+          echo '{\"errorMessages\":[\"The value Plan Approved does not exist for field status.\"]}'
+      else
+          # Second search (fallback without Plan Approved) succeeds
+          echo '[{\"key\":\"PROJ-10\"}]'
+      fi
+      ;;
+  'jira workitem assign'*)   ;;
+  'jira workitem view PROJ-10 --json')
+      echo '{\"key\":\"PROJ-10\",\"fields\":{\"assignee\":{\"accountId\":\"acc1\"},\"summary\":\"Task\",\"description\":null,\"status\":{\"name\":\"To Do\"}}}' ;;
+  'jira workitem transition'*) ;;
+esac
+"
+    run "$CLAIM" --project "PROJ" --account-id "acc1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Warning: Plan Approved status not found in workflow"* ]]
+    [[ "$output" == *"Successfully claimed PROJ-10"* ]]
+
+    rm -f "$search_count_file"
+}
+
 @test "transition failure is non-fatal: warning printed but exits 0" {
     stub_script acli '
 case "$*" in

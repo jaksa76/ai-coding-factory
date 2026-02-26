@@ -78,11 +78,11 @@ while true; do
     # Exclude issues that require planning unless --for-planning is set
     if [[ "$FOR_PLANNING" -eq 0 ]]; then
         if [[ "${PLAN_BY_DEFAULT:-false}" == "true" ]]; then
-            # Planning is opt-out: only pick up issues explicitly marked skip-plan
-            PLANNING_FILTER=' AND labels IN ("skip-plan")'
+            # Planning is opt-out: only pick up issues explicitly marked skip-plan, or Plan Approved
+            PLANNING_FILTER=' AND (labels IN ("skip-plan") OR status = "Plan Approved")'
         else
-            # Planning is opt-in: skip issues explicitly marked needs-plan
-            PLANNING_FILTER=' AND labels NOT IN ("needs-plan")'
+            # Planning is opt-in: skip issues explicitly marked needs-plan, except Plan Approved
+            PLANNING_FILTER=' AND (labels NOT IN ("needs-plan") OR status = "Plan Approved")'
         fi
     else
         PLANNING_FILTER=""
@@ -90,6 +90,19 @@ while true; do
     SEARCH_JQL="project = \"$PROJECT\" AND assignee is EMPTY AND statusCategory != Done${PLANNING_FILTER} ORDER BY created ASC"
     echo "Running JQL: $SEARCH_JQL"
     SEARCH_OUTPUT=$(acli jira workitem search --jql "$SEARCH_JQL" --json --paginate 2>&1)
+    # If the search failed (e.g. Plan Approved status absent from workflow), fall back to the
+    # standard filter without Plan Approved and warn.
+    if [[ "$FOR_PLANNING" -eq 0 ]] && ! printf '%s\n' "$SEARCH_OUTPUT" | jq -e 'type == "array"' >/dev/null 2>&1; then
+        echo "Warning: Plan Approved status not found in workflow, skipping Plan Approved queue"
+        if [[ "${PLAN_BY_DEFAULT:-false}" == "true" ]]; then
+            PLANNING_FILTER=' AND labels IN ("skip-plan")'
+        else
+            PLANNING_FILTER=' AND labels NOT IN ("needs-plan")'
+        fi
+        SEARCH_JQL="project = \"$PROJECT\" AND assignee is EMPTY AND statusCategory != Done${PLANNING_FILTER} ORDER BY created ASC"
+        echo "Running JQL: $SEARCH_JQL"
+        SEARCH_OUTPUT=$(acli jira workitem search --jql "$SEARCH_JQL" --json --paginate 2>&1)
+    fi
     echo "Search result: $SEARCH_OUTPUT"
 
     # Loop through issues to find one matching planning logic
@@ -133,6 +146,12 @@ while true; do
             continue
         fi
         if [[ "$FOR_PLANNING" -eq 0 && "$REQUIRE_PLAN" == true ]]; then
+            # Allow Plan Approved issues: plan has been reviewed and approved for implementation
+            ISSUE_STATUS=$(printf '%s\n' "$SEARCH_OUTPUT" | jq -r 'if type == "array" and .[0] then (.[0].fields.status.name // "") else "" end' 2>/dev/null || true)
+            if [[ "$ISSUE_STATUS" == "Plan Approved" ]]; then
+                echo "Issue $ISSUE_KEY is in Plan Approved state, proceeding with implementation."
+                break
+            fi
             echo "Skipping $ISSUE_KEY: planning required but --for-planning not set."
             SEARCH_OUTPUT=$(printf '%s\n' "$SEARCH_OUTPUT" | jq 'del(.[0])')
             continue

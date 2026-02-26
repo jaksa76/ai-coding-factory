@@ -176,7 +176,12 @@ case \"\$1\" in
   *) ;;
 esac
 "
-    stub_script acli "echo \"\$*\" >> '$acli_log'"
+    stub_script acli "
+echo \"\$*\" >> '$acli_log'
+case \"\$*\" in
+  *transitions*) echo '[{\"name\":\"In Progress\"},{\"name\":\"Awaiting Plan Review\"},{\"name\":\"Done\"}]' ;;
+esac
+"
 
     stub_script agent '
 mkdir -p plans
@@ -280,16 +285,30 @@ esac
 }
 
 @test "transition failure is non-fatal: warning printed, loop continues" {
+    stub_script acli "
+case \"\$*\" in
+  *transitions*) echo '[{\"name\":\"Awaiting Plan Review\"}]' ;;
+  *transition*) exit 1 ;;
+esac
+"
+
+    run "$PLANNER_LOOP" --project PROJ --agent agent
+
+    [[ "$output" == *"Warning: could not transition PROJ-1 to Awaiting Plan Review"* ]]
+    [[ "$output" == *"Planning phase complete for PROJ-1"* ]]
+}
+
+@test "Awaiting Plan Review status absent: warning printed, transition skipped, loop continues" {
     stub_script acli '
 case "$*" in
-  *transition*) exit 1 ;;
+  *transitions*) echo '"'"'[{"name":"In Progress"},{"name":"Done"}]'"'"' ;;
   *) ;;
 esac
 '
 
     run "$PLANNER_LOOP" --project PROJ --agent agent
 
-    [[ "$output" == *"Warning: could not transition PROJ-1 to Awaiting Plan Review"* ]]
+    [[ "$output" == *"Warning: Awaiting Plan Review status is absent from the workflow"* ]]
     [[ "$output" == *"Planning phase complete for PROJ-1"* ]]
 }
 
