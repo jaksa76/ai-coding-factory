@@ -216,6 +216,7 @@ $PLAN_CONTENTS"
     run_agent_with_retry "$PROMPT" "$ISSUE_KEY"
     echo "=== AGENT END: $ISSUE_KEY ==="
 
+
     # Step 4: Push changes
     echo "Pushing changes for $ISSUE_KEY..."
     if [[ "$USE_FEATURE_BRANCH" == "true" ]]; then
@@ -288,6 +289,27 @@ Implements [$ISSUE_KEY] $ISSUE_SUMMARY"
         set -e
         if [[ "$TRANSITION_EXIT" -ne 0 ]]; then
             echo "Warning: could not transition $ISSUE_KEY to Done"
+=======
+    # Step 4: If feature branch flow, post PR link as Jira comment
+    if [[ "$USE_FEATURE_BRANCH" == "true" ]]; then
+        # Find the PR URL (assume gh CLI was used to create PR)
+        PR_URL=""
+        PR_SUMMARY=""
+        # Try to find the latest PR for this branch
+        PR_URL=$(cd "$WORK_DIR" && gh pr view --json url --jq .url "$FEATURE_BRANCH" 2>/dev/null || true)
+        PR_SUMMARY="[${ISSUE_KEY}] ${ISSUE_SUMMARY} implemented. PR: $PR_URL"
+        if [[ -n "$PR_URL" ]]; then
+            echo "Posting PR link as Jira comment for $ISSUE_KEY..."
+            set +e
+            acli jira workitem comment --key "$ISSUE_KEY" --comment "$PR_SUMMARY"
+            COMMENT_EXIT=$?
+            set -e
+            if [[ "$COMMENT_EXIT" -ne 0 ]]; then
+                echo "Warning: could not post PR comment on $ISSUE_KEY"
+            fi
+        else
+            echo "Warning: could not determine PR URL for $ISSUE_KEY"
+>>>>>>> fa9ccf6 (loop: post Jira comment with PR link when USE_FEATURE_BRANCHES is enabled)
         fi
     fi
 
