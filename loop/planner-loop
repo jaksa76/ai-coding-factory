@@ -48,51 +48,124 @@ error_exit() {
 PROJECT_KEY=""
 AGENT_CMD=""
 while [[ $# -gt 0 ]]; do
-    case $1 in
+    case "$1" in
         --project)
             PROJECT_KEY="$2"; shift 2;;
         --agent)
             AGENT_CMD="$2"; shift 2;;
-        *)
+        --help|-h)
             usage;;
+        *)
+            error_exit "Unknown option: $1";;
     esac
 done
 
-[[ -z "$PROJECT_KEY" || -z "$AGENT_CMD" ]] && usage
+[[ -z "$PROJECT_KEY" ]] && error_exit "--project <key> is required"
+[[ -z "$AGENT_CMD" ]]   && error_exit "--agent <command> is required"
+
+[[ -z "${JIRA_SITE:-}" ]]                && error_exit "JIRA_SITE environment variable is not set"
+[[ -z "${JIRA_EMAIL:-}" ]]               && error_exit "JIRA_EMAIL environment variable is not set"
+[[ -z "${JIRA_TOKEN:-}" ]]               && error_exit "JIRA_TOKEN environment variable is not set"
+[[ -z "${JIRA_ASSIGNEE_ACCOUNT_ID:-}" ]] && error_exit "JIRA_ASSIGNEE_ACCOUNT_ID environment variable is not set"
+[[ -z "${GIT_REPO_URL:-}" ]]             && error_exit "GIT_REPO_URL environment variable is not set"
+[[ -z "${GIT_USERNAME:-}" ]]             && error_exit "GIT_USERNAME environment variable is not set"
+[[ -z "${GIT_TOKEN:-}" ]]                && error_exit "GIT_TOKEN environment variable is not set"
+
+# Build authenticated git URL (inject username:token into https URL)
+AUTH_URL="${GIT_REPO_URL/#https:\/\//https://$GIT_USERNAME:$GIT_TOKEN@}"
+
+# Derive local repo directory name from URL
+REPO_NAME="$(basename "$GIT_REPO_URL" .git)"
+# LOOP_WORK_DIR allows tests to override the base directory; defaults to cwd
+BASE_DIR="${LOOP_WORK_DIR:-$(pwd)}"
+WORK_DIR="$BASE_DIR/$REPO_NAME"
 
 NO_ISSUES_WAIT="${NO_ISSUES_WAIT:-60}"
 RATE_LIMIT_WAIT="${RATE_LIMIT_WAIT:-60}"
 
 while true; do
-    # Claim an issue in Planning status
-    ISSUE_JSON=$(claim --for-planning --project "$PROJECT_KEY" --output json || true)
-    if [[ -z "$ISSUE_JSON" || "$ISSUE_JSON" == "null" ]]; then
-        echo "No planning issues available. Waiting $NO_ISSUES_WAIT seconds."
+    # Claim an issue that requires planning
+    echo "Claiming planning issue from project $PROJECT_KEY..."
+    set +e
+    CLAIM_OUTPUT="$(claim --for-planning --project "$PROJECT_KEY" --account-id "$JIRA_ASSIGNEE_ACCOUNT_ID")"
+    CLAIM_EXIT=$?
+    set -e
+    echo "$CLAIM_OUTPUT"
+
+    if [[ "$CLAIM_EXIT" -eq 2 ]]; then
+        echo "No planning issues available in project $PROJECT_KEY. Waiting ${NO_ISSUES_WAIT}s before polling again..."
         sleep "$NO_ISSUES_WAIT"
         continue
+    elif [[ "$CLAIM_EXIT" -ne 0 ]]; then
+        exit "$CLAIM_EXIT"
     fi
-    ISSUE_KEY=$(echo "$ISSUE_JSON" | jq -r .key)
-    ISSUE_URL=$(echo "$ISSUE_JSON" | jq -r .url)
-    echo "Claimed planning issue: $ISSUE_KEY ($ISSUE_URL)"
 
-    # Prompt agent to generate plan
+    # Extract the JSON block (lines from first '{' onward)
+    ISSUE_JSON="$(printf '%s\n' "$CLAIM_OUTPUT" | awk '/^\{/{f=1} f')"
+    ISSUE_KEY="$(printf '%s\n' "$ISSUE_JSON" | jq -r '.key')"
+    ISSUE_SUMMARY="$(printf '%s\n' "$ISSUE_JSON" | jq -r '.summary')"
+    ISSUE_DESCRIPTION="$(printf '%s\n' "$ISSUE_JSON" | jq -r '.description // ""')"
+
+    echo "Working on planning for $ISSUE_KEY: $ISSUE_SUMMARY"
+
+    # Clone or pull the target repository
+    if [[ -d "$WORK_DIR/.git" ]]; then
+        echo "Pulling latest changes for $REPO_NAME..."
+        git -C "$WORK_DIR" remote set-url origin "$AUTH_URL"
+        git -C "$WORK_DIR" pull
+    else
+        echo "Cloning $GIT_REPO_URL..."
+        git clone "$AUTH_URL" "$WORK_DIR"
+    fi
+
+    # Build the plan file path inside the target repo
     PLAN_FILE="plans/$ISSUE_KEY.md"
-    PLAN_CONTENT=$($AGENT_CMD "Generate a detailed implementation plan for $ISSUE_KEY. Do NOT write any code. Only produce a markdown plan." || error_exit "Agent failed to generate plan.")
-    echo "$PLAN_CONTENT" > "$PLAN_FILE"
+    PLAN_PATH="$WORK_DIR/$PLAN_FILE"
+    mkdir -p "$WORK_DIR/plans"
 
-    # Commit and push plan file to target repo
-    git add "$PLAN_FILE"
-    git commit -m "Add implementation plan for $ISSUE_KEY"
-    git push
+    # Prompt the agent to write the plan file
+    PROMPT="Generate a detailed implementation plan for the issue described below. Write the plan to $PLAN_FILE in the repository root as a Markdown file. Do NOT write any code or make any commits.\n\n"
+    PROMPT="$PROMPT [$ISSUE_KEY] $ISSUE_SUMMARY"
+    [[ -n "$ISSUE_DESCRIPTION" ]] && PROMPT="$PROMPT
+$ISSUE_DESCRIPTION"
+    echo "Running agent to generate plan for $ISSUE_KEY..."
+    echo "=== AGENT START: $ISSUE_KEY ==="
+    (cd "$WORK_DIR" && $AGENT_CMD "$PROMPT")
+    echo "=== AGENT END: $ISSUE_KEY ==="
 
-    # Construct plan file URL (assume main branch, update if needed)
+    # Verify the plan file was created
+    if [[ ! -f "$PLAN_PATH" ]]; then
+        error_exit "Agent did not create plan file at $PLAN_FILE"
+    fi
+
+    # Commit and push the plan file to the target repo
+    echo "Committing and pushing plan for $ISSUE_KEY..."
+    git -C "$WORK_DIR" add "$PLAN_FILE"
+    git -C "$WORK_DIR" commit -m "Add implementation plan for $ISSUE_KEY"
+    git -C "$WORK_DIR" push
+
+    # Construct plan file URL (main branch)
     PLAN_URL="$(echo "$GIT_REPO_URL" | sed 's/.git$//')/blob/main/$PLAN_FILE"
 
-    # Comment on Jira issue with plan link
-    acli issue comment "$ISSUE_KEY" "Implementation plan published: $PLAN_URL"
+    # Comment on Jira issue with link to plan
+    echo "Posting plan comment on $ISSUE_KEY..."
+    set +e
+    acli jira workitem comment --key "$ISSUE_KEY" --comment "Implementation plan published: $PLAN_URL"
+    COMMENT_EXIT=$?
+    set -e
+    if [[ "$COMMENT_EXIT" -ne 0 ]]; then
+        echo "Warning: could not post plan comment on $ISSUE_KEY"
+    fi
 
     # Transition issue to Awaiting Plan Review
-    acli issue transition "$ISSUE_KEY" "Awaiting Plan Review"
+    echo "Transitioning $ISSUE_KEY to Awaiting Plan Review..."
+    set +e
+    acli jira workitem transition --key "$ISSUE_KEY" --status "Awaiting Plan Review" --yes
+    TRANSITION_EXIT=$?
+    set -e
+    if [[ "$TRANSITION_EXIT" -ne 0 ]]; then
+        echo "Warning: could not transition $ISSUE_KEY to Awaiting Plan Review"
+    fi
 
     echo "Planning phase complete for $ISSUE_KEY. Moving to next issue."
     sleep 2
