@@ -1,6 +1,61 @@
-# Worker Reliability Analysis
+# Worker Reliability and Testability Analysis
 
-This document analyses the reliability of the AI coding factory worker system and proposes concrete improvements. The system consists of a `claim` script for picking up Jira issues, a `loop` script that orchestrates the claim/work/report cycle, and Docker workers that wrap `loop` with a specific agent CLI.
+This document analyses both the reliability and testability of the AI coding factory worker system and proposes concrete improvements. The system consists of a `claim` script for picking up Jira issues, a `loop` script that orchestrates the claim/work/report cycle, and Docker workers that wrap `loop` with a specific agent CLI.
+
+---
+
+## System Testability Analysis and Recommendations
+
+### Current Testability Overview
+
+The system is composed of Bash CLI tools (claim, loop, worker-builder, factory) and Dockerized workers, with all state managed via Jira and Git. Testing is currently performed using BATS (Bash Automated Testing System), with a clear separation between unit and integration tests. Unit tests stub all dependencies, while integration tests require real credentials and interact with live Jira and Git services.
+
+#### Strengths
+- **Unit/Integration Split:** Clear separation of unit and integration tests, with conventions for file naming and test location.
+- **Stub Infrastructure:** Robust stubbing for dependencies and environment variables, enabling fast and isolated unit tests.
+- **Test Coverage:** Unit tests cover argument/env validation, happy paths, and edge/error cases. Integration tests validate real-world flows.
+- **Test Automation:** All tools have associated test files, and conventions are documented in `TESTING_STRATEGY.md`.
+
+#### Weaknesses
+- **Integration Test Fragility:** Integration tests depend on live Jira and Git credentials, making them brittle and potentially slow.
+- **Manual Integration Test Runs:** Integration tests are not run by default and require manual invocation and setup.
+- **No Code Coverage Metrics:** There is no automated measurement of test coverage for Bash scripts.
+- **Limited Mocking for External APIs:** Stubbing is limited to command-level, not protocol-level (e.g., cannot simulate Jira API failures beyond command exit codes).
+- **No CI Integration:** There is no mention of continuous integration (CI) running tests automatically on push/PR.
+- **No Test Data Isolation for Integration:** Integration tests may pollute real Jira/Git state unless carefully managed.
+
+### Recommendations for Improved Testability
+
+1. **Automate Integration Test Setup/Teardown:**
+   - Use dedicated test projects/accounts in Jira and Git for integration tests.
+   - Automate creation and cleanup of test issues/repos to avoid polluting real data.
+
+2. **Add CI Integration:**
+   - Integrate with a CI system (e.g., GitHub Actions) to run all unit tests on every push/PR.
+   - Optionally, run integration tests in CI with secrets configured for test accounts.
+
+3. **Introduce Code Coverage Tools:**
+   - Use tools like [kcov](https://github.com/SimonKagstrom/kcov) or [bashcov](https://github.com/infertux/bashcov) to measure Bash script coverage.
+   - Add a coverage badge to the README.
+
+4. **Enhance Stubbing/Mocking:**
+   - Develop protocol-level mocks for Jira and Git APIs (e.g., using socat or a local HTTP server) to simulate more complex failure modes.
+   - Consider using containers to run mock services for integration tests.
+
+5. **Test Data Isolation:**
+   - Ensure integration tests use unique, ephemeral data (e.g., random issue keys, temp branches) and clean up after themselves.
+
+6. **Document Test Flows:**
+   - Expand `TESTING_STRATEGY.md` with example test flows, expected outputs, and troubleshooting tips.
+
+7. **Error Injection Testing:**
+   - Add tests that deliberately inject failures (e.g., network errors, permission denied) to validate robustness.
+
+### Conclusion
+
+The current system is well-structured for unit testing, but integration testability and automation can be improved. Implementing the above recommendations will increase confidence in changes, reduce manual effort, and make the system more robust to real-world failures.
+
+---
 
 ---
 
