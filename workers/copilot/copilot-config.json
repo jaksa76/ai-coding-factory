@@ -16,5 +16,5 @@
       "login": "${GH_USERNAME}"
     }
   ],
-  "model": "gpt-4.1"
+  "model": "claude-4.6"
 }
