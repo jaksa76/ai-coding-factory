@@ -76,6 +76,45 @@ REPO_NAME="$(basename "$GIT_REPO_URL" .git)"
 BASE_DIR="${LOOP_WORK_DIR:-$(pwd)}"
 WORK_DIR="$BASE_DIR/$REPO_NAME"
 
+# Run the agent, retrying on rate-limit errors.
+# Usage: run_agent_with_retry <prompt> <issue_key>
+run_agent_with_retry() {
+    local prompt="$1" issue_key="$2"
+    local default_wait="${RATE_LIMIT_WAIT:-60}"
+
+    while true; do
+        local tmpout agent_exit=0
+        tmpout="$(mktemp)"
+
+        # Run agent; stream output to stdout and capture to file for analysis
+        set +e
+        (cd "$WORK_DIR" && $AGENT_CMD "$prompt") 2>&1 | tee "$tmpout"
+        agent_exit="${PIPESTATUS[0]}"
+        set -e
+
+        if [[ "$agent_exit" -eq 0 ]]; then
+            rm -f "$tmpout"
+            return 0
+        fi
+
+        # Check for rate-limit indicators in captured output
+        if grep -qi "rate.limit\|too many requests\|429\|overloaded" "$tmpout"; then
+            # Try to parse a retry-after duration from the output
+            local wait_secs="$default_wait"
+            local parsed
+            parsed="$(grep -oiE "retry.?after:? ?[0-9]+" "$tmpout" | grep -oE "[0-9]+" | tail -1 || true)"
+            [[ -n "$parsed" ]] && wait_secs="$parsed"
+
+            echo "Agent hit rate limit for $issue_key. Waiting ${wait_secs}s before retry..."
+            rm -f "$tmpout"
+            sleep "$wait_secs"
+        else
+            rm -f "$tmpout"
+            return "$agent_exit"
+        fi
+    done
+}
+
 while true; do
     # Step 1: Claim a Jira issue
     echo "Claiming issue from project $PROJECT..."
@@ -107,7 +146,7 @@ while true; do
 $ISSUE_DESCRIPTION"
     echo "Running agent for $ISSUE_KEY..."
     echo "=== AGENT START: $ISSUE_KEY ==="
-    (cd "$WORK_DIR" && $AGENT_CMD "$PROMPT")
+    run_agent_with_retry "$PROMPT" "$ISSUE_KEY"
     echo "=== AGENT END: $ISSUE_KEY ==="
 
     echo "Completed $ISSUE_KEY."

@@ -300,3 +300,134 @@ fi
 
     rm -f "$counter_file"
 }
+
+# ── rate limit handling ───────────────────────────────────────────────────────
+
+@test "rate limit: agent retries after waiting when output contains 'rate limit'" {
+    local counter_file
+    counter_file="$(mktemp)"
+    echo "0" > "$counter_file"
+
+    # Agent fails with a rate limit message on first call, succeeds on second
+    stub_script agent "
+count=\$(cat '$counter_file')
+echo \$((count + 1)) > '$counter_file'
+if [ \"\$count\" -eq 0 ]; then
+    echo 'API rate limit exceeded. Please retry after 30 seconds.'
+    exit 1
+fi
+"
+    run "$LOOP" --project PROJ --agent agent
+
+    # Loop terminates via the claim stub (exits 1 on second call), so status may be non-zero.
+    # What matters is that the rate limit was detected, wait occurred, and issue completed.
+    [[ "$output" == *"rate limit"* ]]
+    [[ "$output" == *"Waiting"* ]]
+    [[ "$output" == *"Completed PROJ-1"* ]]
+
+    rm -f "$counter_file"
+}
+
+@test "rate limit: wait duration is parsed from agent output" {
+    local counter_file sleep_log
+    counter_file="$(mktemp)"
+    sleep_log="$(mktemp)"
+    echo "0" > "$counter_file"
+
+    stub_script sleep "echo \"\$*\" >> '$sleep_log'"
+
+    stub_script agent "
+count=\$(cat '$counter_file')
+echo \$((count + 1)) > '$counter_file'
+if [ \"\$count\" -eq 0 ]; then
+    echo 'Rate limit exceeded. Retry after 120 seconds.'
+    exit 1
+fi
+"
+    run "$LOOP" --project PROJ --agent agent
+
+    [[ "$output" == *"Waiting 120s"* ]]
+    [[ "$(cat "$sleep_log")" == *"120"* ]]
+
+    rm -f "$counter_file" "$sleep_log"
+}
+
+@test "rate limit: default wait used when no retry time parseable from output" {
+    local counter_file sleep_log
+    counter_file="$(mktemp)"
+    sleep_log="$(mktemp)"
+    echo "0" > "$counter_file"
+
+    stub_script sleep "echo \"\$*\" >> '$sleep_log'"
+
+    stub_script agent "
+count=\$(cat '$counter_file')
+echo \$((count + 1)) > '$counter_file'
+if [ \"\$count\" -eq 0 ]; then
+    echo 'too many requests'
+    exit 1
+fi
+"
+    run "$LOOP" --project PROJ --agent agent
+
+    [[ "$output" == *"Waiting 60s"* ]]
+    [[ "$(cat "$sleep_log")" == *"60"* ]]
+
+    rm -f "$counter_file" "$sleep_log"
+}
+
+@test "rate limit: RATE_LIMIT_WAIT overrides default wait" {
+    local counter_file sleep_log
+    counter_file="$(mktemp)"
+    sleep_log="$(mktemp)"
+    echo "0" > "$counter_file"
+
+    stub_script sleep "echo \"\$*\" >> '$sleep_log'"
+
+    stub_script agent "
+count=\$(cat '$counter_file')
+echo \$((count + 1)) > '$counter_file'
+if [ \"\$count\" -eq 0 ]; then
+    echo 'too many requests'
+    exit 1
+fi
+"
+    export RATE_LIMIT_WAIT=300
+    run "$LOOP" --project PROJ --agent agent
+
+    [[ "$output" == *"Waiting 300s"* ]]
+    [[ "$(cat "$sleep_log")" == *"300"* ]]
+
+    rm -f "$counter_file" "$sleep_log"
+}
+
+@test "rate limit: non-rate-limit agent errors are not retried" {
+    stub_script agent "echo 'Some unexpected error occurred'; exit 1"
+
+    run "$LOOP" --project PROJ --agent agent
+
+    [ "$status" -ne 0 ]
+    [[ "$output" != *"Waiting"* ]]
+    [[ "$output" != *"Completed PROJ-1"* ]]
+}
+
+@test "rate limit: 'overloaded' in output triggers retry" {
+    local counter_file
+    counter_file="$(mktemp)"
+    echo "0" > "$counter_file"
+
+    stub_script agent "
+count=\$(cat '$counter_file')
+echo \$((count + 1)) > '$counter_file'
+if [ \"\$count\" -eq 0 ]; then
+    echo 'The API is currently overloaded. Please try again later.'
+    exit 1
+fi
+"
+    run "$LOOP" --project PROJ --agent agent
+
+    [[ "$output" == *"Waiting"* ]]
+    [[ "$output" == *"Completed PROJ-1"* ]]
+
+    rm -f "$counter_file"
+}
