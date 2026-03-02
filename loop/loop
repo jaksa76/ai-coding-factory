@@ -72,8 +72,16 @@ done
 [[ -z "${GIT_USERNAME:-}" ]]             && error_exit "GIT_USERNAME environment variable is not set"
 [[ -z "${GIT_TOKEN:-}" ]]                && error_exit "GIT_TOKEN environment variable is not set"
 
-# Build authenticated git URL (inject username:token into https URL)
-AUTH_URL="${GIT_REPO_URL/#https:\/\//https://$GIT_USERNAME:$GIT_TOKEN@}"
+# Set up git credential store for HTTPS authentication (avoids embedding
+# credentials in URLs where they could appear in process listings or logs)
+if [[ "$GIT_REPO_URL" == https://* ]]; then
+    _GIT_CRED_FILE="$(mktemp)"
+    chmod 600 "$_GIT_CRED_FILE"
+    _GIT_HOST="$(printf '%s\n' "$GIT_REPO_URL" | sed 's|https://||' | cut -d'/' -f1)"
+    printf 'https://%s:%s@%s\n' "$GIT_USERNAME" "$GIT_TOKEN" "$_GIT_HOST" > "$_GIT_CRED_FILE"
+    git config --global credential.helper "store --file $_GIT_CRED_FILE"
+    trap "rm -f '$_GIT_CRED_FILE'" EXIT
+fi
 
 # Derive local repo directory name from URL
 REPO_NAME="$(basename "$GIT_REPO_URL" .git)"
@@ -149,11 +157,11 @@ while true; do
     # Step 2: Clone or pull the repository
     if [[ -d "$WORK_DIR/.git" ]]; then
         echo "Pulling latest changes for $REPO_NAME..."
-        git -C "$WORK_DIR" remote set-url origin "$AUTH_URL"
+        git -C "$WORK_DIR" remote set-url origin "$GIT_REPO_URL"
         git -C "$WORK_DIR" pull
     else
         echo "Cloning $GIT_REPO_URL..."
-        git clone "$AUTH_URL" "$WORK_DIR"
+        git clone "$GIT_REPO_URL" "$WORK_DIR"
     fi
 
     # Step 2.5: Feature branch logic (if enabled)
@@ -221,9 +229,9 @@ $PLAN_CONTENTS"
     # Step 4: Push changes
     echo "Pushing changes for $ISSUE_KEY..."
     if [[ "$USE_FEATURE_BRANCH" == "true" ]]; then
-        git -C "$WORK_DIR" push "$AUTH_URL" "$FEATURE_BRANCH"
+        git -C "$WORK_DIR" push "$GIT_REPO_URL" "$FEATURE_BRANCH"
     else
-        git -C "$WORK_DIR" push "$AUTH_URL" HEAD
+        git -C "$WORK_DIR" push "$GIT_REPO_URL" HEAD
     fi
 
     if [[ "$USE_FEATURE_BRANCH" == "true" ]]; then

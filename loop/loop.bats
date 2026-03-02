@@ -308,7 +308,7 @@ esac
     rm -f "$git_log"
 }
 
-@test "git credentials are injected into clone URL" {
+@test "git credentials are stored in credential store, not embedded in URL" {
     local git_log
     git_log="$(mktemp)"
 
@@ -321,7 +321,10 @@ esac
 "
     run "$LOOP" --project PROJ --agent agent
 
-    [[ "$(cat "$git_log")" == *"gituser:gittoken"* ]]
+    # credentials must NOT appear embedded in any git URL
+    [[ "$(cat "$git_log")" != *"gituser:gittoken@"* ]]
+    # git credential helper must be configured via git config
+    [[ "$(cat "$git_log")" == *"credential.helper"* ]]
 
     rm -f "$git_log"
 }
