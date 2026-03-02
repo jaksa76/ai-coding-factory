@@ -159,6 +159,19 @@ stub_script() {
     rm -f "$calls_file"
 }
 
+@test "add: passes --restart=on-failure to docker run" {
+    local calls_file
+    calls_file="$(mktemp)"
+    stub_script docker "echo \"\$@\" >> '$calls_file'"
+
+    run "$FACTORY" add --image myimage 1
+    [ "$status" -eq 0 ]
+
+    [[ "$(cat "$calls_file")" == *"--restart=on-failure"* ]]
+
+    rm -f "$calls_file"
+}
+
 @test "add: docker failure propagates non-zero exit" {
     stub_exit docker 1 "Unable to find image"
     run "$FACTORY" add --image myimage 1

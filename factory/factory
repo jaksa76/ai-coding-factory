@@ -71,6 +71,7 @@ cmd_add() {
     for ((i = 1; i <= count; i++)); do
         local name="factory-worker-${ts}-${i}"
         docker run -d \
+            --restart=on-failure \
             --label "$WORKER_LABEL" \
             --name "$name" \
             "$image" \
