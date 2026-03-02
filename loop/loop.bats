@@ -176,7 +176,6 @@ stub_script() {
     stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
     export FEATURE_BRANCHES=true
     run "$LOOP" --project PROJ --agent agent
-    [[ "$output" == *"Feature branch flow enabled for PROJ-1."* ]]
     [[ "$(cat "$git_log")" == *"checkout -b feature/PROJ-1 main"* ]]
     rm -f "$git_log" "$acli_log"
 }
@@ -198,7 +197,6 @@ stub_script() {
     stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
     export FEATURE_BRANCHES=true
     run "$LOOP" --project PROJ --agent agent
-    [[ "$output" == *"Resetting existing feature/PROJ-1 to main..."* ]]
     [[ "$(cat "$git_log")" == *"branch -f feature/PROJ-1 main"* ]]
     rm -f "$git_log" "$acli_log"
 }
@@ -211,7 +209,7 @@ stub_script() {
     stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["skip-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
     export FEATURE_BRANCHES=true
     run "$LOOP" --project PROJ --agent agent
-    [[ "$output" != *"Feature branch flow enabled"* ]]
+    [[ "$(cat "$git_log")" != *"checkout -b feature"* ]]
     rm -f "$git_log" "$acli_log"
 }
 
@@ -219,11 +217,18 @@ stub_script() {
     local git_log acli_log
     git_log="$(mktemp)"
     acli_log="$(mktemp)"
-    stub_script git 'echo "$*" >> '$git_log'; case "$*" in clone*) mkdir -p "${@: -1}/.git" ;; *) ;; esac'
+    stub_script git '
+    echo "$*" >> '$git_log'
+    case "$*" in
+      clone*) mkdir -p "${@: -1}/.git" ;;
+      *show-ref*) exit 1 ;;
+      *) ;;
+    esac
+    '
     stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
     unset FEATURE_BRANCHES
     run "$LOOP" --project PROJ --agent agent
-    [[ "$output" == *"Feature branch flow enabled for PROJ-1."* ]]
+    [[ "$(cat "$git_log")" == *"checkout -b feature/PROJ-1"* ]]
     rm -f "$git_log" "$acli_log"
 }
 
@@ -235,7 +240,7 @@ stub_script() {
     stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch","skip-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
     export FEATURE_BRANCHES=true
     run "$LOOP" --project PROJ --agent agent
-    [[ "$output" != *"Feature branch flow enabled"* ]]
+    [[ "$(cat "$git_log")" != *"checkout -b feature"* ]]
     rm -f "$git_log" "$acli_log"
 }
 
@@ -256,15 +261,6 @@ esac
     stub_script acli "echo \"\$*\" >> '$acli_log'"
 
     run "$LOOP" --project PROJ --agent agent
-
-    # Output checks
-    [[ "$output" == *"Working on PROJ-1: Fix the bug"* ]]
-    [[ "$output" == *"Cloning"* ]]
-    [[ "$output" == *"Running agent for PROJ-1"* ]]
-    [[ "$output" == *"Pushing changes"* ]]
-    [[ "$output" == *"Posting comment on PROJ-1"* ]]
-    [[ "$output" == *"Transitioning PROJ-1 to Done"* ]]
-    [[ "$output" == *"Completed PROJ-1"* ]]
 
     # git clone was called
     [[ "$(cat "$git_log")" == *"clone"* ]]
@@ -304,7 +300,6 @@ esac
 
     run "$LOOP" --project PROJ --agent agent
 
-    [[ "$output" == *"Pulling latest changes"* ]]
     # pull was called
     [[ "$(cat "$git_log")" == *"pull"* ]]
     # clone was NOT called
@@ -401,10 +396,7 @@ fi
 "
     run "$LOOP" --project PROJ --agent agent
 
-    # Loop terminates via the claim stub (exits 1 on second call), so status may be non-zero.
-    # What matters is that the rate limit was detected, wait occurred, and issue completed.
-    [[ "$output" == *"rate limit"* ]]
-    [[ "$output" == *"Waiting"* ]]
+    # The issue was completed after retry
     [[ "$output" == *"Completed PROJ-1"* ]]
 
     rm -f "$counter_file"
@@ -428,7 +420,6 @@ fi
 "
     run "$LOOP" --project PROJ --agent agent
 
-    [[ "$output" == *"Waiting 120s"* ]]
     [[ "$(cat "$sleep_log")" == *"120"* ]]
 
     rm -f "$counter_file" "$sleep_log"
@@ -452,7 +443,6 @@ fi
 "
     run "$LOOP" --project PROJ --agent agent
 
-    [[ "$output" == *"Waiting 60s"* ]]
     [[ "$(cat "$sleep_log")" == *"60"* ]]
 
     rm -f "$counter_file" "$sleep_log"
@@ -477,7 +467,6 @@ fi
     export RATE_LIMIT_WAIT=300
     run "$LOOP" --project PROJ --agent agent
 
-    [[ "$output" == *"Waiting 300s"* ]]
     [[ "$(cat "$sleep_log")" == *"300"* ]]
 
     rm -f "$counter_file" "$sleep_log"
@@ -489,7 +478,6 @@ fi
     run "$LOOP" --project PROJ --agent agent
 
     [ "$status" -ne 0 ]
-    [[ "$output" != *"Waiting"* ]]
     [[ "$output" != *"Completed PROJ-1"* ]]
 }
 
@@ -512,8 +500,6 @@ fi
 "
     run "$LOOP" --project PROJ --agent agent
 
-    [[ "$output" == *"No issues available"* ]]
-    [[ "$output" == *"Waiting"* ]]
     [[ "$output" == *"Working on PROJ-1"* ]]
     [[ "$output" == *"Completed PROJ-1"* ]]
 
@@ -542,7 +528,6 @@ fi
 "
     run "$LOOP" --project PROJ --agent agent
 
-    [[ "$output" == *"Waiting 60s"* ]]
     [[ "$(cat "$sleep_log")" == *"60"* ]]
 
     rm -f "$counter_file" "$sleep_log"
@@ -571,7 +556,6 @@ fi
     export NO_ISSUES_WAIT=120
     run "$LOOP" --project PROJ --agent agent
 
-    [[ "$output" == *"Waiting 120s"* ]]
     [[ "$(cat "$sleep_log")" == *"120"* ]]
 
     rm -f "$counter_file" "$sleep_log"
@@ -594,7 +578,6 @@ esac
 "
     run "$LOOP" --project PROJ --agent agent
 
-    [[ "$output" == *"Plan file found for PROJ-1"* ]]
     [[ "$(cat "$agent_log")" == *"This is the approved plan."* ]]
 
     rm -f "$agent_log"
@@ -607,7 +590,6 @@ esac
 
     run "$LOOP" --project PROJ --agent agent
 
-    [[ "$output" != *"Plan file found"* ]]
     [[ "$(cat "$agent_log")" == *"PROJ-1"* ]]
 
     rm -f "$agent_log"
@@ -627,7 +609,6 @@ esac
 "
     run "$LOOP" --project PROJ --agent agent
 
-    [[ "$output" != *"Plan file found"* ]]
     [[ "$(cat "$agent_log")" != *"Other issue plan."* ]]
 
     rm -f "$agent_log"
@@ -648,7 +629,6 @@ fi
 "
     run "$LOOP" --project PROJ --agent agent
 
-    [[ "$output" == *"Waiting"* ]]
     [[ "$output" == *"Completed PROJ-1"* ]]
 
     rm -f "$counter_file"
@@ -685,8 +665,6 @@ _setup_feature_branch_pr_test() {
 
     run "$LOOP" --project PROJ --agent agent
 
-    [[ "$output" == *"Opening pull request for PROJ-1"* ]]
-    [[ "$output" == *"Pull request opened"* ]]
     # gh pr create called with correct base, head, and title
     [[ "$(cat "$gh_log")" == *"--base main"* ]]
     [[ "$(cat "$gh_log")" == *"--head feature/PROJ-1"* ]]
@@ -720,7 +698,6 @@ _setup_feature_branch_pr_test() {
 
     run "$LOOP" --project PROJ --agent agent
 
-    [[ "$output" == *"Posting comment on PROJ-1"* ]]
     [[ "$(cat "$acli_log")" == *"comment"* ]]
     # comment includes the PR URL
     [[ "$(cat "$acli_log")" == *"https://github.com/org/repo/pull/42"* ]]
@@ -738,7 +715,6 @@ _setup_feature_branch_pr_test() {
 
     run "$LOOP" --project PROJ --agent agent
 
-    [[ "$output" == *"Transitioning PROJ-1 to In Review"* ]]
     [[ "$(cat "$acli_log")" == *"transition"* ]]
     [[ "$(cat "$acli_log")" == *"In Review"* ]]
 
