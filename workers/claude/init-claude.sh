@@ -6,11 +6,14 @@
 #   init-claude           — Write credentials from environment variables (initial setup)
 #   init-claude --refresh — Refresh the OAuth access token if expired or near expiry
 #
-# Required env vars for initial setup:
-#   CLAUDE_ACCESS_TOKEN       — Claude OAuth access token
-#   CLAUDE_REFRESH_TOKEN      — Claude OAuth refresh token
-#   CLAUDE_TOKEN_EXPIRES_AT   — Token expiry timestamp (epoch ms, numeric)
-#   CLAUDE_SUBSCRIPTION_TYPE  — Subscription type (e.g. "pro")
+# Authentication modes (mutually exclusive, checked in order):
+#   1. ANTHROPIC_API_KEY — API key authentication; no credentials file needed.
+#      Set this env var and init-claude becomes a no-op (both modes).
+#   2. OAuth tokens — set all four vars below:
+#      CLAUDE_ACCESS_TOKEN       — Claude OAuth access token
+#      CLAUDE_REFRESH_TOKEN      — Claude OAuth refresh token
+#      CLAUDE_TOKEN_EXPIRES_AT   — Token expiry timestamp (epoch ms, numeric)
+#      CLAUDE_SUBSCRIPTION_TYPE  — Subscription type (e.g. "pro")
 #
 # --refresh reads the current credentials file and uses the stored refresh token
 # to obtain a fresh access token. It is a no-op if the token is still valid
@@ -25,6 +28,13 @@ OAUTH_CLIENT_ID="9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 REFRESH_BUFFER_MS=300000
 
 CREDS_FILE="${HOME:-/home/worker}/.claude/.credentials.json"
+
+# ── API key mode (both initial setup and --refresh are no-ops) ────────────────
+
+if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+  echo "Using ANTHROPIC_API_KEY for authentication — skipping OAuth credential setup"
+  exit 0
+fi
 
 # ── --refresh mode ────────────────────────────────────────────────────────────
 

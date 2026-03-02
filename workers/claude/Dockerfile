@@ -36,10 +36,15 @@ RUN chmod +x /usr/local/bin/claim /usr/local/bin/loop /usr/local/bin/init-claude
 RUN mkdir -p /home/worker/.claude && chown worker:worker /home/worker/.claude
 
 # Runtime env vars (must be supplied via docker run -e / --env-file):
+#
+# Authentication — choose one:
+#   ANTHROPIC_API_KEY         — API key (simplest; takes precedence over OAuth)
+#   -- OR --
 #   CLAUDE_ACCESS_TOKEN       — Claude OAuth access token
 #   CLAUDE_REFRESH_TOKEN      — Claude OAuth refresh token
 #   CLAUDE_TOKEN_EXPIRES_AT   — Token expiry timestamp (epoch ms, numeric)
 #   CLAUDE_SUBSCRIPTION_TYPE  — Subscription type (e.g. "pro")
+#
 #   JIRA_SITE / JIRA_EMAIL / JIRA_TOKEN / JIRA_ASSIGNEE_ACCOUNT_ID
 #   JIRA_PROJECT              — Jira project key to pull issues from (e.g. MYPROJ)
 #   GIT_REPO_URL / GIT_USERNAME / GIT_TOKEN

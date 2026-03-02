@@ -59,6 +59,45 @@ write_creds() {
         > "$FAKE_HOME/.claude/.credentials.json"
 }
 
+# ── ANTHROPIC_API_KEY mode ────────────────────────────────────────────────────
+
+@test "api key mode: exits 0 when ANTHROPIC_API_KEY is set" {
+    export ANTHROPIC_API_KEY="sk-ant-test-key"
+    run bash "$INIT_CLAUDE"
+    [ "$status" -eq 0 ]
+}
+
+@test "api key mode: does not write credentials file" {
+    export ANTHROPIC_API_KEY="sk-ant-test-key"
+    run bash "$INIT_CLAUDE"
+    [ "$status" -eq 0 ]
+    [ ! -f "$FAKE_HOME/.claude/.credentials.json" ]
+}
+
+@test "api key mode: prints informational message" {
+    export ANTHROPIC_API_KEY="sk-ant-test-key"
+    run bash "$INIT_CLAUDE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"ANTHROPIC_API_KEY"* ]]
+}
+
+@test "api key mode: --refresh is a no-op when ANTHROPIC_API_KEY is set" {
+    export ANTHROPIC_API_KEY="sk-ant-test-key"
+    run bash "$INIT_CLAUDE" --refresh
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"ANTHROPIC_API_KEY"* ]]
+}
+
+@test "api key mode: does not require OAuth vars when ANTHROPIC_API_KEY is set" {
+    export ANTHROPIC_API_KEY="sk-ant-test-key"
+    unset CLAUDE_ACCESS_TOKEN
+    unset CLAUDE_REFRESH_TOKEN
+    unset CLAUDE_TOKEN_EXPIRES_AT
+    unset CLAUDE_SUBSCRIPTION_TYPE
+    run bash "$INIT_CLAUDE"
+    [ "$status" -eq 0 ]
+}
+
 # ── initial setup mode ────────────────────────────────────────────────────────
 
 @test "initial setup: writes credentials file" {
