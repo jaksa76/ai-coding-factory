@@ -39,6 +39,13 @@ fi
 # ── --refresh mode ────────────────────────────────────────────────────────────
 
 if [[ "${1:-}" == "--refresh" ]]; then
+  # If CLAUDE_ACCESS_TOKEN is not set and there is no credentials file,
+  # we are not operating in CLAUDE_ACCESS_TOKEN/OAuth mode — skip refresh.
+  if [[ -z "${CLAUDE_ACCESS_TOKEN:-}" ]] && [[ ! -f "$CREDS_FILE" ]]; then
+    echo "init-claude: Not using CLAUDE_ACCESS_TOKEN — skipping token refresh"
+    exit 0
+  fi
+
   if [[ ! -f "$CREDS_FILE" ]]; then
     echo "ERROR: credentials file not found at $CREDS_FILE — run init-claude first" >&2
     exit 1

@@ -254,11 +254,19 @@ printf '"'"'{"access_token":"new-token","expires_in":28800}'"'"'
 
 # ── --refresh: missing credentials file ───────────────────────────────────────
 
-@test "--refresh: error when credentials file does not exist" {
-    # Don't call write_creds — no file created
+@test "--refresh: error when credentials file does not exist but CLAUDE_ACCESS_TOKEN is set" {
+    # CLAUDE_ACCESS_TOKEN is set (from setup) but no credentials file — misconfigured
     run bash "$INIT_CLAUDE" --refresh
     [ "$status" -eq 1 ]
     [[ "$output" == *"not found"* ]]
+}
+
+@test "--refresh: skips gracefully when not in CLAUDE_ACCESS_TOKEN mode" {
+    # No credentials file and CLAUDE_ACCESS_TOKEN not set — not in OAuth mode
+    unset CLAUDE_ACCESS_TOKEN
+    run bash "$INIT_CLAUDE" --refresh
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"skipping"* ]]
 }
 
 # ── --refresh: passes correct parameters to oauth endpoint ────────────────────
