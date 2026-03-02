@@ -83,6 +83,10 @@ if [[ "$GIT_REPO_URL" == https://* ]]; then
     trap "rm -f '$_GIT_CRED_FILE'" EXIT
 fi
 
+# Configure git user identity for commits
+git config --global user.name "$GIT_USERNAME"
+git config --global user.email "$JIRA_EMAIL"
+
 # Derive local repo directory name from URL
 REPO_NAME="$(basename "$GIT_REPO_URL" .git)"
 # LOOP_WORK_DIR allows tests to override the base directory; defaults to cwd

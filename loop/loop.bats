@@ -329,6 +329,25 @@ esac
     rm -f "$git_log"
 }
 
+@test "git user.name and user.email are configured globally" {
+    local git_log
+    git_log="$(mktemp)"
+
+    stub_script git "
+echo \"\$*\" >> '$git_log'
+case \"\$1\" in
+  clone) mkdir -p \"\${@: -1}/.git\" ;;
+  *) ;;
+esac
+"
+    run "$LOOP" --project PROJ --agent agent
+
+    [[ "$(cat "$git_log")" == *"user.name gituser"* ]]
+    [[ "$(cat "$git_log")" == *"user.email test@example.com"* ]]
+
+    rm -f "$git_log"
+}
+
 @test "comment failure is non-fatal: warning printed, loop continues" {
     stub_script acli '
 case "$*" in
