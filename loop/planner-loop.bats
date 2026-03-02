@@ -386,6 +386,32 @@ fi
     rm -f "$counter_file" "$sleep_log"
 }
 
+@test "comment contains GitHub blob URL for the plan file" {
+    local acli_log
+    acli_log="$(mktemp)"
+
+    stub_script git "
+echo \"\$*\" >> /dev/null
+case \"\$1\" in
+  clone) mkdir -p \"\${@: -1}/.git\" ;;
+  *) ;;
+esac
+"
+    stub_script acli "
+echo \"\$*\" >> '$acli_log'
+case \"\$*\" in
+  *transitions*) echo '[{\"name\":\"Awaiting Plan Review\"}]' ;;
+esac
+"
+
+    run "$PLANNER_LOOP" --project PROJ --agent agent
+
+    # The comment must contain the GitHub rendered view URL for the plan file
+    [[ "$(cat "$acli_log")" == *"github.com/org/repo/blob/main/plans/PROJ-1.md"* ]]
+
+    rm -f "$acli_log"
+}
+
 @test "plan file git-added with correct path before commit" {
     local git_log
     git_log="$(mktemp)"

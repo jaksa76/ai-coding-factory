@@ -28,7 +28,7 @@
 - [x] Implement a planner loop: worker that does just planning (see docs/planning-phase.md)
 - [x] Planner should generate the plan file in a `plans/` directory at the repo root, named `<ISSUE-KEY>.md`
 - [x] Planner should commit and push the plan file to the repo
-- [ ] Planner should post a Jira comment with a direct GitHub link to the plan file after it is pushed
+- [x] Planner should post a Jira comment with a direct GitHub link to the plan file after it is pushed
 - [x] Planner should transition issue from `Planning` to `Awaiting Plan Review` after the plan is committed and the comment is posted
 - [x] Graceful fallback when required planning statuses (`Planning`, `Awaiting Plan Review`, `Plan Approved`) are absent
 - [x] If present, the agent should use the plan when implementing an issue
