@@ -36,3 +36,11 @@
 - [x] loop should create a PR for the feature branch
 - [x] loop should link the PR in Jira when `USE_FEATURE_BRANCHES` is enabled
 - [x] loop should transition the issue to `In Review` when the PR is created, with graceful fallback to `In Progress` if `In Review` status is absent
+- [ ] remove the tests from loop.bats that check for presence of specific strings in the logs.
+- [ ] support ANTHROPIC_API_KEY in addition to CLAUDE_ACCESS_TOKEN
+- [ ] add a mechanism to refresh the TOKEN when CLAUDE_ACCESS_TOKEN is used
+- [ ] use `--restart=on-failure` when starting workers from the factory
+- [ ] ability to override the 20 minute sleep interval using an env var
+- [ ] use git credential store instead of embedding credentials in URL
+- [ ] set git user.name and user.email configuration
+- [ ] reduce the logging from claim command to only log the claimed issue key and summary, not the entire issue details
