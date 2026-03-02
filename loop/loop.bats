@@ -614,6 +614,33 @@ esac
     rm -f "$agent_log"
 }
 
+@test "inter-issue sleep: default wait is 1200 seconds" {
+    local sleep_log
+    sleep_log="$(mktemp)"
+
+    stub_script sleep "echo \"\$*\" >> '$sleep_log'"
+
+    run "$LOOP" --project PROJ --agent agent
+
+    [[ "$(cat "$sleep_log")" == *"1200"* ]]
+
+    rm -f "$sleep_log"
+}
+
+@test "inter-issue sleep: INTER_ISSUE_WAIT overrides default wait" {
+    local sleep_log
+    sleep_log="$(mktemp)"
+
+    stub_script sleep "echo \"\$*\" >> '$sleep_log'"
+
+    export INTER_ISSUE_WAIT=5
+    run "$LOOP" --project PROJ --agent agent
+
+    [[ "$(cat "$sleep_log")" == *"5"* ]]
+
+    rm -f "$sleep_log"
+}
+
 @test "rate limit: 'overloaded' in output triggers retry" {
     local counter_file
     counter_file="$(mktemp)"

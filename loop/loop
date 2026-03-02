@@ -30,6 +30,7 @@ usage() {
     echo "Optional environment variables:"
     echo "  NO_ISSUES_WAIT            Seconds to wait when no issues are available (default: 60)"
     echo "  RATE_LIMIT_WAIT           Seconds to wait on agent rate limit (default: 60)"
+    echo "  INTER_ISSUE_WAIT          Seconds to wait between issues (default: 1200)"
     exit 1
 }
 
@@ -294,5 +295,6 @@ Implements [$ISSUE_KEY] $ISSUE_SUMMARY"
 
     echo "Completed $ISSUE_KEY."
 
-    sleep 1200 # Sleep for 20 minutes before claiming the next issue
+    inter_issue_wait="${INTER_ISSUE_WAIT:-1200}"
+    sleep "$inter_issue_wait" # Sleep before claiming the next issue
 done
