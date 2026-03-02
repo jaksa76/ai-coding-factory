@@ -103,7 +103,6 @@ while true; do
         echo "Running JQL: $SEARCH_JQL"
         SEARCH_OUTPUT=$(acli jira workitem search --jql "$SEARCH_JQL" --json --paginate 2>&1)
     fi
-    echo "Search result: $SEARCH_OUTPUT"
 
     # Loop through issues to find one matching planning logic
     while :; do
@@ -170,9 +169,7 @@ while true; do
 
     # Re-fetch and verify assignee
     VERIFY_OUTPUT=$(acli jira workitem view "$ISSUE_KEY" --json 2>&1)
-    echo "Verify output: $VERIFY_OUTPUT"
     ASSIGNEE=$(printf '%s\n' "$VERIFY_OUTPUT" | jq -r '.fields.assignee.accountId // empty' 2>/dev/null || true)
-    echo "Assigned to: ${ASSIGNEE:-<nobody>}"
 
     if [[ "$ASSIGNEE" != "$ACCOUNT_ID" ]]; then
         echo "Assignment race detected on $ISSUE_KEY (assignee is now ${ASSIGNEE:-unassigned}). Retrying..."
@@ -203,9 +200,9 @@ while true; do
         echo "Warning: could not transition $ISSUE_KEY to $TARGET_STATUS (transition may not be available)"
     fi
 
-    # Print issue details
+    # Print claimed issue key and summary
     acli jira workitem view "$ISSUE_KEY" --json \
-        | jq '{key: .key, summary: .fields.summary, description: (.fields.description // ""), status: .fields.status.name}'
+        | jq '{key: .key, summary: .fields.summary}'
 
     break
 done

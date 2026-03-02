@@ -154,7 +154,9 @@ while true; do
     ISSUE_JSON="$(printf '%s\n' "$CLAIM_OUTPUT" | awk '/^\{/{f=1} f')"
     ISSUE_KEY="$(printf '%s\n' "$ISSUE_JSON" | jq -r '.key')"
     ISSUE_SUMMARY="$(printf '%s\n' "$ISSUE_JSON" | jq -r '.summary')"
-    ISSUE_DESCRIPTION="$(printf '%s\n' "$ISSUE_JSON" | jq -r '.description // ""')"
+    # Fetch description separately (claim only outputs key and summary)
+    ISSUE_DESCRIPTION="$(acli jira workitem view "$ISSUE_KEY" --json 2>/dev/null \
+        | jq -r '.fields.description // ""' 2>/dev/null || true)"
 
     echo "Working on $ISSUE_KEY: $ISSUE_SUMMARY"
 

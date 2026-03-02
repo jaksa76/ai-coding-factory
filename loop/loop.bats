@@ -37,7 +37,7 @@ setup() {
 count=\$(cat '$counter_file')
 echo \$((count + 1)) > '$counter_file'
 if [ \"\$count\" -eq 0 ]; then
-    printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\",\"description\":\"Bug details\",\"status\":\"In Progress\"}\n'
+    printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\"}\n'
 else
     exit 1
 fi
@@ -280,6 +280,13 @@ esac
     agent_log="$(mktemp)"
     stub_script agent "echo \"\$*\" >> '$agent_log'"
 
+    stub_script acli '
+case "$*" in
+  "jira workitem view"*"--json") echo '"'"'{"key":"PROJ-1","fields":{"description":"Bug details","summary":"Fix the bug"}}'"'"' ;;
+  *) ;;
+esac
+'
+
     run "$LOOP" --project PROJ --agent agent
 
     [[ "$(cat "$agent_log")" == *"PROJ-1"* ]]
@@ -387,7 +394,7 @@ if [ \"\$count\" -eq 0 ]; then
     echo 'Searching for unassigned open issues in project PROJ...'
     echo 'Attempting to claim PROJ-2...'
     echo 'Successfully claimed PROJ-2.'
-    printf '{\"key\":\"PROJ-2\",\"summary\":\"Add feature\",\"description\":\"Details here\",\"status\":\"In Progress\"}\n'
+    printf '{\"key\":\"PROJ-2\",\"summary\":\"Add feature\"}\n'
 else
     exit 1
 fi
@@ -515,7 +522,7 @@ if [ \"\$count\" -eq 0 ]; then
     echo 'No unassigned open issues found in project PROJ.'
     exit 2
 elif [ \"\$count\" -eq 1 ]; then
-    printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\",\"description\":\"Bug details\",\"status\":\"In Progress\"}\n'
+    printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\"}\n'
 else
     exit 1
 fi
@@ -543,7 +550,7 @@ if [ \"\$count\" -eq 0 ]; then
     echo 'No unassigned open issues found in project PROJ.'
     exit 2
 elif [ \"\$count\" -eq 1 ]; then
-    printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\",\"description\":\"Bug details\",\"status\":\"In Progress\"}\n'
+    printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\"}\n'
 else
     exit 1
 fi
@@ -570,7 +577,7 @@ if [ \"\$count\" -eq 0 ]; then
     echo 'No unassigned open issues found in project PROJ.'
     exit 2
 elif [ \"\$count\" -eq 1 ]; then
-    printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\",\"description\":\"Bug details\",\"status\":\"In Progress\"}\n'
+    printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\"}\n'
 else
     exit 1
 fi
