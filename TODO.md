@@ -44,3 +44,4 @@
 - [x] use git credential store instead of embedding credentials in URL
 - [x] set git user.name and user.email configuration
 - [x] reduce the logging from claim command to only log the claimed issue key and summary, not the entire issue details
+- [ ] Add AWS as a deployment option for the factory and workers (See agents-aws.sh from legacy implementation)
