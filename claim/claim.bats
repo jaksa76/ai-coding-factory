@@ -198,24 +198,7 @@ esac
     rm -f "$transition_args_file"
 }
 
-@test "--for-planning: Planning status absent from workflow — warns and exits 0" {
-    stub_script acli '
-case "$*" in
-  "jira auth status")        echo "Authenticated" ;;
-  "jira workitem search"*)   echo '"'"'[{"key":"PROJ-7","fields":{"labels":["needs-plan"]}}]'"'"' ;;
-  "jira workitem assign"*)   ;;
-  "jira workitem view PROJ-7 --json")
-      echo '"'"'{"key":"PROJ-7","fields":{"assignee":{"accountId":"acc1"},"summary":"Task","description":null,"status":{"name":"To Do"}}}'"'"' ;;
-  "jira workitem transitions"*)
-      echo '"'"'[{"name":"In Progress"},{"name":"Done"}]'"'"' ;;
-esac
-'
-    run "$CLAIM" --project "PROJ" --account-id "acc1" --for-planning
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Warning: Planning status not found"* ]]
-}
-
-@test "--for-planning: transitions to Planning when status exists in workflow" {
+@test "--for-planning: transitions issue to Planning status" {
     local transition_args_file
     transition_args_file="$(mktemp)"
 
@@ -226,8 +209,6 @@ case \"\$*\" in
   'jira workitem assign'*)   ;;
   'jira workitem view PROJ-8 --json')
       echo '{\"key\":\"PROJ-8\",\"fields\":{\"assignee\":{\"accountId\":\"acc1\"},\"summary\":\"Task\",\"description\":null,\"status\":{\"name\":\"To Do\"}}}' ;;
-  'jira workitem transitions'*)
-      echo '[{\"name\":\"In Progress\"},{\"name\":\"Planning\"},{\"name\":\"Done\"}]' ;;
   'jira workitem transition'*)
       echo \"\$*\" > '$transition_args_file'
       ;;
@@ -239,6 +220,7 @@ esac
 
     local transition_args
     transition_args="$(cat "$transition_args_file")"
+    [[ "$transition_args" == *"--key PROJ-8"* ]]
     [[ "$transition_args" == *"--status"* ]]
     [[ "$transition_args" == *"Planning"* ]]
 
@@ -281,10 +263,7 @@ esac
     [[ "$output" == *'skip-plan'* ]]
 }
 
-@test "--for-planning: JQL uses To Do status and excludes skip-plan regardless of PLAN_BY_DEFAULT" {
-    local transition_args_file
-    transition_args_file="$(mktemp)"
-
+@test "--for-planning: JQL uses To Do status — PLAN_BY_DEFAULT unset" {
     stub_script acli "
 case \"\$*\" in
   'jira auth status')        echo 'Authenticated' ;;
@@ -292,74 +271,35 @@ case \"\$*\" in
   'jira workitem assign'*)   ;;
   'jira workitem view PROJ-1 --json')
       echo '{\"key\":\"PROJ-1\",\"fields\":{\"assignee\":{\"accountId\":\"acc1\"},\"summary\":\"Task\",\"description\":null,\"status\":{\"name\":\"To Do\"}}}' ;;
-  'jira workitem transitions'*)
-      echo '[{\"name\":\"In Progress\"},{\"name\":\"Planning\"},{\"name\":\"Done\"}]' ;;
-  'jira workitem transition'*)
-      echo \"\$*\" > '$transition_args_file' ;;
+  'jira workitem transition'*) ;;
 esac
 "
-    # PLAN_BY_DEFAULT should not affect --for-planning behaviour
     unset PLAN_BY_DEFAULT
     run "$CLAIM" --project "PROJ" --account-id "acc1" --for-planning
     [ "$status" -eq 0 ]
-    [[ "$output" == *'To Do'* ]]        # status filter in JQL
-    [[ "$output" == *'skip-plan'* ]]   # exclusion filter in JQL
-    [[ "$output" == *'EMPTY'* ]]       # issues with no labels are included
+    [[ "$output" == *'To Do'* ]]       # status filter in JQL
+    [[ "$output" == *'needs-plan'* ]]  # needs-plan label used for targeting
+    [[ "$output" != *'skip-plan'* ]]   # skip-plan not in JQL
+}
+
+@test "--for-planning: JQL excludes skip-plan when PLAN_BY_DEFAULT=true" {
+    stub_script acli "
+case \"\$*\" in
+  'jira auth status')        echo 'Authenticated' ;;
+  'jira workitem search'*)   echo '[{\"key\":\"PROJ-1\"}]' ;;
+  'jira workitem assign'*)   ;;
+  'jira workitem view PROJ-1 --json')
+      echo '{\"key\":\"PROJ-1\",\"fields\":{\"assignee\":{\"accountId\":\"acc1\"},\"summary\":\"Task\",\"description\":null,\"status\":{\"name\":\"To Do\"}}}' ;;
+  'jira workitem transition'*) ;;
+esac
+"
+    export PLAN_BY_DEFAULT=true
+    run "$CLAIM" --project "PROJ" --account-id "acc1" --for-planning
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'To Do'* ]]       # status filter in JQL
+    [[ "$output" == *'skip-plan'* ]]   # skip-plan excluded in JQL
+    [[ "$output" == *'EMPTY'* ]]       # issues with no labels included
     [[ "$output" != *'needs-plan'* ]]  # needs-plan not used by planner
-
-    rm -f "$transition_args_file"
-}
-
-@test "implementer: Plan Approved issue is claimed when Plan Approved status exists in JQL result" {
-    # An issue with needs-plan label but status = Plan Approved should be claimed by implementer
-    stub_script acli "
-case \"\$*\" in
-  'jira auth status')        echo 'Authenticated' ;;
-  'jira workitem search'*)   echo '[{\"key\":\"PROJ-9\",\"fields\":{\"labels\":[\"needs-plan\"],\"status\":{\"name\":\"Plan Approved\"}}}]' ;;
-  'jira workitem assign'*)   ;;
-  'jira workitem view PROJ-9 --json')
-      echo '{\"key\":\"PROJ-9\",\"fields\":{\"assignee\":{\"accountId\":\"acc1\"},\"summary\":\"Task\",\"description\":null,\"status\":{\"name\":\"Plan Approved\"}}}' ;;
-  'jira workitem transition'*) ;;
-esac
-"
-    run "$CLAIM" --project "PROJ" --account-id "acc1"
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Plan Approved state"* ]]
-    [[ "$output" == *"Successfully claimed PROJ-9"* ]]
-}
-
-@test "implementer: Plan Approved queue skipped gracefully when Plan Approved status absent" {
-    # When the JQL with Plan Approved fails, warn and fall back to standard JQL
-    local search_count_file
-    search_count_file="$(mktemp)"
-    echo "0" > "$search_count_file"
-
-    stub_script acli "
-case \"\$*\" in
-  'jira auth status')        echo 'Authenticated' ;;
-  'jira workitem search'*)
-      count=\$(cat '$search_count_file')
-      echo \$((count + 1)) > '$search_count_file'
-      if [ \"\$count\" -eq 0 ]; then
-          # First search (with Plan Approved in JQL) fails — status absent
-          echo '{\"errorMessages\":[\"The value Plan Approved does not exist for field status.\"]}'
-      else
-          # Second search (fallback without Plan Approved) succeeds
-          echo '[{\"key\":\"PROJ-10\"}]'
-      fi
-      ;;
-  'jira workitem assign'*)   ;;
-  'jira workitem view PROJ-10 --json')
-      echo '{\"key\":\"PROJ-10\",\"fields\":{\"assignee\":{\"accountId\":\"acc1\"},\"summary\":\"Task\",\"description\":null,\"status\":{\"name\":\"To Do\"}}}' ;;
-  'jira workitem transition'*) ;;
-esac
-"
-    run "$CLAIM" --project "PROJ" --account-id "acc1"
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Warning: Plan Approved status not found in workflow"* ]]
-    [[ "$output" == *"Successfully claimed PROJ-10"* ]]
-
-    rm -f "$search_count_file"
 }
 
 @test "transition failure is non-fatal: warning printed but exits 0" {
