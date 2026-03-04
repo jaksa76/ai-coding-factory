@@ -9,6 +9,7 @@ set -euo pipefail
 #   factory logs <worker-id>              # stream logs for a worker
 #   factory stop <worker-id>              # stop a worker
 #   factory stop --all                    # stop all workers
+#   factory import-claude-credentials --env-file <file>
 
 WORKER_LABEL="ai-coding-factory.worker=true"
 
@@ -21,6 +22,8 @@ usage() {
     echo "  logs <worker-id>              Stream logs for a worker"
     echo "  stop <worker-id>              Stop a worker"
     echo "  stop --all                    Stop all workers"
+    echo "  import-claude-credentials --env-file <file>"
+    echo "                                Import OAuth credentials from ~/.claude/.credentials.json"
     exit 1
 }
 
@@ -85,6 +88,54 @@ cmd_logs() {
     docker logs -f "$worker_id"
 }
 
+cmd_import_claude_credentials() {
+    local env_file=""
+    local creds_file="${HOME}/.claude/.credentials.json"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --env-file)
+                [[ -z "${2:-}" ]] && error_exit "--env-file requires a value"
+                env_file="$2"
+                shift 2
+                ;;
+            --*)
+                error_exit "Unknown option: $1"
+                ;;
+            *)
+                error_exit "Unexpected argument: $1"
+                ;;
+        esac
+    done
+
+    [[ -z "$env_file" ]] && error_exit "--env-file is required"
+    [[ ! -f "$creds_file" ]] && error_exit "credentials file not found: $creds_file"
+
+    local access_token refresh_token expires_at subscription_type
+    access_token="$(jq -r '.claudeAiOauth.accessToken' "$creds_file")"
+    refresh_token="$(jq -r '.claudeAiOauth.refreshToken' "$creds_file")"
+    expires_at="$(jq -r '.claudeAiOauth.expiresAt' "$creds_file")"
+    subscription_type="$(jq -r '.claudeAiOauth.subscriptionType' "$creds_file")"
+
+    local tmpfile
+    tmpfile="$(mktemp)"
+
+    # Strip existing CLAUDE_ credential lines; preserve all other vars
+    if [[ -f "$env_file" ]]; then
+        grep -v -E "^CLAUDE_(ACCESS_TOKEN|REFRESH_TOKEN|TOKEN_EXPIRES_AT|SUBSCRIPTION_TYPE)=" \
+            "$env_file" > "$tmpfile" || true
+    fi
+
+    # Append updated credentials
+    printf 'CLAUDE_ACCESS_TOKEN=%s\n'      "$access_token"      >> "$tmpfile"
+    printf 'CLAUDE_REFRESH_TOKEN=%s\n'     "$refresh_token"     >> "$tmpfile"
+    printf 'CLAUDE_TOKEN_EXPIRES_AT=%s\n'  "$expires_at"        >> "$tmpfile"
+    printf 'CLAUDE_SUBSCRIPTION_TYPE=%s\n' "$subscription_type" >> "$tmpfile"
+
+    mv "$tmpfile" "$env_file"
+    echo "Imported Claude credentials to $env_file"
+}
+
 cmd_stop() {
     local target="${1:-}"
     [[ -z "$target" ]] && error_exit "worker-id or --all is required"
@@ -121,6 +172,10 @@ case "$1" in
     stop)
         shift
         cmd_stop "$@"
+        ;;
+    import-claude-credentials)
+        shift
+        cmd_import_claude_credentials "$@"
         ;;
     --help|-h)
         usage

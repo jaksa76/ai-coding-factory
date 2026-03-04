@@ -273,3 +273,68 @@ stub_script() {
     run "$FACTORY" stop nonexistent
     [ "$status" -ne 0 ]
 }
+
+# ── import-claude-credentials ─────────────────────────────────────────────────
+
+make_creds() {
+    local home="$1"
+    mkdir -p "$home/.claude"
+    printf '{"claudeAiOauth":{"accessToken":"tok123","refreshToken":"ref456","expiresAt":9999999,"subscriptionType":"pro"}}' \
+        > "$home/.claude/.credentials.json"
+}
+
+@test "import-claude-credentials: requires --env-file" {
+    run "$FACTORY" import-claude-credentials
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"--env-file is required"* ]]
+}
+
+@test "import-claude-credentials: requires credentials file to exist" {
+    local fake_home
+    fake_home="$(mktemp -d)"
+    run env HOME="$fake_home" "$FACTORY" import-claude-credentials --env-file "$fake_home/test.env"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"credentials file not found"* ]]
+    rm -rf "$fake_home"
+}
+
+@test "import-claude-credentials: writes all four vars to a new env file" {
+    local fake_home env_file
+    fake_home="$(mktemp -d)"
+    env_file="$fake_home/test.env"
+    make_creds "$fake_home"
+
+    run env HOME="$fake_home" "$FACTORY" import-claude-credentials --env-file "$env_file"
+    [ "$status" -eq 0 ]
+
+    [[ "$(cat "$env_file")" == *"CLAUDE_ACCESS_TOKEN=tok123"* ]]
+    [[ "$(cat "$env_file")" == *"CLAUDE_REFRESH_TOKEN=ref456"* ]]
+    [[ "$(cat "$env_file")" == *"CLAUDE_TOKEN_EXPIRES_AT=9999999"* ]]
+    [[ "$(cat "$env_file")" == *"CLAUDE_SUBSCRIPTION_TYPE=pro"* ]]
+
+    rm -rf "$fake_home"
+}
+
+@test "import-claude-credentials: updates existing credentials, preserves other vars" {
+    local fake_home env_file
+    fake_home="$(mktemp -d)"
+    env_file="$fake_home/test.env"
+    make_creds "$fake_home"
+
+    printf 'OTHER_VAR=x\nCLAUDE_ACCESS_TOKEN=old\nCLAUDE_REFRESH_TOKEN=old\n' > "$env_file"
+
+    run env HOME="$fake_home" "$FACTORY" import-claude-credentials --env-file "$env_file"
+    [ "$status" -eq 0 ]
+
+    [[ "$(cat "$env_file")" == *"OTHER_VAR=x"* ]]
+    [[ "$(cat "$env_file")" == *"CLAUDE_ACCESS_TOKEN=tok123"* ]]
+    [[ "$(cat "$env_file")" != *"CLAUDE_ACCESS_TOKEN=old"* ]]
+
+    rm -rf "$fake_home"
+}
+
+@test "import-claude-credentials: unknown option: error" {
+    run "$FACTORY" import-claude-credentials --unknown
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Unknown option"* ]]
+}
