@@ -11,15 +11,11 @@
 # A stub agent writes a plan file; git operations target a local bare repository
 # created per test run — no GitHub credentials needed.
 #
-# These tests create and delete real Jira issues in the SCRUM project.
-# They assume the SCRUM project has no other matching unassigned issues between runs.
+# These tests create and delete real Jira issues in the project from .env.
+# They assume the project has no other matching unassigned issues between runs.
 
 PLANNER_LOOP="$BATS_TEST_DIRNAME/planner-loop"
 ENV_FILE="$(cd "$BATS_TEST_DIRNAME/.." && pwd)/.env"
-
-# Account ID for jaksa76@gmail.com on jaksa.atlassian.net
-ACCOUNT_ID="712020:2b77122e-3452-4f6b-8fb5-776644a6197c"
-PROJECT="SCRUM"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -28,7 +24,7 @@ create_test_issue() {
     local json key
     json=$(acli jira workitem create \
         --summary "[test] planner-loop-integration $(date +%s%N)" \
-        --project "$PROJECT" --type "Task" --json 2>&1)
+        --project "$JIRA_PROJECT" --type "Task" --json 2>&1)
     key=$(printf '%s' "$json" | jq -r '.key // empty')
     [[ -z "$key" ]] && { echo "create failed: $json" >&3; return 1; }
     if [[ -n "$label" ]]; then
@@ -113,7 +109,7 @@ setup() {
     export JIRA_SITE
     export JIRA_EMAIL
     export JIRA_TOKEN
-    export JIRA_ASSIGNEE_ACCOUNT_ID="$ACCOUNT_ID"
+    export JIRA_ASSIGNEE_ACCOUNT_ID
 
     unset PLAN_BY_DEFAULT
 
@@ -187,8 +183,8 @@ teardown() {
 @test "L1: PLAN_BY_DEFAULT=false, needs-plan — claimed, plan committed, transitioned" {
     KEY=$(create_test_issue "needs-plan")
     export PLAN_BY_DEFAULT=false
-    run timeout 120 "$PLANNER_LOOP" --project "$PROJECT" --agent agent
-    [[ "$(issue_assignee "$KEY")" == "$ACCOUNT_ID" ]]
+    run timeout 120 "$PLANNER_LOOP" --project "$JIRA_PROJECT" --agent agent
+    [[ "$(issue_assignee "$KEY")" == "$JIRA_ASSIGNEE_ACCOUNT_ID" ]]
     plan_in_repo "$KEY"
     local s
     s=$(issue_status "$KEY")
@@ -198,15 +194,15 @@ teardown() {
 @test "L2: PLAN_BY_DEFAULT=false, no label — issue NOT claimed" {
     KEY=$(create_test_issue)
     export PLAN_BY_DEFAULT=false
-    run timeout 20 "$PLANNER_LOOP" --project "$PROJECT" --agent agent
-    [[ "$(issue_assignee "$KEY")" != "$ACCOUNT_ID" ]]
+    run timeout 20 "$PLANNER_LOOP" --project "$JIRA_PROJECT" --agent agent
+    [[ "$(issue_assignee "$KEY")" != "$JIRA_ASSIGNEE_ACCOUNT_ID" ]]
 }
 
 @test "L3: PLAN_BY_DEFAULT=false, skip-plan label — issue NOT claimed" {
     KEY=$(create_test_issue "skip-plan")
     export PLAN_BY_DEFAULT=false
-    run timeout 20 "$PLANNER_LOOP" --project "$PROJECT" --agent agent
-    [[ "$(issue_assignee "$KEY")" != "$ACCOUNT_ID" ]]
+    run timeout 20 "$PLANNER_LOOP" --project "$JIRA_PROJECT" --agent agent
+    [[ "$(issue_assignee "$KEY")" != "$JIRA_ASSIGNEE_ACCOUNT_ID" ]]
 }
 
 # ── PLAN_BY_DEFAULT=true ───────────────────────────────────────────────────────
@@ -214,8 +210,8 @@ teardown() {
 @test "L4: PLAN_BY_DEFAULT=true, no label — claimed, plan committed, transitioned" {
     KEY=$(create_test_issue)
     export PLAN_BY_DEFAULT=true
-    run timeout 120 "$PLANNER_LOOP" --project "$PROJECT" --agent agent
-    [[ "$(issue_assignee "$KEY")" == "$ACCOUNT_ID" ]]
+    run timeout 120 "$PLANNER_LOOP" --project "$JIRA_PROJECT" --agent agent
+    [[ "$(issue_assignee "$KEY")" == "$JIRA_ASSIGNEE_ACCOUNT_ID" ]]
     plan_in_repo "$KEY"
     local s
     s=$(issue_status "$KEY")
@@ -225,6 +221,6 @@ teardown() {
 @test "L5: PLAN_BY_DEFAULT=true, skip-plan label — issue NOT claimed" {
     KEY=$(create_test_issue "skip-plan")
     export PLAN_BY_DEFAULT=true
-    run timeout 20 "$PLANNER_LOOP" --project "$PROJECT" --agent agent
-    [[ "$(issue_assignee "$KEY")" != "$ACCOUNT_ID" ]]
+    run timeout 20 "$PLANNER_LOOP" --project "$JIRA_PROJECT" --agent agent
+    [[ "$(issue_assignee "$KEY")" != "$JIRA_ASSIGNEE_ACCOUNT_ID" ]]
 }
