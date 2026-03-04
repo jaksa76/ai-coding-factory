@@ -29,6 +29,84 @@ error_exit() {
     exit 1
 }
 
+authenticate_jira() {
+    if ! acli jira auth status 2>/dev/null | grep -q "Authenticated"; then
+        echo "$JIRA_TOKEN" | acli jira auth login \
+            --site "$JIRA_SITE" \
+            --email "$JIRA_EMAIL" \
+            --token
+    fi
+}
+
+build_search_jql_for_planning() {
+    local project="$1"
+
+    if [[ "${PLAN_BY_DEFAULT:-false}" == "true" ]]; then
+        # If planning is enabled, include all issues in To Do that aren't explicitly marked as skip-plan.
+        echo "project = \"$project\" AND assignee is EMPTY AND status = \"To Do\" AND (labels NOT IN (\"skip-plan\") OR labels is EMPTY)"
+    else
+        # If planning is disabled, include only issues explicitly marked as needs-plan.
+        echo "project = \"$project\" AND assignee is EMPTY AND status = \"To Do\" AND labels IN (\"needs-plan\")"
+    fi
+}
+
+build_search_jql_for_implementation() {
+    local project="$1"
+
+    if [[ "${PLAN_BY_DEFAULT:-false}" == "true" ]]; then
+        # If planning is enabled, include all issues in Plan Approved and issues in To Do that are marked as skip-plan (i.e. don't require planning).
+        echo "project = \"$project\" AND assignee is EMPTY AND (status = \"Plan Approved\" OR (status = \"To Do\" AND labels IN (\"skip-plan\")))"
+    else
+        # If planning is disabled, include all issues in To Do that aren't explicitly marked as needs-plan (i.e. do require planning).
+        echo "project = \"$project\" AND assignee is EMPTY AND status = \"To Do\" AND (labels NOT IN (\"needs-plan\") OR labels is EMPTY)"
+    fi
+}
+
+# Outputs the JQL query to use for searching unassigned issues.
+build_search_jql() {
+    local project="$1"
+    local for_planning="$2"
+
+    if [[ "$for_planning" -eq 1 ]]; then
+        build_search_jql_for_planning "$project"
+    else
+        build_search_jql_for_implementation "$project"
+    fi
+}
+
+# Assigns an issue to the given account, waits to verify, and outputs the resulting assignee account ID.
+assign_and_verify() {
+    local issue_key="$1"
+    local account_id="$2"
+
+    acli jira workitem assign --key "$issue_key" --assignee "$account_id" --yes >&2
+    echo "Waiting 10s to verify assignment..." >&2
+    sleep 10
+
+    acli jira workitem view "$issue_key" --json 2>&1 \
+        | jq -r '.fields.assignee.accountId // empty' 2>/dev/null || true
+}
+
+# Transitions a claimed issue to Planning (if --for-planning) or In Progress.
+transition_issue() {
+    local issue_key="$1"
+    local for_planning="$2"
+    local transition_status=0
+    local transition_output
+
+    if [[ "$for_planning" -eq 1 ]]; then
+        echo "Transitioning $issue_key to Planning..." >&2
+        transition_output=$(acli jira workitem transition --key "$issue_key" --status "Planning" --yes 2>&1) || transition_status=$?
+        echo "Transition output: $transition_output" >&2
+        if [[ $transition_status -ne 0 ]]; then echo "Warning: could not transition $issue_key to Planning (transition may not be available)" >&2; fi
+    else
+        echo "Transitioning $issue_key to In Progress..." >&2
+        transition_output=$(acli jira workitem transition --key "$issue_key" --status "In Progress" --yes 2>&1) || transition_status=$?
+        echo "Transition output: $transition_output" >&2
+        if [[ $transition_status -ne 0 ]]; then echo "Warning: could not transition $issue_key to In Progress (transition may not be available)" >&2; fi
+    fi
+}
+
 # Parse arguments
 PROJECT=""
 ACCOUNT_ID=""
@@ -62,147 +140,41 @@ done
 [[ -z "${JIRA_EMAIL:-}" ]] && error_exit "JIRA_EMAIL environment variable is not set"
 [[ -z "${JIRA_TOKEN:-}" ]] && error_exit "JIRA_TOKEN environment variable is not set"
 
-# Authenticate with Jira if not already logged in
-if ! acli jira auth status 2>/dev/null | grep -q "Authenticated"; then
-    echo "$JIRA_TOKEN" | acli jira auth login \
-        --site "$JIRA_SITE" \
-        --email "$JIRA_EMAIL" \
-        --token
-fi
+authenticate_jira
 
 # Attempt to claim an issue (optimistic locking loop)
 while true; do
-    echo "Searching for unassigned open issues in project $PROJECT..."
+    echo "Searching for unassigned open issues in project $PROJECT..." >&2
 
-    # Find unassigned, non-done issues; take the first one
-    # Exclude issues that require planning unless --for-planning is set
-    if [[ "$FOR_PLANNING" -eq 0 ]]; then
-        if [[ "${PLAN_BY_DEFAULT:-false}" == "true" ]]; then
-            # Planning is opt-out: only pick up issues explicitly marked skip-plan, or Plan Approved
-            PLANNING_FILTER=' AND (labels IN ("skip-plan") OR status = "Plan Approved")'
-        else
-            # Planning is opt-in: skip issues explicitly marked needs-plan, except Plan Approved
-            PLANNING_FILTER=' AND (labels NOT IN ("needs-plan") OR status = "Plan Approved")'
-        fi
-    else
-        PLANNING_FILTER=""
-    fi
-    SEARCH_JQL="project = \"$PROJECT\" AND assignee is EMPTY AND statusCategory != Done${PLANNING_FILTER} ORDER BY created ASC"
-    echo "Running JQL: $SEARCH_JQL"
-    SEARCH_OUTPUT=$(acli jira workitem search --jql "$SEARCH_JQL" --json --paginate 2>&1)
-    # If the search failed (e.g. Plan Approved status absent from workflow), fall back to the
-    # standard filter without Plan Approved and warn.
-    if [[ "$FOR_PLANNING" -eq 0 ]] && ! printf '%s\n' "$SEARCH_OUTPUT" | jq -e 'type == "array"' >/dev/null 2>&1; then
-        echo "Warning: Plan Approved status not found in workflow, skipping Plan Approved queue"
-        if [[ "${PLAN_BY_DEFAULT:-false}" == "true" ]]; then
-            PLANNING_FILTER=' AND labels IN ("skip-plan")'
-        else
-            PLANNING_FILTER=' AND labels NOT IN ("needs-plan")'
-        fi
-        SEARCH_JQL="project = \"$PROJECT\" AND assignee is EMPTY AND statusCategory != Done${PLANNING_FILTER} ORDER BY created ASC"
-        echo "Running JQL: $SEARCH_JQL"
-        SEARCH_OUTPUT=$(acli jira workitem search --jql "$SEARCH_JQL" --json --paginate 2>&1)
-    fi
+    # Find issues for claiming
+    SEARCH_JQL=$(build_search_jql "$PROJECT" "$FOR_PLANNING")
+    echo "Running JQL: $SEARCH_JQL" >&2
+    SEARCH_OUTPUT=$(acli jira workitem search --jql "$SEARCH_JQL" --json --paginate 2>&1) || {
+        echo "Error running search: $SEARCH_OUTPUT" >&2
+        exit 1
+    }
 
-    # Loop through issues to find one matching planning logic
-    while :; do
-        ISSUE_KEY=$(printf '%s\n' "$SEARCH_OUTPUT" \
-            | jq -r 'if type == "array" then .[0].key // empty else empty end' 2>/dev/null || true)
-        if [[ -z "$ISSUE_KEY" ]]; then
-            if [[ "$FOR_PLANNING" -eq 1 ]]; then
-                echo "No unassigned open issues requiring planning found in project $PROJECT."
-            else
-                echo "No unassigned open issues found in project $PROJECT."
-            fi
-            exit 2
-        fi
-        # Fetch labels for this issue
-        ISSUE_LABELS=$(printf '%s\n' "$SEARCH_OUTPUT" | jq -r 'if type == "array" and .[0] then (.[0].fields.labels // [])[] else empty end' 2>/dev/null || true)
-        PLAN_BY_DEFAULT=${PLAN_BY_DEFAULT:-false}
-        NEEDS_PLAN=false
-        SKIP_PLAN=false
-        # shellcheck disable=SC2086
-        for label in $ISSUE_LABELS; do
-            case $label in
-                "needs-plan"|needs-plan) NEEDS_PLAN=true ;;
-                "skip-plan"|skip-plan) SKIP_PLAN=true ;;
-            esac
-        done
-        # Decision matrix for planning requirement
-        REQUIRE_PLAN=false
-        if [[ "$SKIP_PLAN" == true ]]; then
-            REQUIRE_PLAN=false
-        elif [[ "$NEEDS_PLAN" == true ]]; then
-            REQUIRE_PLAN=true
-        elif [[ "$PLAN_BY_DEFAULT" == true ]]; then
-            REQUIRE_PLAN=true
-        fi
-        # Only claim if planning is required when --for-planning is set
-        if [[ "$FOR_PLANNING" -eq 1 && "$REQUIRE_PLAN" != true ]]; then
-            echo "Skipping $ISSUE_KEY: planning not required by PLAN_BY_DEFAULT/labels."
-            # Remove this issue from SEARCH_OUTPUT and try next
-            SEARCH_OUTPUT=$(printf '%s\n' "$SEARCH_OUTPUT" | jq 'del(.[0])')
-            continue
-        fi
-        if [[ "$FOR_PLANNING" -eq 0 && "$REQUIRE_PLAN" == true ]]; then
-            # Allow Plan Approved issues: plan has been reviewed and approved for implementation
-            ISSUE_STATUS=$(printf '%s\n' "$SEARCH_OUTPUT" | jq -r 'if type == "array" and .[0] then (.[0].fields.status.name // "") else "" end' 2>/dev/null || true)
-            if [[ "$ISSUE_STATUS" == "Plan Approved" ]]; then
-                echo "Issue $ISSUE_KEY is in Plan Approved state, proceeding with implementation."
-                break
-            fi
-            echo "Skipping $ISSUE_KEY: planning required but --for-planning not set."
-            SEARCH_OUTPUT=$(printf '%s\n' "$SEARCH_OUTPUT" | jq 'del(.[0])')
-            continue
-        fi
-        break
-    done
-
-    echo "Attempting to claim $ISSUE_KEY..."
-
-    # Assign to self
-    acli jira workitem assign --key "$ISSUE_KEY" --assignee "$ACCOUNT_ID" --yes
-
-    # Wait 10 seconds for Jira to settle (optimistic locking check)
-    echo "Waiting 10s to verify assignment..."
-    sleep 10
-
-    # Re-fetch and verify assignee
-    VERIFY_OUTPUT=$(acli jira workitem view "$ISSUE_KEY" --json 2>&1)
-    ASSIGNEE=$(printf '%s\n' "$VERIFY_OUTPUT" | jq -r '.fields.assignee.accountId // empty' 2>/dev/null || true)
-
-    if [[ "$ASSIGNEE" != "$ACCOUNT_ID" ]]; then
-        echo "Assignment race detected on $ISSUE_KEY (assignee is now ${ASSIGNEE:-unassigned}). Retrying..."
+    if [[ -z "$SEARCH_OUTPUT" || "$SEARCH_OUTPUT" == "[]" ]]; then
+        echo "No unassigned open issues found. Retrying in 30s..." >&2
+        sleep 30
         continue
     fi
 
-    echo "Successfully claimed $ISSUE_KEY."
+    ISSUE_KEY=$(printf '%s\n' "$SEARCH_OUTPUT" | jq -r '.[0].key // empty' 2>/dev/null || true)
+    echo "Attempting to claim $ISSUE_KEY..." >&2
 
-    # Transition to "In Progress" or "Planning" if --for-planning is set
-    if [[ "$FOR_PLANNING" -eq 1 ]]; then
-        TARGET_STATUS="Planning"
-        # Verify the Planning status exists in the workflow before attempting transition
-        echo "Verifying Planning status exists in project workflow..."
-        TRANSITIONS_JSON=$(acli jira workitem transitions --key "$ISSUE_KEY" --json 2>&1)
-        PLANNING_AVAILABLE=$(printf '%s\n' "$TRANSITIONS_JSON" \
-            | jq -r '[.[].name] | map(select(. == "Planning")) | length' 2>/dev/null || echo "0")
-        if [[ "$PLANNING_AVAILABLE" -eq 0 ]]; then
-            error_exit "Planning status does not exist in the Jira workflow for project $PROJECT. Cannot use --for-planning."
-        fi
-    else
-        TARGET_STATUS="In Progress"
+    ASSIGNEE=$(assign_and_verify "$ISSUE_KEY" "$ACCOUNT_ID")
+    if [[ "$ASSIGNEE" != "$ACCOUNT_ID" ]]; then
+        echo "Assignment race detected on $ISSUE_KEY (assignee is now ${ASSIGNEE:-unassigned}). Retrying..." >&2
+        continue
     fi
-    echo "Transitioning $ISSUE_KEY to $TARGET_STATUS..."
-    TRANSITION_STATUS=0
-    TRANSITION_OUTPUT=$(acli jira workitem transition --key "$ISSUE_KEY" --status "$TARGET_STATUS" --yes 2>&1) || TRANSITION_STATUS=$?
-    echo "Transition output: $TRANSITION_OUTPUT"
-    if [[ $TRANSITION_STATUS -ne 0 ]]; then
-        echo "Warning: could not transition $ISSUE_KEY to $TARGET_STATUS (transition may not be available)"
-    fi
+
+    echo "Successfully claimed $ISSUE_KEY." >&2
+
+    transition_issue "$ISSUE_KEY" "$FOR_PLANNING"
 
     # Print claimed issue key and summary
-    acli jira workitem view "$ISSUE_KEY" --json \
-        | jq '{key: .key, summary: .fields.summary}'
+    acli jira workitem view "$ISSUE_KEY" --json | jq '{key: .key, summary: .fields.summary}'
 
     break
 done

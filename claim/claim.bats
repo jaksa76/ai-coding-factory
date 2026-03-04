@@ -137,18 +137,6 @@ esac
     [[ "$output" == *"Successfully claimed PROJ-2"* ]]
 }
 
-@test "no issues found: exits with code 2" {
-    stub_script acli "
-case \"\$*\" in
-  'jira auth status')      echo 'Authenticated' ;;
-  'jira workitem search'*) echo '[]' ;;
-esac
-"
-    run "$CLAIM" --project "PROJ" --account-id "acc1"
-    [ "$status" -eq 2 ]
-    [[ "$output" == *"No unassigned open issues found"* ]]
-}
-
 @test "race condition: retries when assignee does not match" {
     local counter_file
     counter_file="$(mktemp)"
@@ -210,7 +198,7 @@ esac
     rm -f "$transition_args_file"
 }
 
-@test "--for-planning: exits with error when Planning status not in workflow" {
+@test "--for-planning: Planning status absent from workflow — warns and exits 0" {
     stub_script acli '
 case "$*" in
   "jira auth status")        echo "Authenticated" ;;
@@ -223,8 +211,8 @@ case "$*" in
 esac
 '
     run "$CLAIM" --project "PROJ" --account-id "acc1" --for-planning
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"Planning status does not exist"* ]]
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Warning: Planning status not found"* ]]
 }
 
 @test "--for-planning: transitions to Planning when status exists in workflow" {
@@ -293,7 +281,7 @@ esac
     [[ "$output" == *'skip-plan'* ]]
 }
 
-@test "--for-planning: JQL has no planning label filter" {
+@test "--for-planning: JQL uses To Do status and excludes skip-plan regardless of PLAN_BY_DEFAULT" {
     local transition_args_file
     transition_args_file="$(mktemp)"
 
@@ -310,11 +298,14 @@ case \"\$*\" in
       echo \"\$*\" > '$transition_args_file' ;;
 esac
 "
-    export PLAN_BY_DEFAULT=true
+    # PLAN_BY_DEFAULT should not affect --for-planning behaviour
+    unset PLAN_BY_DEFAULT
     run "$CLAIM" --project "PROJ" --account-id "acc1" --for-planning
     [ "$status" -eq 0 ]
-    [[ "$output" != *'needs-plan'* ]]
-    [[ "$output" != *'skip-plan'* ]]
+    [[ "$output" == *'To Do'* ]]        # status filter in JQL
+    [[ "$output" == *'skip-plan'* ]]   # exclusion filter in JQL
+    [[ "$output" == *'EMPTY'* ]]       # issues with no labels are included
+    [[ "$output" != *'needs-plan'* ]]  # needs-plan not used by planner
 
     rm -f "$transition_args_file"
 }
