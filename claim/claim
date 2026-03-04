@@ -174,7 +174,7 @@ while true; do
     transition_issue "$ISSUE_KEY" "$FOR_PLANNING"
 
     # Print claimed issue key and summary
-    acli jira workitem view "$ISSUE_KEY" --json | jq '{key: .key, summary: .fields.summary}'
+    acli jira workitem view "$ISSUE_KEY" --json | jq '{key: .key, summary: .fields.summary, description: .fields.description}'
 
     break
 done

@@ -148,6 +148,8 @@ setup() {
 
     # Stub agent: extract the issue key from the prompt and write a plan file.
     STUB_DIR=$(mktemp -d)
+    # Also make claim (sibling directory) available to planner-loop
+    export PATH="$BATS_TEST_DIRNAME/../claim:$STUB_DIR:$PATH"
     cat > "$STUB_DIR/agent" <<'EOF'
 #!/usr/bin/env bash
 KEY=$(printf '%s' "$*" | grep -oE '[A-Z]+-[0-9]+' | head -1)
