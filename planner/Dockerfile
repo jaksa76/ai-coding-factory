@@ -29,8 +29,9 @@ USER root
 COPY claim/claim /usr/local/bin/claim
 COPY planner/planner-loop /usr/local/bin/planner-loop
 COPY workers/claude/init-claude.sh /usr/local/bin/init-claude
+COPY workers/claude/init-acli.sh /usr/local/bin/init-acli
 COPY workers/claude/run-claude.sh /usr/local/bin/run-claude
-RUN chmod +x /usr/local/bin/claim /usr/local/bin/planner-loop /usr/local/bin/init-claude /usr/local/bin/run-claude
+RUN chmod +x /usr/local/bin/claim /usr/local/bin/planner-loop /usr/local/bin/init-claude /usr/local/bin/init-acli /usr/local/bin/run-claude
 
 # Ensure ~/.claude directory exists so init-claude can write credentials at runtime
 RUN mkdir -p /home/worker/.claude && chown worker:worker /home/worker/.claude
@@ -55,4 +56,4 @@ WORKDIR /home/worker
 ENV HOME=/home/worker
 ENV PATH="/home/worker/.local/bin:$PATH"
 
-ENTRYPOINT ["bash", "-c", "init-claude && exec planner-loop --project \"$JIRA_PROJECT\" --agent 'run-claude --dangerously-skip-permissions -p'"]
+ENTRYPOINT ["bash", "-c", "init-claude && init-acli && exec planner-loop --project \"$JIRA_PROJECT\" --agent 'run-claude --dangerously-skip-permissions -p'"]
