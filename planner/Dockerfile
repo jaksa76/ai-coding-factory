@@ -1,5 +1,20 @@
 FROM node:24-slim
 
+# Runtime env vars (must be supplied via docker run -e / --env-file):
+#
+# Authentication — choose one:
+#   ANTHROPIC_API_KEY         — API key (simplest; takes precedence over OAuth)
+#   -- OR --
+#   CLAUDE_ACCESS_TOKEN       — Claude OAuth access token
+#   CLAUDE_REFRESH_TOKEN      — Claude OAuth refresh token
+#   CLAUDE_TOKEN_EXPIRES_AT   — Token expiry timestamp (epoch ms, numeric)
+#   CLAUDE_SUBSCRIPTION_TYPE  — Subscription type (e.g. "pro")
+#
+#   JIRA_SITE / JIRA_EMAIL / JIRA_TOKEN / JIRA_ASSIGNEE_ACCOUNT_ID
+#   JIRA_PROJECT              — Jira project key to pull issues from (e.g. MYPROJ)
+#   GIT_REPO_URL / GIT_USERNAME / GIT_TOKEN
+#   PLAN_BY_DEFAULT           — Optional: "true" to require planning for all issues
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     bash curl git jq wget gnupg2 \
@@ -29,31 +44,14 @@ USER root
 COPY claim/claim /usr/local/bin/claim
 COPY planner/planner-loop /usr/local/bin/planner-loop
 COPY workers/claude/init-claude.sh /usr/local/bin/init-claude
-COPY workers/claude/init-acli.sh /usr/local/bin/init-acli
-COPY workers/claude/run-claude.sh /usr/local/bin/run-claude
-RUN chmod +x /usr/local/bin/claim /usr/local/bin/planner-loop /usr/local/bin/init-claude /usr/local/bin/init-acli /usr/local/bin/run-claude
+RUN chmod +x /usr/local/bin/claim /usr/local/bin/planner-loop /usr/local/bin/init-claude
 
 # Ensure ~/.claude directory exists so init-claude can write credentials at runtime
 RUN mkdir -p /home/worker/.claude && chown worker:worker /home/worker/.claude
-
-# Runtime env vars (must be supplied via docker run -e / --env-file):
-#
-# Authentication — choose one:
-#   ANTHROPIC_API_KEY         — API key (simplest; takes precedence over OAuth)
-#   -- OR --
-#   CLAUDE_ACCESS_TOKEN       — Claude OAuth access token
-#   CLAUDE_REFRESH_TOKEN      — Claude OAuth refresh token
-#   CLAUDE_TOKEN_EXPIRES_AT   — Token expiry timestamp (epoch ms, numeric)
-#   CLAUDE_SUBSCRIPTION_TYPE  — Subscription type (e.g. "pro")
-#
-#   JIRA_SITE / JIRA_EMAIL / JIRA_TOKEN / JIRA_ASSIGNEE_ACCOUNT_ID
-#   JIRA_PROJECT              — Jira project key to pull issues from (e.g. MYPROJ)
-#   GIT_REPO_URL / GIT_USERNAME / GIT_TOKEN
-#   PLAN_BY_DEFAULT           — Optional: "true" to require planning for all issues
 
 USER worker
 WORKDIR /home/worker
 ENV HOME=/home/worker
 ENV PATH="/home/worker/.local/bin:$PATH"
 
-ENTRYPOINT ["bash", "-c", "init-claude && init-acli && exec planner-loop --project \"$JIRA_PROJECT\" --agent 'claude --dangerously-skip-permissions -p'"]
+ENTRYPOINT ["bash", "-c", "init-claude && exec planner-loop --project \"$JIRA_PROJECT\" --agent 'claude --dangerously-skip-permissions -p'"]

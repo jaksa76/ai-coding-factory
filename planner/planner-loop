@@ -33,7 +33,6 @@ usage() {
     echo "  GIT_TOKEN                 Git push credentials"
     echo ""
     echo "Optional environment variables:"
-    echo "  PLAN_BY_DEFAULT           Enable project-wide planning phase (see docs/planning-phase.md)"
     echo "  NO_ISSUES_WAIT            Seconds to wait when no issues are available (default: 60)"
     exit 1
 }
@@ -44,12 +43,12 @@ error_exit() {
 }
 
 # Parse args
-PROJECT_KEY=""
+PROJECT=""
 AGENT_CMD=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --project)
-            PROJECT_KEY="$2"; shift 2;;
+            PROJECT="$2"; shift 2;;
         --agent)
             AGENT_CMD="$2"; shift 2;;
         --help|-h)
@@ -59,7 +58,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-[[ -z "$PROJECT_KEY" ]] && error_exit "--project <key> is required"
+[[ -z "$PROJECT" ]] && error_exit "--project <key> is required"
 [[ -z "$AGENT_CMD" ]]   && error_exit "--agent <command> is required"
 
 [[ -z "${JIRA_SITE:-}" ]]                && error_exit "JIRA_SITE environment variable is not set"
@@ -70,8 +69,20 @@ done
 [[ -z "${GIT_USERNAME:-}" ]]             && error_exit "GIT_USERNAME environment variable is not set"
 [[ -z "${GIT_TOKEN:-}" ]]                && error_exit "GIT_TOKEN environment variable is not set"
 
-# Build authenticated git URL (inject username:token into https URL)
-AUTH_URL="${GIT_REPO_URL/#https:\/\//https://$GIT_USERNAME:$GIT_TOKEN@}"
+# Set up git credential store for HTTPS authentication (avoids embedding
+# credentials in URLs where they could appear in process listings or logs)
+if [[ "$GIT_REPO_URL" == https://* ]]; then
+    _GIT_CRED_FILE="$(mktemp)"
+    chmod 600 "$_GIT_CRED_FILE"
+    _GIT_HOST="$(printf '%s\n' "$GIT_REPO_URL" | sed 's|https://||' | cut -d'/' -f1)"
+    printf 'https://%s:%s@%s\n' "$GIT_USERNAME" "$GIT_TOKEN" "$_GIT_HOST" > "$_GIT_CRED_FILE"
+    git config --global credential.helper "store --file $_GIT_CRED_FILE"
+    trap "rm -f '$_GIT_CRED_FILE'" EXIT
+fi
+
+# Configure git user identity for commits
+git config --global user.name "$GIT_USERNAME"
+git config --global user.email "$JIRA_EMAIL"
 
 # Derive local repo directory name from URL
 REPO_NAME="$(basename "$GIT_REPO_URL" .git)"
@@ -79,20 +90,59 @@ REPO_NAME="$(basename "$GIT_REPO_URL" .git)"
 BASE_DIR="${LOOP_WORK_DIR:-$(pwd)}"
 WORK_DIR="$BASE_DIR/$REPO_NAME"
 
-NO_ISSUES_WAIT="${NO_ISSUES_WAIT:-60}"
+# Run the agent, retrying on rate-limit errors.
+# Usage: run_agent_with_retry <prompt> <issue_key>
+run_agent_with_retry() {
+    local prompt="$1" issue_key="$2"
+    local default_wait=60
+
+    while true; do
+        local tmpout agent_exit=0
+        tmpout="$(mktemp)"
+
+        # Run agent; stream output to stdout and capture to file for analysis
+        set +e
+        (cd "$WORK_DIR" && $AGENT_CMD "$prompt") 2>&1 | tee "$tmpout"
+        agent_exit="${PIPESTATUS[0]}"
+        set -e
+
+        if [[ "$agent_exit" -eq 0 ]]; then
+            rm -f "$tmpout"
+            return 0
+        fi
+
+        # Check for rate-limit indicators in captured output
+        if grep -qi "rate.limit\|too many requests\|429\|overloaded" "$tmpout"; then
+            # Try to parse a retry-after duration from the output
+            local wait_secs="$default_wait"
+            local parsed
+            parsed="$(grep -oiE "retry.?after:? ?[0-9]+" "$tmpout" | grep -oE "[0-9]+" | tail -1 || true)"
+            [[ -n "$parsed" ]] && wait_secs="$parsed"
+
+            echo "Agent hit rate limit for $issue_key. Waiting ${wait_secs}s before retry..."
+            rm -f "$tmpout"
+            sleep "$wait_secs"
+        else
+            rm -f "$tmpout"
+            return "$agent_exit"
+        fi
+    done
+}
+
 
 while true; do
-    # Claim an issue that requires planning
-    echo "Claiming planning issue from project $PROJECT_KEY..."
+    # Step 1: Claim a Jira issue
+    echo "Claiming issue from project $PROJECT..."
     set +e
-    CLAIM_OUTPUT="$(claim --for-planning --project "$PROJECT_KEY" --account-id "$JIRA_ASSIGNEE_ACCOUNT_ID")"
+    CLAIM_OUTPUT="$(claim --project "$PROJECT" --account-id "$JIRA_ASSIGNEE_ACCOUNT_ID" --for-planning)"
     CLAIM_EXIT=$?
     set -e
     echo "$CLAIM_OUTPUT"
 
     if [[ "$CLAIM_EXIT" -eq 2 ]]; then
-        echo "No planning issues available in project $PROJECT_KEY. Waiting ${NO_ISSUES_WAIT}s before polling again..."
-        sleep "$NO_ISSUES_WAIT"
+        no_issues_wait="${NO_ISSUES_WAIT:-60}"
+        echo "No issues available in project $PROJECT. Waiting ${no_issues_wait}s before polling again..."
+        sleep "$no_issues_wait"
         continue
     elif [[ "$CLAIM_EXIT" -ne 0 ]]; then
         exit "$CLAIM_EXIT"
@@ -102,11 +152,13 @@ while true; do
     ISSUE_JSON="$(printf '%s\n' "$CLAIM_OUTPUT" | awk '/^\{/{f=1} f')"
     ISSUE_KEY="$(printf '%s\n' "$ISSUE_JSON" | jq -r '.key')"
     ISSUE_SUMMARY="$(printf '%s\n' "$ISSUE_JSON" | jq -r '.summary')"
-    ISSUE_DESCRIPTION="$(printf '%s\n' "$ISSUE_JSON" | jq -r '.description // ""')"
+    # Fetch description separately (claim only outputs key and summary)
+    ISSUE_DESCRIPTION="$(acli jira workitem view "$ISSUE_KEY" --json 2>/dev/null \
+        | jq -r '.fields.description // ""' 2>/dev/null || true)"
 
-    echo "Working on planning for $ISSUE_KEY: $ISSUE_SUMMARY"
+    echo "Planning $ISSUE_KEY: $ISSUE_SUMMARY"
 
-    # Clone or pull the target repository
+    # Step 2: Clone or pull the target repository
     if [[ -d "$WORK_DIR/.git" ]]; then
         echo "Pulling latest changes for $REPO_NAME..."
         git -C "$WORK_DIR" remote set-url origin "$AUTH_URL"
@@ -116,19 +168,19 @@ while true; do
         git clone "$AUTH_URL" "$WORK_DIR"
     fi
 
-    # Build the plan file path inside the target repo
+    # Step 3: Build the plan file path inside the target repo
     PLAN_FILE="plans/$ISSUE_KEY.md"
     PLAN_PATH="$WORK_DIR/$PLAN_FILE"
     mkdir -p "$WORK_DIR/plans"
 
-    # Prompt the agent to write the plan file
+    # Step 4: Prompt the agent to write the plan file
     PROMPT="Generate a detailed implementation plan for the issue described below. Write the plan to $PLAN_FILE in the repository root as a Markdown file. Do NOT write any code or make any commits.\n\n"
     PROMPT="$PROMPT [$ISSUE_KEY] $ISSUE_SUMMARY"
     [[ -n "$ISSUE_DESCRIPTION" ]] && PROMPT="$PROMPT
 $ISSUE_DESCRIPTION"
     echo "Running agent to generate plan for $ISSUE_KEY..."
     echo "=== AGENT START: $ISSUE_KEY ==="
-    (cd "$WORK_DIR" && $AGENT_CMD "$PROMPT")
+    run_agent_with_retry "$PROMPT" "$ISSUE_KEY"
     echo "=== AGENT END: $ISSUE_KEY ==="
 
     # Verify the plan file was created
@@ -136,7 +188,7 @@ $ISSUE_DESCRIPTION"
         error_exit "Agent did not create plan file at $PLAN_FILE"
     fi
 
-    # Commit and push the plan file to the target repo
+    # Step 5: Commit and push the plan file to the target repo
     echo "Committing and pushing plan for $ISSUE_KEY..."
     git -C "$WORK_DIR" add "$PLAN_FILE"
     git -C "$WORK_DIR" commit -m "Add implementation plan for $ISSUE_KEY"
@@ -175,4 +227,6 @@ $ISSUE_DESCRIPTION"
     echo "Planning phase complete for $ISSUE_KEY. Moving to next issue."
     sleep 2
 
+    inter_issue_wait="${INTER_ISSUE_WAIT:-1200}"
+    sleep "$inter_issue_wait" # Sleep before claiming the next issue
 done

@@ -14,6 +14,7 @@ set -euo pipefail
 #   GIT_REPO_URL              — Repository to work on
 #   GIT_USERNAME              — Git push credentials
 #   GIT_TOKEN                 — Git push credentials
+#   PLAN_BY_DEFAULT           — Optional, see docs/planning-phase.md (used by claim)
 
 usage() {
     echo "Usage: loop --project <key> --agent <command>"
@@ -44,19 +45,13 @@ AGENT_CMD=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --project)
-            PROJECT="$2"
-            shift 2
-            ;;
+            PROJECT="$2"; shift 2;;
         --agent)
-            AGENT_CMD="$2"
-            shift 2
-            ;;
+            AGENT_CMD="$2"; shift 2;;
         --help|-h)
-            usage
-            ;;
+            usage;;
         *)
-            error_exit "Unknown option: $1"
-            ;;
+            error_exit "Unknown option: $1";;
     esac
 done
 
