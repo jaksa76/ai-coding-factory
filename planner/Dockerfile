@@ -56,4 +56,4 @@ WORKDIR /home/worker
 ENV HOME=/home/worker
 ENV PATH="/home/worker/.local/bin:$PATH"
 
-ENTRYPOINT ["bash", "-c", "init-claude && init-acli && exec planner-loop --project \"$JIRA_PROJECT\" --agent 'run-claude --dangerously-skip-permissions -p'"]
+ENTRYPOINT ["bash", "-c", "init-claude && init-acli && exec planner-loop --project \"$JIRA_PROJECT\" --agent 'claude --dangerously-skip-permissions -p'"]
