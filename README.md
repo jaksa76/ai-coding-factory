@@ -152,7 +152,6 @@ loop --project MYPROJ --agent "codex -q"
 | Variable | Default | Description |
 |---|---|---|
 | `NO_ISSUES_WAIT` | 60 | Seconds to wait when no issues are available before polling again |
-| `RATE_LIMIT_WAIT` | 60 | Seconds to wait on agent rate limit errors |
 | `INTER_ISSUE_WAIT` | 1200 | Seconds to wait between completing one issue and claiming the next |
 | `FEATURE_BRANCHES` | false | Push to feature branches and open PRs instead of committing to trunk |
 | `PLAN_BY_DEFAULT` | false | Require planning phase for all issues by default |
@@ -273,7 +272,6 @@ For project-specific images (matching your devcontainer), use `worker-builder` i
 | `FEATURE_BRANCHES` | No | `true` to use feature branches + PRs |
 | `PLAN_BY_DEFAULT` | No | `true` to require planning for all issues |
 | `NO_ISSUES_WAIT` | No | Poll interval when queue is empty (default: 60s) |
-| `RATE_LIMIT_WAIT` | No | Wait time on agent rate limit (default: 60s) |
 | `INTER_ISSUE_WAIT` | No | Pause between issues (default: 1200s) |
 
 ---

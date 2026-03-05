@@ -35,7 +35,6 @@ usage() {
     echo "Optional environment variables:"
     echo "  PLAN_BY_DEFAULT           Enable project-wide planning phase (see docs/planning-phase.md)"
     echo "  NO_ISSUES_WAIT            Seconds to wait when no issues are available (default: 60)"
-    echo "  RATE_LIMIT_WAIT           Seconds to wait on agent rate limit (default: 60)"
     exit 1
 }
 
@@ -81,7 +80,6 @@ BASE_DIR="${LOOP_WORK_DIR:-$(pwd)}"
 WORK_DIR="$BASE_DIR/$REPO_NAME"
 
 NO_ISSUES_WAIT="${NO_ISSUES_WAIT:-60}"
-RATE_LIMIT_WAIT="${RATE_LIMIT_WAIT:-60}"
 
 while true; do
     # Claim an issue that requires planning

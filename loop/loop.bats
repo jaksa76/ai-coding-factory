@@ -477,29 +477,6 @@ fi
     rm -f "$counter_file" "$sleep_log"
 }
 
-@test "rate limit: RATE_LIMIT_WAIT overrides default wait" {
-    local counter_file sleep_log
-    counter_file="$(mktemp)"
-    sleep_log="$(mktemp)"
-    echo "0" > "$counter_file"
-
-    stub_script sleep "echo \"\$*\" >> '$sleep_log'"
-
-    stub_script agent "
-count=\$(cat '$counter_file')
-echo \$((count + 1)) > '$counter_file'
-if [ \"\$count\" -eq 0 ]; then
-    echo 'too many requests'
-    exit 1
-fi
-"
-    export RATE_LIMIT_WAIT=300
-    run "$LOOP" --project PROJ --agent agent
-
-    [[ "$(cat "$sleep_log")" == *"300"* ]]
-
-    rm -f "$counter_file" "$sleep_log"
-}
 
 @test "rate limit: non-rate-limit agent errors are not retried" {
     stub_script agent "echo 'Some unexpected error occurred'; exit 1"

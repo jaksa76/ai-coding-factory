@@ -29,7 +29,6 @@ usage() {
     echo ""
     echo "Optional environment variables:"
     echo "  NO_ISSUES_WAIT            Seconds to wait when no issues are available (default: 60)"
-    echo "  RATE_LIMIT_WAIT           Seconds to wait on agent rate limit (default: 60)"
     echo "  INTER_ISSUE_WAIT          Seconds to wait between issues (default: 1200)"
     exit 1
 }
@@ -97,7 +96,7 @@ WORK_DIR="$BASE_DIR/$REPO_NAME"
 # Usage: run_agent_with_retry <prompt> <issue_key>
 run_agent_with_retry() {
     local prompt="$1" issue_key="$2"
-    local default_wait="${RATE_LIMIT_WAIT:-60}"
+    local default_wait=60
 
     while true; do
         local tmpout agent_exit=0
