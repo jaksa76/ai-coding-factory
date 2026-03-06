@@ -4,7 +4,7 @@ set -euo pipefail
 # loop — agent-agnostic claim/work loop
 #
 # Usage:
-#   loop --project <key> --agent <command> [--for-planning]
+#   loop --project <key> [--for-planning]
 #
 # Environment variables:
 #   JIRA_SITE                 — Jira host, e.g. mycompany.atlassian.net
@@ -17,7 +17,7 @@ set -euo pipefail
 #   PLAN_BY_DEFAULT           — Optional, see docs/planning-phase.md (used by claim)
 
 usage() {
-    echo "Usage: loop --project <key> --agent <command> [--for-planning]"
+    echo "Usage: loop --project <key> [--for-planning]"
     echo ""
     echo "Environment variables required:"
     echo "  JIRA_SITE                 Jira host (e.g. mycompany.atlassian.net)"
@@ -44,14 +44,11 @@ error_exit() {
 
 # Parse arguments
 PROJECT=""
-AGENT_CMD=""
 FOR_PLANNING=false
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --project)
             PROJECT="$2"; shift 2;;
-        --agent)
-            AGENT_CMD="$2"; shift 2;;
         --for-planning)
             FOR_PLANNING=true; shift;;
         --help|-h)
@@ -61,8 +58,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-[[ -z "$PROJECT" ]]   && error_exit "--project <key> is required"
-[[ -z "$AGENT_CMD" ]] && error_exit "--agent <command> is required"
+[[ -z "$PROJECT" ]] && error_exit "--project <key> is required"
 
 [[ -z "${JIRA_SITE:-}" ]]                && error_exit "JIRA_SITE environment variable is not set"
 [[ -z "${JIRA_EMAIL:-}" ]]               && error_exit "JIRA_EMAIL environment variable is not set"
@@ -114,7 +110,7 @@ run_agent_with_retry() {
 
         # Run agent; stream output to stdout and capture to file for analysis
         set +e
-        (cd "$WORK_DIR" && $AGENT_CMD "$prompt") 2>&1 | tee "$tmpout"
+        (cd "$WORK_DIR" && agent run "$prompt") 2>&1 | tee "$tmpout"
         agent_exit="${PIPESTATUS[0]}"
         set -e
 

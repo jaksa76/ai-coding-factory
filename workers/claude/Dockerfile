@@ -38,14 +38,14 @@ USER worker
 RUN curl -fsSL https://claude.ai/install.sh | bash
 USER root
 
-# Install loop and claim tools
+# Install loop, claim, and agent tools
 # Build context must be the repository root: docker build -f workers/claude/Dockerfile .
 COPY claim/claim /usr/local/bin/claim
 COPY loop/loop /usr/local/bin/loop
-COPY workers/claude/init-claude.sh /usr/local/bin/init-claude
-RUN chmod +x /usr/local/bin/claim /usr/local/bin/loop /usr/local/bin/init-claude
+COPY workers/claude/agent /usr/local/bin/agent
+RUN chmod +x /usr/local/bin/claim /usr/local/bin/loop /usr/local/bin/agent
 
-# Ensure ~/.claude directory exists so init-claude can write credentials at runtime
+# Ensure ~/.claude directory exists so agent init can write credentials at runtime
 RUN mkdir -p /home/worker/.claude && chown worker:worker /home/worker/.claude
 
 USER worker
@@ -53,4 +53,4 @@ WORKDIR /home/worker
 ENV HOME=/home/worker
 ENV PATH="/home/worker/.local/bin:$PATH"
 
-ENTRYPOINT ["bash", "-c", "init-claude && exec loop --project \"$JIRA_PROJECT\" --agent 'claude --dangerously-skip-permissions -p'"]
+ENTRYPOINT ["bash", "-c", "agent init && exec loop --project \"$JIRA_PROJECT\""]

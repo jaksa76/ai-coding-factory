@@ -77,19 +77,13 @@ stub_script() {
 # ── argument validation ───────────────────────────────────────────────────────
 
 @test "error: missing --project" {
-    run "$LOOP" --agent "agent"
+    run "$LOOP"
     [ "$status" -eq 1 ]
     [[ "$output" == *"--project"* ]]
 }
 
-@test "error: missing --agent" {
-    run "$LOOP" --project "PROJ"
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"--agent"* ]]
-}
-
 @test "error: unknown option" {
-    run "$LOOP" --project "PROJ" --agent "agent" --unknown
+    run "$LOOP" --project "PROJ" --unknown
     [ "$status" -eq 1 ]
     [[ "$output" == *"Unknown option"* ]]
 }
@@ -110,49 +104,49 @@ stub_script() {
 
 @test "error: JIRA_SITE not set" {
     unset JIRA_SITE
-    run "$LOOP" --project "PROJ" --agent "agent"
+    run "$LOOP" --project "PROJ"
     [ "$status" -eq 1 ]
     [[ "$output" == *"JIRA_SITE"* ]]
 }
 
 @test "error: JIRA_EMAIL not set" {
     unset JIRA_EMAIL
-    run "$LOOP" --project "PROJ" --agent "agent"
+    run "$LOOP" --project "PROJ"
     [ "$status" -eq 1 ]
     [[ "$output" == *"JIRA_EMAIL"* ]]
 }
 
 @test "error: JIRA_TOKEN not set" {
     unset JIRA_TOKEN
-    run "$LOOP" --project "PROJ" --agent "agent"
+    run "$LOOP" --project "PROJ"
     [ "$status" -eq 1 ]
     [[ "$output" == *"JIRA_TOKEN"* ]]
 }
 
 @test "error: JIRA_ASSIGNEE_ACCOUNT_ID not set" {
     unset JIRA_ASSIGNEE_ACCOUNT_ID
-    run "$LOOP" --project "PROJ" --agent "agent"
+    run "$LOOP" --project "PROJ"
     [ "$status" -eq 1 ]
     [[ "$output" == *"JIRA_ASSIGNEE_ACCOUNT_ID"* ]]
 }
 
 @test "error: GIT_REPO_URL not set" {
     unset GIT_REPO_URL
-    run "$LOOP" --project "PROJ" --agent "agent"
+    run "$LOOP" --project "PROJ"
     [ "$status" -eq 1 ]
     [[ "$output" == *"GIT_REPO_URL"* ]]
 }
 
 @test "error: GIT_USERNAME not set" {
     unset GIT_USERNAME
-    run "$LOOP" --project "PROJ" --agent "agent"
+    run "$LOOP" --project "PROJ"
     [ "$status" -eq 1 ]
     [[ "$output" == *"GIT_USERNAME"* ]]
 }
 
 @test "error: GIT_TOKEN not set" {
     unset GIT_TOKEN
-    run "$LOOP" --project "PROJ" --agent "agent"
+    run "$LOOP" --project "PROJ"
     [ "$status" -eq 1 ]
     [[ "$output" == *"GIT_TOKEN"* ]]
 }
@@ -175,7 +169,7 @@ stub_script() {
     '
     stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
     export FEATURE_BRANCHES=true
-    run "$LOOP" --project PROJ --agent agent
+    run "$LOOP" --project PROJ
     [[ "$(cat "$git_log")" == *"checkout -b feature/PROJ-1 main"* ]]
     rm -f "$git_log" "$acli_log"
 }
@@ -196,7 +190,7 @@ stub_script() {
     '
     stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
     export FEATURE_BRANCHES=true
-    run "$LOOP" --project PROJ --agent agent
+    run "$LOOP" --project PROJ
     [[ "$(cat "$git_log")" == *"branch -f feature/PROJ-1 main"* ]]
     rm -f "$git_log" "$acli_log"
 }
@@ -208,7 +202,7 @@ stub_script() {
     stub_script git 'echo "$*" >> '$git_log'; case "$*" in clone*) mkdir -p "${@: -1}/.git" ;; *) ;; esac'
     stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["skip-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
     export FEATURE_BRANCHES=true
-    run "$LOOP" --project PROJ --agent agent
+    run "$LOOP" --project PROJ
     [[ "$(cat "$git_log")" != *"checkout -b feature"* ]]
     rm -f "$git_log" "$acli_log"
 }
@@ -227,7 +221,7 @@ stub_script() {
     '
     stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
     unset FEATURE_BRANCHES
-    run "$LOOP" --project PROJ --agent agent
+    run "$LOOP" --project PROJ
     [[ "$(cat "$git_log")" == *"checkout -b feature/PROJ-1"* ]]
     rm -f "$git_log" "$acli_log"
 }
@@ -239,7 +233,7 @@ stub_script() {
     stub_script git 'echo "$*" >> '$git_log'; case "$*" in clone*) mkdir -p "${@: -1}/.git" ;; *) ;; esac'
     stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch","skip-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
     export FEATURE_BRANCHES=true
-    run "$LOOP" --project PROJ --agent agent
+    run "$LOOP" --project PROJ
     [[ "$(cat "$git_log")" != *"checkout -b feature"* ]]
     rm -f "$git_log" "$acli_log"
 }
@@ -260,8 +254,7 @@ esac
 "
     stub_script acli "echo \"\$*\" >> '$acli_log'"
 
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     # git clone was called
     [[ "$(cat "$git_log")" == *"clone"* ]]
     # git push was called
@@ -287,8 +280,7 @@ case "$*" in
 esac
 '
 
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$(cat "$agent_log")" == *"PROJ-1"* ]]
     [[ "$(cat "$agent_log")" == *"Fix the bug"* ]]
     [[ "$(cat "$agent_log")" == *"Bug details"* ]]
@@ -305,8 +297,7 @@ esac
 
     stub_script git "echo \"\$*\" >> '$git_log'"
 
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     # pull was called
     [[ "$(cat "$git_log")" == *"pull"* ]]
     # clone was NOT called
@@ -326,8 +317,7 @@ case \"\$1\" in
   *) ;;
 esac
 "
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     # credentials must NOT appear embedded in any git URL
     [[ "$(cat "$git_log")" != *"gituser:gittoken@"* ]]
     # git credential helper must be configured via git config
@@ -347,8 +337,7 @@ case \"\$1\" in
   *) ;;
 esac
 "
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$(cat "$git_log")" == *"user.name gituser"* ]]
     [[ "$(cat "$git_log")" == *"user.email test@example.com"* ]]
 
@@ -362,8 +351,7 @@ case "$*" in
   *) ;;
 esac
 '
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$output" == *"Warning: could not post comment on PROJ-1"* ]]
     [[ "$output" == *"Completed PROJ-1"* ]]
 }
@@ -375,8 +363,7 @@ case "$*" in
   *) ;;
 esac
 '
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$output" == *"Warning: could not transition PROJ-1 to Done"* ]]
     [[ "$output" == *"Completed PROJ-1"* ]]
 }
@@ -399,8 +386,7 @@ else
     exit 1
 fi
 "
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$output" == *"Working on PROJ-2: Add feature"* ]]
     [[ "$output" == *"Completed PROJ-2"* ]]
 
@@ -423,8 +409,7 @@ if [ \"\$count\" -eq 0 ]; then
     exit 1
 fi
 "
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     # The issue was completed after retry
     [[ "$output" == *"Completed PROJ-1"* ]]
 
@@ -447,8 +432,7 @@ if [ \"\$count\" -eq 0 ]; then
     exit 1
 fi
 "
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$(cat "$sleep_log")" == *"120"* ]]
 
     rm -f "$counter_file" "$sleep_log"
@@ -470,8 +454,7 @@ if [ \"\$count\" -eq 0 ]; then
     exit 1
 fi
 "
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$(cat "$sleep_log")" == *"60"* ]]
 
     rm -f "$counter_file" "$sleep_log"
@@ -481,8 +464,7 @@ fi
 @test "rate limit: non-rate-limit agent errors are not retried" {
     stub_script agent "echo 'Some unexpected error occurred'; exit 1"
 
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [ "$status" -ne 0 ]
     [[ "$output" != *"Completed PROJ-1"* ]]
 }
@@ -504,8 +486,7 @@ else
     exit 1
 fi
 "
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$output" == *"Working on PROJ-1"* ]]
     [[ "$output" == *"Completed PROJ-1"* ]]
 
@@ -532,8 +513,7 @@ else
     exit 1
 fi
 "
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$(cat "$sleep_log")" == *"60"* ]]
 
     rm -f "$counter_file" "$sleep_log"
@@ -560,8 +540,7 @@ else
 fi
 "
     export NO_ISSUES_WAIT=120
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$(cat "$sleep_log")" == *"120"* ]]
 
     rm -f "$counter_file" "$sleep_log"
@@ -582,8 +561,7 @@ case \"\$1\" in
   *) ;;
 esac
 "
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$(cat "$agent_log")" == *"This is the approved plan."* ]]
 
     rm -f "$agent_log"
@@ -594,8 +572,7 @@ esac
     agent_log="$(mktemp)"
     stub_script agent "echo \"\$*\" >> '$agent_log'"
 
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$(cat "$agent_log")" == *"PROJ-1"* ]]
 
     rm -f "$agent_log"
@@ -613,8 +590,7 @@ case \"\$1\" in
   *) ;;
 esac
 "
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$(cat "$agent_log")" != *"Other issue plan."* ]]
 
     rm -f "$agent_log"
@@ -626,8 +602,7 @@ esac
 
     stub_script sleep "echo \"\$*\" >> '$sleep_log'"
 
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$(cat "$sleep_log")" == *"1200"* ]]
 
     rm -f "$sleep_log"
@@ -640,8 +615,7 @@ esac
     stub_script sleep "echo \"\$*\" >> '$sleep_log'"
 
     export INTER_ISSUE_WAIT=5
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$(cat "$sleep_log")" == *"5"* ]]
 
     rm -f "$sleep_log"
@@ -660,8 +634,7 @@ if [ \"\$count\" -eq 0 ]; then
     exit 1
 fi
 "
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$output" == *"Completed PROJ-1"* ]]
 
     rm -f "$counter_file"
@@ -696,8 +669,7 @@ _setup_feature_branch_pr_test() {
 
     _setup_feature_branch_pr_test "$git_log" "$acli_log" "$gh_log"
 
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     # gh pr create called with correct base, head, and title
     [[ "$(cat "$gh_log")" == *"--base main"* ]]
     [[ "$(cat "$gh_log")" == *"--head feature/PROJ-1"* ]]
@@ -714,8 +686,7 @@ _setup_feature_branch_pr_test() {
 
     _setup_feature_branch_pr_test "$git_log" "$acli_log" "$gh_log"
 
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$(cat "$gh_log")" == *"test.atlassian.net/browse/PROJ-1"* ]]
 
     rm -f "$git_log" "$acli_log" "$gh_log"
@@ -729,8 +700,7 @@ _setup_feature_branch_pr_test() {
 
     _setup_feature_branch_pr_test "$git_log" "$acli_log" "$gh_log"
 
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$(cat "$acli_log")" == *"comment"* ]]
     # comment includes the PR URL
     [[ "$(cat "$acli_log")" == *"https://github.com/org/repo/pull/42"* ]]
@@ -746,8 +716,7 @@ _setup_feature_branch_pr_test() {
 
     _setup_feature_branch_pr_test "$git_log" "$acli_log" "$gh_log"
 
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$(cat "$acli_log")" == *"transition"* ]]
     [[ "$(cat "$acli_log")" == *"In Review"* ]]
 
@@ -772,8 +741,7 @@ _setup_feature_branch_pr_test() {
     stub_script gh 'exit 1'
     export FEATURE_BRANCHES=true
 
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$output" == *"Warning: could not open pull request for PROJ-1"* ]]
     [[ "$output" == *"Completed PROJ-1"* ]]
 
@@ -804,8 +772,7 @@ esac
     stub_script gh 'echo "https://github.com/org/repo/pull/42"'
     export FEATURE_BRANCHES=true
 
-    run "$LOOP" --project PROJ --agent agent
-
+    run "$LOOP" --project PROJ
     [[ "$output" == *"Warning: could not transition PROJ-1 to In Review"* ]]
     [[ "$output" == *"Completed PROJ-1"* ]]
 
@@ -843,7 +810,7 @@ esac
 "
     _setup_planning_agent_stub
 
-    run "$LOOP" --project PROJ --agent agent --for-planning
+    run "$LOOP" --project PROJ --for-planning
 
     [[ "$output" == *"Working on planning for PROJ-1"* ]]
     [[ "$output" == *"Cloning"* ]]
@@ -873,7 +840,7 @@ case "$1" in
 esac
 '
 
-    run "$LOOP" --project PROJ --agent agent --for-planning
+    run "$LOOP" --project PROJ --for-planning
 
     [[ -f "$WORK_TMPDIR/repo/plans/PROJ-1.md" ]]
     [[ "$(cat "$WORK_TMPDIR/repo/plans/PROJ-1.md")" == *"Implementation Plan"* ]]
@@ -890,7 +857,7 @@ esac
     stub_script git "echo \"\$*\" >> '$git_log'"
     _setup_planning_agent_stub
 
-    run "$LOOP" --project PROJ --agent agent --for-planning
+    run "$LOOP" --project PROJ --for-planning
 
     [[ "$output" == *"Pulling latest changes"* ]]
     [[ "$(cat "$git_log")" == *"pull"* ]]
@@ -908,7 +875,7 @@ case "$*" in
 esac
 '
 
-    run "$LOOP" --project PROJ --agent agent --for-planning
+    run "$LOOP" --project PROJ --for-planning
 
     [[ "$output" == *"Warning: could not post plan comment on PROJ-1"* ]]
     [[ "$output" == *"Planning phase complete for PROJ-1"* ]]
@@ -923,7 +890,7 @@ case \"\$*\" in
 esac
 "
 
-    run "$LOOP" --project PROJ --agent agent --for-planning
+    run "$LOOP" --project PROJ --for-planning
 
     [[ "$output" == *"Warning: could not transition PROJ-1 to Awaiting Plan Review"* ]]
     [[ "$output" == *"Planning phase complete for PROJ-1"* ]]
@@ -938,7 +905,7 @@ case "$*" in
 esac
 '
 
-    run "$LOOP" --project PROJ --agent agent --for-planning
+    run "$LOOP" --project PROJ --for-planning
 
     [[ "$output" == *"Warning: Awaiting Plan Review status is absent from the workflow"* ]]
     [[ "$output" == *"Planning phase complete for PROJ-1"* ]]
@@ -960,7 +927,7 @@ case "$*" in
 esac
 '
 
-    run "$LOOP" --project PROJ --agent agent --for-planning
+    run "$LOOP" --project PROJ --for-planning
 
     [[ "$(cat "$agent_log")" == *"PROJ-1"* ]]
     [[ "$(cat "$agent_log")" == *"Fix the bug"* ]]
@@ -989,7 +956,7 @@ else
 fi
 "
 
-    run "$LOOP" --project PROJ --agent agent --for-planning
+    run "$LOOP" --project PROJ --for-planning
 
     [[ "$output" == *"No planning issues available in project PROJ"* ]]
     [[ "$output" == *"Waiting"* ]]
@@ -1021,7 +988,7 @@ fi
 "
 
     export NO_ISSUES_WAIT=120
-    run "$LOOP" --project PROJ --agent agent --for-planning
+    run "$LOOP" --project PROJ --for-planning
 
     [[ "$(cat "$sleep_log")" == *"120"* ]]
 
@@ -1040,7 +1007,7 @@ case \"\$*\" in
 esac
 "
 
-    run "$LOOP" --project PROJ --agent agent --for-planning
+    run "$LOOP" --project PROJ --for-planning
 
     [[ "$(cat "$acli_log")" == *"github.com/gituser/repo/blob/main/plans/PROJ-1.md"* ]]
 
@@ -1060,7 +1027,7 @@ case \"\$1\" in
 esac
 "
 
-    run "$LOOP" --project PROJ --agent agent --for-planning
+    run "$LOOP" --project PROJ --for-planning
 
     # git add must include the plan file path
     [[ "$(cat "$git_log")" == *"add plans/PROJ-1.md"* ]]
