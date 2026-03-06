@@ -100,6 +100,8 @@ Unit tests for the copilot `agent` script. Key cases:
 - Replace `$AGENT_CMD "$prompt"` with `agent run "$prompt"` everywhere
   (currently one call site inside `run_agent_with_retry`).
 - Update the usage string to remove the `--agent` reference.
+- The `--for-planning` flag (introduced by the planner-loop merge) is retained
+  as-is.
 
 The `agent` binary is expected to be on `PATH`; the worker Dockerfile ensures
 this. Tests stub it by name.
@@ -135,6 +137,14 @@ this. Tests stub it by name.
   "$JIRA_PROJECT"`.
 - Remove the COPY / chmod for `init-copilot`.
 
+### `planner/Dockerfile`
+
+- Add `COPY workers/claude/agent /usr/local/bin/agent` and `chmod +x`.
+- Update ENTRYPOINT: replace `init-claude && exec loop --for-planning --project
+  "$JIRA_PROJECT" --agent 'claude --dangerously-skip-permissions -p'` with
+  `agent init && exec loop --for-planning --project "$JIRA_PROJECT"`.
+- Remove the COPY / chmod for `init-claude`.
+
 ## Test strategy
 
 ### New: `workers/claude/agent.bats` and `workers/copilot/agent.bats`
@@ -167,6 +177,9 @@ literal argument list including the old CLI flags need updating.
    remove `init-claude` install.
 8. Update `workers/copilot/Dockerfile`: install `agent`, update ENTRYPOINT,
    remove `init-copilot` install.
+8a. Update `planner/Dockerfile`: install `workers/claude/agent`, update
+    ENTRYPOINT to `agent init && exec loop --for-planning --project "$JIRA_PROJECT"`,
+    remove `init-claude` install.
 9. Delete `workers/claude/init-claude.sh`, `workers/claude/init-claude.bats`,
    `workers/copilot/init-copilot.sh` (logic is now in `agent`).
 10. Run all bats test suites to confirm no regressions.

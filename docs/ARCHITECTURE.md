@@ -18,7 +18,7 @@ Worker-based pull model where agents poll Jira directly for work. Jira is the si
 
 ```
 claim/          CLI tool — claim Jira issues
-loop/           CLI tool — agent-agnostic claim/work loop
+loop/           CLI tool — agent-agnostic claim/work loop (implementation and planning modes)
 worker-builder/ CLI tool — build worker Docker images from a project devcontainer
 factory/        CLI tool — start/stop/scale/monitor worker containers
 
@@ -26,6 +26,8 @@ workers/
   claude/       Dockerfile: loop + Claude CLI
   copilot/      Dockerfile: loop + Copilot CLI
   codex/        Dockerfile: loop + Codex CLI
+
+planner/        Dockerfile: loop --for-planning + Claude CLI
 
 legacy/         Previous hub-based implementation (reference only)
 ```
@@ -54,18 +56,19 @@ Reads `JIRA_SITE`, `JIRA_EMAIL`, `JIRA_TOKEN` from environment.
 
 ## `loop` — Agent-agnostic work loop
 
-A standalone CLI that implements the claim/work/report cycle. The agent to run is passed as an argument, making it work with any AI CLI tool.
+A standalone CLI that implements the claim/work/report cycle. The agent to run is passed as an argument, making it work with any AI CLI tool. Pass `--for-planning` to run in planning mode instead of implementation mode.
 
 ```bash
 loop --project MYPROJ --agent "claude --dangerously-skip-permissions -p"
 loop --project MYPROJ --agent "copilot -p"
+loop --project MYPROJ --agent "claude --dangerously-skip-permissions -p" --for-planning
 ```
 
-### Loop flow
+### Implementation loop flow (default)
 
 ```
 loop:
-  1. jira pick --project $PROJECT --account-id $JIRA_ASSIGNEE_ACCOUNT_ID
+  1. claim --project $PROJECT --account-id $JIRA_ASSIGNEE_ACCOUNT_ID
   2. git pull / clone $GIT_REPO_URL
   3. invoke $AGENT with issue title + description as prompt
   4. git commit + push to trunk
@@ -74,7 +77,20 @@ loop:
   goto 1
 ```
 
-`loop` shells out to `jira` for all Jira operations and to `git` for repo operations.
+### Planning loop flow (--for-planning)
+
+```
+loop --for-planning:
+  1. claim --for-planning --project $PROJECT --account-id $JIRA_ASSIGNEE_ACCOUNT_ID
+  2. git pull / clone $GIT_REPO_URL
+  3. invoke $AGENT: "Create a plan … save it in plans/<KEY>.md"
+  4. git add plans/<KEY>.md + commit + push
+  5. jira comment <issueKey> with GitHub blob URL for the plan file
+  6. jira transition <issueKey> "Awaiting Plan Review"
+  goto 1
+```
+
+`loop` shells out to `claim` for Jira operations and to `git` for repo operations.
 
 ### Environment variables
 

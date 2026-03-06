@@ -26,7 +26,7 @@ legacy/         Previous hub-based implementation (reference only)
 ## Conventions
 
 - All tools are bash scripts.
-- Jira operations use `acli` (Atlassian CLI).
+- Jira operations use `acli` (Atlassian CLI). (See `docs/acli.md` whenever interacting with Jira.)
 - All tools read credentials from environment variables — no config files with secrets.
 - `loop` shells out to `claim` for Jira operations; workers are thin Dockerfiles over `loop`.
 
@@ -50,3 +50,17 @@ Agent-specific vars (add on top of the above per worker type):
 | `ANTHROPIC_API_KEY` | `workers/claude` |
 | `GH_TOKEN` | `workers/copilot` |
 | `OPENAI_API_KEY` | `workers/codex` |
+
+## Testing
+
+All tools have corresponding `.bats` test files. Run with `bats <file>`. We have 2 types of tests:
+- Unit tests: test individual tools in isolation, using mocks for external dependencies (e.g. mock `acli` for Jira interactions).
+- Integration tests: test the full flow of `loop` + worker, using real Jira interactions (against a test Jira instance) and real agent CLI calls.
+
+Always make sure to have passing tests.
+
+## Code style
+
+Implement the simplest solution that could possibly work.
+Refactor agressively.
+Keep the codebase decouplbed with well defined responsibilities.
