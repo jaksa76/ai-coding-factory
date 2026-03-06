@@ -167,7 +167,7 @@ while true; do
     # Step 2.5: Feature branch logic (if enabled)
     # Decision matrix: FEATURE_BRANCHES env, needs-branch/skip-branch labels
     USE_FEATURE_BRANCH=false
-    LABELS_JSON="$(acli jira issue get "$ISSUE_KEY" --field labels --output json 2>/dev/null || echo '[]')"
+    LABELS_JSON="$(acli jira workitem view "$ISSUE_KEY" --fields labels --json 2>/dev/null | jq -c '.fields.labels // []' 2>/dev/null || echo '[]')"
     if [[ "${FEATURE_BRANCHES:-false}" == "true" ]]; then
         USE_FEATURE_BRANCH=true
     fi
@@ -258,8 +258,8 @@ Implements [$ISSUE_KEY] $ISSUE_SUMMARY"
             # Step 6: Comment on Jira with PR link
             echo "Posting comment on $ISSUE_KEY..."
             set +e
-            acli jira comment add --issue "$ISSUE_KEY" \
-                --comment "Pull request opened: $PR_URL" 2>/dev/null
+            acli jira workitem comment create --key "$ISSUE_KEY" \
+                --body "Pull request opened: $PR_URL" 2>/dev/null
             COMMENT_EXIT=$?
             set -e
             if [[ "$COMMENT_EXIT" -ne 0 ]]; then
@@ -269,7 +269,7 @@ Implements [$ISSUE_KEY] $ISSUE_SUMMARY"
             # Step 7: Transition to "In Review" (graceful fallback if status absent)
             echo "Transitioning $ISSUE_KEY to In Review..."
             set +e
-            acli jira issue transition --issue "$ISSUE_KEY" \
+            acli jira workitem transition --key "$ISSUE_KEY" \
                 --status "In Review" --yes 2>/dev/null
             IN_REVIEW_EXIT=$?
             set -e
@@ -281,8 +281,8 @@ Implements [$ISSUE_KEY] $ISSUE_SUMMARY"
         # Step 5: Comment on Jira
         echo "Posting comment on $ISSUE_KEY..."
         set +e
-        acli jira comment add --issue "$ISSUE_KEY" \
-            --comment "Implemented: $ISSUE_SUMMARY" 2>/dev/null
+        acli jira workitem comment create --key "$ISSUE_KEY" \
+            --body "Implemented: $ISSUE_SUMMARY" 2>/dev/null
         COMMENT_EXIT=$?
         set -e
         if [[ "$COMMENT_EXIT" -ne 0 ]]; then
@@ -292,7 +292,7 @@ Implements [$ISSUE_KEY] $ISSUE_SUMMARY"
         # Step 6: Transition to Done
         echo "Transitioning $ISSUE_KEY to Done..."
         set +e
-        acli jira issue transition --issue "$ISSUE_KEY" \
+        acli jira workitem transition --key "$ISSUE_KEY" \
             --status "Done" --yes 2>/dev/null
         TRANSITION_EXIT=$?
         set -e

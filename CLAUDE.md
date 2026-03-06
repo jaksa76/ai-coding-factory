@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status
 
 This project is being built fresh. The previous implementation is in `legacy/` for reference.
-See `ARCHITECTURE.md` for the full design, `TODO.md` for the ordered task list, and `TESTING_STRATEGY.md` for how tests are structured and run.
+See `docs/ARCHITECTURE.md` for the full design, `TODO.md` for the ordered task list, and `docs/TESTING_STRATEGY.md` for how tests are structured and run.
 
 ## Repository layout
 
