@@ -85,6 +85,7 @@ configure_git_identity() {
     # Configure git user identity for commits
     git config --global user.name "$GIT_USERNAME"
     git config --global user.email "$JIRA_EMAIL"
+    git config --global pull.rebase true
 }
 
 clone_or_pull() {
