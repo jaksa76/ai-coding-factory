@@ -74,11 +74,19 @@ export GH_USERNAME=<your-github-username>   # for Copilot workers
 ## Running
 
 ```bash
-factory workers        # start 1 implementation worker
-factory workers 3      # start 3 implementation workers
+factory workers                          # start 1 implementation worker
+factory workers 3                        # start 3 implementation workers
+factory workers --env-file .env.factory  # pass environment variables to workers
 ```
 
 This uses the `worker-claude` image by default. Override with `FACTORY_WORKER_IMAGE=<image>` if you want a different image.
+
+The `--env-file` flag (or the `FACTORY_ENV_FILE` environment variable) is forwarded to every `docker run` call, so workers receive your Jira, Git, and agent credentials:
+
+```bash
+export FACTORY_ENV_FILE=.env.factory
+factory workers 3
+```
 
 For lower-level control (e.g. a different agent image):
 
@@ -109,8 +117,9 @@ docker build -f planner/Dockerfile -t planner-claude .
 ### Start planner workers
 
 ```bash
-factory planners       # start 1 planning worker
-factory planners 2     # start 2 planning workers
+factory planners                          # start 1 planning worker
+factory planners 2                        # start 2 planning workers
+factory planners --env-file .env.factory  # pass environment variables to planners
 ```
 
 This uses the `planner-claude` image by default. Override with `FACTORY_PLANNER_IMAGE=<image>`.

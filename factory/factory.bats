@@ -178,6 +178,40 @@ stub_script() {
     [ "$status" -ne 0 ]
 }
 
+@test "add: --env-file passes --env-file to docker run" {
+    local calls_file env_file
+    calls_file="$(mktemp)"
+    env_file="$(mktemp)"
+    stub_script docker "echo \"\$@\" >> '$calls_file'"
+
+    run "$FACTORY" add --image myimage --env-file "$env_file" 1
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$calls_file")" == *"--env-file"* ]]
+    [[ "$(cat "$calls_file")" == *"$env_file"* ]]
+
+    rm -f "$calls_file" "$env_file"
+}
+
+@test "add: --env-file errors when file does not exist" {
+    run "$FACTORY" add --image myimage --env-file /no/such/file 1
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"env file not found"* ]]
+}
+
+@test "add: FACTORY_ENV_FILE is used when no --env-file flag" {
+    local calls_file env_file
+    calls_file="$(mktemp)"
+    env_file="$(mktemp)"
+    stub_script docker "echo \"\$@\" >> '$calls_file'"
+
+    FACTORY_ENV_FILE="$env_file" run "$FACTORY" add --image myimage 1
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$calls_file")" == *"--env-file"* ]]
+    [[ "$(cat "$calls_file")" == *"$env_file"* ]]
+
+    rm -f "$calls_file" "$env_file"
+}
+
 # ── workers ───────────────────────────────────────────────────────────────────
 
 @test "workers: defaults to 1 worker using worker-claude image" {
@@ -223,6 +257,20 @@ stub_script() {
     rm -f "$calls_file"
 }
 
+@test "workers: --env-file passes --env-file to docker run" {
+    local calls_file env_file
+    calls_file="$(mktemp)"
+    env_file="$(mktemp)"
+    stub_script docker "echo \"\$@\" >> '$calls_file'"
+
+    run "$FACTORY" workers --env-file "$env_file" 1
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$calls_file")" == *"--env-file"* ]]
+    [[ "$(cat "$calls_file")" == *"$env_file"* ]]
+
+    rm -f "$calls_file" "$env_file"
+}
+
 # ── planners ──────────────────────────────────────────────────────────────────
 
 @test "planners: defaults to 1 worker using planner-claude image" {
@@ -266,6 +314,20 @@ stub_script() {
     [[ "$(cat "$calls_file")" == *"my-custom-planner"* ]]
 
     rm -f "$calls_file"
+}
+
+@test "planners: --env-file passes --env-file to docker run" {
+    local calls_file env_file
+    calls_file="$(mktemp)"
+    env_file="$(mktemp)"
+    stub_script docker "echo \"\$@\" >> '$calls_file'"
+
+    run "$FACTORY" planners --env-file "$env_file" 1
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$calls_file")" == *"--env-file"* ]]
+    [[ "$(cat "$calls_file")" == *"$env_file"* ]]
+
+    rm -f "$calls_file" "$env_file"
 }
 
 # ── logs ──────────────────────────────────────────────────────────────────────

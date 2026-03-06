@@ -5,9 +5,9 @@ set -euo pipefail
 #
 # Usage:
 #   factory status                        # list running workers
-#   factory workers [count]               # start implementation workers (default 1)
-#   factory planners [count]              # start planning workers (default 1)
-#   factory add --image <img> <count>     # start n workers with a specific image
+#   factory workers [count] [--env-file <file>]   # start implementation workers (default 1)
+#   factory planners [count] [--env-file <file>]  # start planning workers (default 1)
+#   factory add --image <img> <count> [--env-file <file>]  # start n workers
 #   factory logs <worker-id>              # stream logs for a worker
 #   factory stop <worker-id>              # stop a worker
 #   factory stop --all                    # stop all workers
@@ -20,9 +20,10 @@ usage() {
     echo ""
     echo "Commands:"
     echo "  status                        List running workers"
-    echo "  workers [count]               Start implementation workers (default: 1)"
-    echo "  planners [count]              Start planning workers (default: 1)"
-    echo "  add --image <img> <count>     Start n workers with a specific image"
+    echo "  workers [count] [--env-file f]   Start implementation workers (default: 1)"
+    echo "  planners [count] [--env-file f]  Start planning workers (default: 1)"
+    echo "  add --image <img> <count> [--env-file f]"
+    echo "                                Start n workers with a specific image"
     echo "  logs <worker-id>              Stream logs for a worker"
     echo "  stop <worker-id>              Stop a worker"
     echo "  stop --all                    Stop all workers"
@@ -32,6 +33,7 @@ usage() {
     echo "Environment variables:"
     echo "  FACTORY_WORKER_IMAGE          Image used by 'workers' (default: worker-claude)"
     echo "  FACTORY_PLANNER_IMAGE         Image used by 'planners' (default: planner-claude)"
+    echo "  FACTORY_ENV_FILE              Default env file passed to every worker container"
     exit 1
 }
 
@@ -40,16 +42,46 @@ error_exit() {
     exit 1
 }
 
+_parse_count_and_env_file() {
+    # Sets caller-scoped `count` and `env_file_args` array.
+    count="1"
+    env_file_args=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --env-file)
+                [[ -z "${2:-}" ]] && error_exit "--env-file requires a value"
+                env_file_args=(--env-file "$2")
+                shift 2
+                ;;
+            --*)
+                error_exit "Unknown option: $1"
+                ;;
+            *)
+                count="$1"
+                shift
+                ;;
+        esac
+    done
+}
+
 cmd_workers() {
-    local count="${1:-1}"
+    local count env_file_args
+    _parse_count_and_env_file "$@"
     local image="${FACTORY_WORKER_IMAGE:-worker-claude}"
-    cmd_add --image "$image" "$count"
+    local args=(--image "$image")
+    [[ ${#env_file_args[@]} -gt 0 ]] && args+=("${env_file_args[@]}")
+    args+=("$count")
+    cmd_add "${args[@]}"
 }
 
 cmd_planners() {
-    local count="${1:-1}"
+    local count env_file_args
+    _parse_count_and_env_file "$@"
     local image="${FACTORY_PLANNER_IMAGE:-planner-claude}"
-    cmd_add --image "$image" "$count"
+    local args=(--image "$image")
+    [[ ${#env_file_args[@]} -gt 0 ]] && args+=("${env_file_args[@]}")
+    args+=("$count")
+    cmd_add "${args[@]}"
 }
 
 cmd_status() {
@@ -60,6 +92,7 @@ cmd_status() {
 cmd_add() {
     local image=""
     local count=""
+    local env_file=""
     local extra_args=()
 
     while [[ $# -gt 0 ]]; do
@@ -67,6 +100,11 @@ cmd_add() {
             --image)
                 [[ -z "${2:-}" ]] && error_exit "--image requires a value"
                 image="$2"
+                shift 2
+                ;;
+            --env-file)
+                [[ -z "${2:-}" ]] && error_exit "--env-file requires a value"
+                env_file="$2"
                 shift 2
                 ;;
             --)
@@ -89,16 +127,21 @@ cmd_add() {
     [[ ! "$count" =~ ^[0-9]+$ ]] && error_exit "count must be a positive integer"
     [[ "$count" -lt 1 ]] && error_exit "count must be at least 1"
 
+    env_file="${env_file:-${FACTORY_ENV_FILE:-}}"
+    [[ -n "$env_file" && ! -f "$env_file" ]] && error_exit "env file not found: $env_file"
+
+    local env_file_arg=()
+    [[ -n "$env_file" ]] && env_file_arg=(--env-file "$env_file")
+
     local ts
     ts="$(date +%s)"
     for ((i = 1; i <= count; i++)); do
         local name="factory-worker-${ts}-${i}"
-        docker run -d \
-            --restart=on-failure \
-            --label "$WORKER_LABEL" \
-            --name "$name" \
-            "$image" \
-            "${extra_args[@]+"${extra_args[@]}"}"
+        local run_args=(-d --restart=on-failure --label "$WORKER_LABEL" --name "$name")
+        [[ ${#env_file_arg[@]} -gt 0 ]] && run_args+=("${env_file_arg[@]}")
+        run_args+=("$image")
+        [[ ${#extra_args[@]} -gt 0 ]] && run_args+=("${extra_args[@]}")
+        docker run "${run_args[@]}"
     done
 }
 
@@ -183,11 +226,11 @@ case "$1" in
         ;;
     workers)
         shift
-        cmd_workers "${1:-}"
+        cmd_workers "$@"
         ;;
     planners)
         shift
-        cmd_planners "${1:-}"
+        cmd_planners "$@"
         ;;
     add)
         shift
