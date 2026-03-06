@@ -5,7 +5,9 @@ set -euo pipefail
 #
 # Usage:
 #   factory status                        # list running workers
-#   factory add --image <img> --count <n> # start n workers
+#   factory workers [count]               # start implementation workers (default 1)
+#   factory planners [count]              # start planning workers (default 1)
+#   factory add --image <img> <count>     # start n workers with a specific image
 #   factory logs <worker-id>              # stream logs for a worker
 #   factory stop <worker-id>              # stop a worker
 #   factory stop --all                    # stop all workers
@@ -18,18 +20,36 @@ usage() {
     echo ""
     echo "Commands:"
     echo "  status                        List running workers"
-    echo "  add --image <img> --count <n> Start n workers with the given image"
+    echo "  workers [count]               Start implementation workers (default: 1)"
+    echo "  planners [count]              Start planning workers (default: 1)"
+    echo "  add --image <img> <count>     Start n workers with a specific image"
     echo "  logs <worker-id>              Stream logs for a worker"
     echo "  stop <worker-id>              Stop a worker"
     echo "  stop --all                    Stop all workers"
     echo "  import-claude-credentials --env-file <file>"
     echo "                                Import OAuth credentials from ~/.claude/.credentials.json"
+    echo ""
+    echo "Environment variables:"
+    echo "  FACTORY_WORKER_IMAGE          Image used by 'workers' (default: worker-claude)"
+    echo "  FACTORY_PLANNER_IMAGE         Image used by 'planners' (default: planner-claude)"
     exit 1
 }
 
 error_exit() {
     echo "Error: $1" >&2
     exit 1
+}
+
+cmd_workers() {
+    local count="${1:-1}"
+    local image="${FACTORY_WORKER_IMAGE:-worker-claude}"
+    cmd_add --image "$image" "$count"
+}
+
+cmd_planners() {
+    local count="${1:-1}"
+    local image="${FACTORY_PLANNER_IMAGE:-planner-claude}"
+    cmd_add --image "$image" "$count"
 }
 
 cmd_status() {
@@ -160,6 +180,14 @@ case "$1" in
     status)
         shift
         cmd_status
+        ;;
+    workers)
+        shift
+        cmd_workers "${1:-}"
+        ;;
+    planners)
+        shift
+        cmd_planners "${1:-}"
         ;;
     add)
         shift

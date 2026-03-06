@@ -178,6 +178,96 @@ stub_script() {
     [ "$status" -ne 0 ]
 }
 
+# ── workers ───────────────────────────────────────────────────────────────────
+
+@test "workers: defaults to 1 worker using worker-claude image" {
+    local calls_file
+    calls_file="$(mktemp)"
+    stub_script docker "echo \"\$@\" >> '$calls_file'"
+
+    run "$FACTORY" workers
+    [ "$status" -eq 0 ]
+
+    local call_count
+    call_count="$(wc -l < "$calls_file")"
+    [ "$call_count" -eq 1 ]
+    [[ "$(cat "$calls_file")" == *"worker-claude"* ]]
+
+    rm -f "$calls_file"
+}
+
+@test "workers: starts N workers" {
+    local calls_file
+    calls_file="$(mktemp)"
+    stub_script docker "echo \"\$@\" >> '$calls_file'"
+
+    run "$FACTORY" workers 3
+    [ "$status" -eq 0 ]
+
+    local call_count
+    call_count="$(wc -l < "$calls_file")"
+    [ "$call_count" -eq 3 ]
+
+    rm -f "$calls_file"
+}
+
+@test "workers: FACTORY_WORKER_IMAGE overrides default image" {
+    local calls_file
+    calls_file="$(mktemp)"
+    stub_script docker "echo \"\$@\" >> '$calls_file'"
+
+    FACTORY_WORKER_IMAGE=my-custom-worker run "$FACTORY" workers 1
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$calls_file")" == *"my-custom-worker"* ]]
+
+    rm -f "$calls_file"
+}
+
+# ── planners ──────────────────────────────────────────────────────────────────
+
+@test "planners: defaults to 1 worker using planner-claude image" {
+    local calls_file
+    calls_file="$(mktemp)"
+    stub_script docker "echo \"\$@\" >> '$calls_file'"
+
+    run "$FACTORY" planners
+    [ "$status" -eq 0 ]
+
+    local call_count
+    call_count="$(wc -l < "$calls_file")"
+    [ "$call_count" -eq 1 ]
+    [[ "$(cat "$calls_file")" == *"planner-claude"* ]]
+
+    rm -f "$calls_file"
+}
+
+@test "planners: starts N planners" {
+    local calls_file
+    calls_file="$(mktemp)"
+    stub_script docker "echo \"\$@\" >> '$calls_file'"
+
+    run "$FACTORY" planners 2
+    [ "$status" -eq 0 ]
+
+    local call_count
+    call_count="$(wc -l < "$calls_file")"
+    [ "$call_count" -eq 2 ]
+
+    rm -f "$calls_file"
+}
+
+@test "planners: FACTORY_PLANNER_IMAGE overrides default image" {
+    local calls_file
+    calls_file="$(mktemp)"
+    stub_script docker "echo \"\$@\" >> '$calls_file'"
+
+    FACTORY_PLANNER_IMAGE=my-custom-planner run "$FACTORY" planners 1
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$calls_file")" == *"my-custom-planner"* ]]
+
+    rm -f "$calls_file"
+}
+
 # ── logs ──────────────────────────────────────────────────────────────────────
 
 @test "logs: requires worker-id" {
