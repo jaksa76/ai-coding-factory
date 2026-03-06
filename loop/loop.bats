@@ -811,3 +811,261 @@ esac
 
     rm -f "$git_log" "$gh_log"
 }
+
+# ── planning mode ─────────────────────────────────────────────────────────────
+
+# Helper: stub the agent to create plans/PROJ-1.md (required for planning loop
+# to reach git-add/commit/push without the real agent running)
+_setup_planning_agent_stub() {
+    stub_script agent '
+mkdir -p plans
+echo "# Plan" > "plans/PROJ-1.md"
+'
+}
+
+@test "planning mode: happy path: claims issue, clones repo, runs agent, commits plan, transitions to Awaiting Plan Review" {
+    local git_log acli_log
+    git_log="$(mktemp)"
+    acli_log="$(mktemp)"
+
+    stub_script git "
+echo \"\$*\" >> '$git_log'
+case \"\$1\" in
+  clone) mkdir -p \"\${@: -1}/.git\" ;;
+  *) ;;
+esac
+"
+    stub_script acli "
+echo \"\$*\" >> '$acli_log'
+case \"\$*\" in
+  *transitions*) echo '[{\"name\":\"In Progress\"},{\"name\":\"Awaiting Plan Review\"},{\"name\":\"Done\"}]' ;;
+esac
+"
+    _setup_planning_agent_stub
+
+    run "$LOOP" --project PROJ --agent agent --for-planning
+
+    [[ "$output" == *"Working on planning for PROJ-1"* ]]
+    [[ "$output" == *"Cloning"* ]]
+    [[ "$output" == *"Planning phase complete for PROJ-1"* ]]
+
+    # git clone was called
+    [[ "$(cat "$git_log")" == *"clone"* ]]
+    # git push was called
+    [[ "$(cat "$git_log")" == *"push"* ]]
+    # acli comment was called
+    [[ "$(cat "$acli_log")" == *"comment"* ]]
+    # acli transition to Awaiting Plan Review was called
+    [[ "$(cat "$acli_log")" == *"Awaiting Plan Review"* ]]
+
+    rm -f "$git_log" "$acli_log"
+}
+
+@test "planning mode: plan file is written at plans/<ISSUE-KEY>.md in the target repository" {
+    stub_script agent '
+mkdir -p plans
+echo "# Implementation Plan" > "plans/PROJ-1.md"
+'
+    stub_script git '
+case "$1" in
+  clone) mkdir -p "${@: -1}/.git" ;;
+  *) ;;
+esac
+'
+
+    run "$LOOP" --project PROJ --agent agent --for-planning
+
+    [[ -f "$WORK_TMPDIR/repo/plans/PROJ-1.md" ]]
+    [[ "$(cat "$WORK_TMPDIR/repo/plans/PROJ-1.md")" == *"Implementation Plan"* ]]
+}
+
+@test "planning mode: pulls instead of clones when repo directory already exists" {
+    local git_log
+    git_log="$(mktemp)"
+
+    # Pre-create the repo directory to simulate existing clone
+    mkdir -p "$WORK_TMPDIR/repo/.git"
+    mkdir -p "$WORK_TMPDIR/repo/plans"
+
+    stub_script git "echo \"\$*\" >> '$git_log'"
+    _setup_planning_agent_stub
+
+    run "$LOOP" --project PROJ --agent agent --for-planning
+
+    [[ "$output" == *"Pulling latest changes"* ]]
+    [[ "$(cat "$git_log")" == *"pull"* ]]
+    [[ "$(cat "$git_log")" != *"clone"* ]]
+
+    rm -f "$git_log"
+}
+
+@test "planning mode: comment failure is non-fatal: warning printed, loop continues" {
+    _setup_planning_agent_stub
+    stub_script acli '
+case "$*" in
+  *comment*) exit 1 ;;
+  *) ;;
+esac
+'
+
+    run "$LOOP" --project PROJ --agent agent --for-planning
+
+    [[ "$output" == *"Warning: could not post plan comment on PROJ-1"* ]]
+    [[ "$output" == *"Planning phase complete for PROJ-1"* ]]
+}
+
+@test "planning mode: transition failure is non-fatal: warning printed, loop continues" {
+    _setup_planning_agent_stub
+    stub_script acli "
+case \"\$*\" in
+  *transitions*) echo '[{\"name\":\"Awaiting Plan Review\"}]' ;;
+  *transition*) exit 1 ;;
+esac
+"
+
+    run "$LOOP" --project PROJ --agent agent --for-planning
+
+    [[ "$output" == *"Warning: could not transition PROJ-1 to Awaiting Plan Review"* ]]
+    [[ "$output" == *"Planning phase complete for PROJ-1"* ]]
+}
+
+@test "planning mode: Awaiting Plan Review status absent: warning printed, transition skipped, loop continues" {
+    _setup_planning_agent_stub
+    stub_script acli '
+case "$*" in
+  *transitions*) echo '"'"'[{"name":"In Progress"},{"name":"Done"}]'"'"' ;;
+  *) ;;
+esac
+'
+
+    run "$LOOP" --project PROJ --agent agent --for-planning
+
+    [[ "$output" == *"Warning: Awaiting Plan Review status is absent from the workflow"* ]]
+    [[ "$output" == *"Planning phase complete for PROJ-1"* ]]
+}
+
+@test "planning mode: agent receives issue key, summary and description in prompt" {
+    local agent_log
+    agent_log="$(mktemp)"
+    stub_script agent "
+echo \"\$*\" >> '$agent_log'
+mkdir -p plans
+echo '# Plan' > plans/PROJ-1.md
+"
+
+    stub_script acli '
+case "$*" in
+  "jira workitem view"*"--json") echo '"'"'{"key":"PROJ-1","fields":{"description":"Bug details","summary":"Fix the bug"}}'"'"' ;;
+  *) ;;
+esac
+'
+
+    run "$LOOP" --project PROJ --agent agent --for-planning
+
+    [[ "$(cat "$agent_log")" == *"PROJ-1"* ]]
+    [[ "$(cat "$agent_log")" == *"Fix the bug"* ]]
+    [[ "$(cat "$agent_log")" == *"Bug details"* ]]
+
+    rm -f "$agent_log"
+}
+
+@test "planning mode: no issues: waits and polls again when claim exits 2" {
+    local counter_file
+    counter_file="$(mktemp)"
+    echo "0" > "$counter_file"
+
+    _setup_planning_agent_stub
+
+    stub_script claim "
+count=\$(cat '$counter_file')
+echo \$((count + 1)) > '$counter_file'
+if [ \"\$count\" -eq 0 ]; then
+    echo 'No planning issues found.'
+    exit 2
+elif [ \"\$count\" -eq 1 ]; then
+    printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\"}\n'
+else
+    exit 1
+fi
+"
+
+    run "$LOOP" --project PROJ --agent agent --for-planning
+
+    [[ "$output" == *"No planning issues available in project PROJ"* ]]
+    [[ "$output" == *"Waiting"* ]]
+    [[ "$output" == *"Working on planning for PROJ-1"* ]]
+
+    rm -f "$counter_file"
+}
+
+@test "planning mode: NO_ISSUES_WAIT overrides default wait" {
+    local counter_file sleep_log
+    counter_file="$(mktemp)"
+    sleep_log="$(mktemp)"
+    echo "0" > "$counter_file"
+
+    stub_script sleep "echo \"\$*\" >> '$sleep_log'"
+    _setup_planning_agent_stub
+
+    stub_script claim "
+count=\$(cat '$counter_file')
+echo \$((count + 1)) > '$counter_file'
+if [ \"\$count\" -eq 0 ]; then
+    echo 'No planning issues found.'
+    exit 2
+elif [ \"\$count\" -eq 1 ]; then
+    printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\"}\n'
+else
+    exit 1
+fi
+"
+
+    export NO_ISSUES_WAIT=120
+    run "$LOOP" --project PROJ --agent agent --for-planning
+
+    [[ "$(cat "$sleep_log")" == *"120"* ]]
+
+    rm -f "$counter_file" "$sleep_log"
+}
+
+@test "planning mode: comment contains GitHub blob URL for the plan file" {
+    local acli_log
+    acli_log="$(mktemp)"
+
+    _setup_planning_agent_stub
+    stub_script acli "
+echo \"\$*\" >> '$acli_log'
+case \"\$*\" in
+  *transitions*) echo '[{\"name\":\"Awaiting Plan Review\"}]' ;;
+esac
+"
+
+    run "$LOOP" --project PROJ --agent agent --for-planning
+
+    [[ "$(cat "$acli_log")" == *"github.com/gituser/repo/blob/main/plans/PROJ-1.md"* ]]
+
+    rm -f "$acli_log"
+}
+
+@test "planning mode: plan file git-added with correct path before commit" {
+    local git_log
+    git_log="$(mktemp)"
+
+    _setup_planning_agent_stub
+    stub_script git "
+echo \"\$*\" >> '$git_log'
+case \"\$1\" in
+  clone) mkdir -p \"\${@: -1}/.git\" ;;
+  *) ;;
+esac
+"
+
+    run "$LOOP" --project PROJ --agent agent --for-planning
+
+    # git add must include the plan file path
+    [[ "$(cat "$git_log")" == *"add plans/PROJ-1.md"* ]]
+    # git commit follows
+    [[ "$(cat "$git_log")" == *"commit"* ]]
+
+    rm -f "$git_log"
+}

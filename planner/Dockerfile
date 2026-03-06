@@ -39,12 +39,12 @@ USER worker
 RUN curl -fsSL https://claude.ai/install.sh | bash
 USER root
 
-# Install planner-loop, claim, and Claude helper tools
+# Install loop, claim, and Claude helper tools
 # Build context must be the repository root: docker build -f planner/Dockerfile .
 COPY claim/claim /usr/local/bin/claim
-COPY planner/planner-loop /usr/local/bin/planner-loop
+COPY loop/loop /usr/local/bin/loop
 COPY workers/claude/init-claude.sh /usr/local/bin/init-claude
-RUN chmod +x /usr/local/bin/claim /usr/local/bin/planner-loop /usr/local/bin/init-claude
+RUN chmod +x /usr/local/bin/claim /usr/local/bin/loop /usr/local/bin/init-claude
 
 # Ensure ~/.claude directory exists so init-claude can write credentials at runtime
 RUN mkdir -p /home/worker/.claude && chown worker:worker /home/worker/.claude
@@ -54,4 +54,4 @@ WORKDIR /home/worker
 ENV HOME=/home/worker
 ENV PATH="/home/worker/.local/bin:$PATH"
 
-ENTRYPOINT ["bash", "-c", "init-claude && exec planner-loop --project \"$JIRA_PROJECT\" --agent 'claude --dangerously-skip-permissions -p'"]
+ENTRYPOINT ["bash", "-c", "init-claude && exec loop --for-planning --project \"$JIRA_PROJECT\" --agent 'claude --dangerously-skip-permissions -p'"]
