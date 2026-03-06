@@ -4,7 +4,7 @@ set -euo pipefail
 # claim — claim an unassigned Jira issue by assigning it to self
 #
 # Usage:
-#   claim --project <key> --account-id <id>
+#   claim --project <key> --account-id <id> [--for-planning]
 #
 # Environment variables:
 #   JIRA_SITE   — Jira host, e.g. mycompany.atlassian.net
@@ -30,7 +30,9 @@ error_exit() {
 }
 
 authenticate_jira() {
-    if ! acli jira auth status 2>/dev/null | grep -q "Authenticated"; then
+    JIRA_AUTH_STATUS=$(acli jira auth status 2>&1 || true)
+    if echo "$JIRA_AUTH_STATUS" | grep -q "unauthorized"; then
+        echo logging into Jira as "$JIRA_EMAIL" on "$JIRA_SITE"...
         echo "$JIRA_TOKEN" | acli jira auth login \
             --site "$JIRA_SITE" \
             --email "$JIRA_EMAIL" \

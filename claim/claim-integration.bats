@@ -14,7 +14,7 @@ ENV_FILE="$(cd "$BATS_TEST_DIRNAME/.." && pwd)/.env"
 
 # Account ID for jaksa76@gmail.com on jaksa.atlassian.net
 ACCOUNT_ID="712020:2b77122e-3452-4f6b-8fb5-776644a6197c"
-PROJECT="SCRUM"
+PROJECT=${JIRA_PROJECT:-"ACFTEST"}
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

@@ -14,11 +14,7 @@ set -euo pipefail
 #   GIT_REPO_URL              — Repository to work on
 #   GIT_USERNAME              — Git push credentials
 #   GIT_TOKEN                 — Git push credentials
-#   PLAN_BY_DEFAULT           — Optional, see docs/planning-phase.md
-#
-# This loop claims issues in Planning status (via claim --for-planning), prompts the agent to generate a written implementation plan,
-# commits the plan to plans/<ISSUE-KEY>.md in the target repo, posts a Jira comment with the plan link, and transitions the issue to Awaiting Plan Review.
-# It does NOT write any code or proceed to implementation.
+#   PLAN_BY_DEFAULT           — Optional, see docs/planning-phase.md (used by claim)
 
 usage() {
     echo "Usage: planner-loop --project <key> --agent <command>"
@@ -34,6 +30,7 @@ usage() {
     echo ""
     echo "Optional environment variables:"
     echo "  NO_ISSUES_WAIT            Seconds to wait when no issues are available (default: 60)"
+    echo "  INTER_ISSUE_WAIT          Seconds to wait between issues (default: 1200)"
     exit 1
 }
 
@@ -42,7 +39,7 @@ error_exit() {
     exit 1
 }
 
-# Parse args
+# Parse arguments
 PROJECT=""
 AGENT_CMD=""
 while [[ $# -gt 0 ]]; do
@@ -58,8 +55,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-[[ -z "$PROJECT" ]] && error_exit "--project <key> is required"
-[[ -z "$AGENT_CMD" ]]   && error_exit "--agent <command> is required"
+[[ -z "$PROJECT" ]]   && error_exit "--project <key> is required"
+[[ -z "$AGENT_CMD" ]] && error_exit "--agent <command> is required"
 
 [[ -z "${JIRA_SITE:-}" ]]                && error_exit "JIRA_SITE environment variable is not set"
 [[ -z "${JIRA_EMAIL:-}" ]]               && error_exit "JIRA_EMAIL environment variable is not set"
@@ -129,7 +126,6 @@ run_agent_with_retry() {
     done
 }
 
-
 while true; do
     # Step 1: Claim a Jira issue
     echo "Claiming issue from project $PROJECT..."
@@ -156,77 +152,63 @@ while true; do
     ISSUE_DESCRIPTION="$(acli jira workitem view "$ISSUE_KEY" --json 2>/dev/null \
         | jq -r '.fields.description // ""' 2>/dev/null || true)"
 
-    echo "Planning $ISSUE_KEY: $ISSUE_SUMMARY"
+    echo "Working on $ISSUE_KEY: $ISSUE_SUMMARY"
 
-    # Step 2: Clone or pull the target repository
+    # Step 2: Clone or pull the repository
     if [[ -d "$WORK_DIR/.git" ]]; then
         echo "Pulling latest changes for $REPO_NAME..."
-        git -C "$WORK_DIR" remote set-url origin "$AUTH_URL"
+        git -C "$WORK_DIR" remote set-url origin "$GIT_REPO_URL"
         git -C "$WORK_DIR" pull
     else
         echo "Cloning $GIT_REPO_URL..."
-        git clone "$AUTH_URL" "$WORK_DIR"
+        git clone "$GIT_REPO_URL" "$WORK_DIR"
     fi
 
-    # Step 3: Build the plan file path inside the target repo
-    PLAN_FILE="plans/$ISSUE_KEY.md"
-    PLAN_PATH="$WORK_DIR/$PLAN_FILE"
-    mkdir -p "$WORK_DIR/plans"
-
-    # Step 4: Prompt the agent to write the plan file
-    PROMPT="Generate a detailed implementation plan for the issue described below. Write the plan to $PLAN_FILE in the repository root as a Markdown file. Do NOT write any code or make any commits.\n\n"
+    # Step 3: Invoke the agent with the issue as prompt
+    PROMPT="Create a plan for the issue described below and save it in plans/$ISSUE_KEY.md\n\n"
     PROMPT="$PROMPT [$ISSUE_KEY] $ISSUE_SUMMARY"
     [[ -n "$ISSUE_DESCRIPTION" ]] && PROMPT="$PROMPT
 $ISSUE_DESCRIPTION"
-    echo "Running agent to generate plan for $ISSUE_KEY..."
+
+    echo "Running agent for $ISSUE_KEY..."
     echo "=== AGENT START: $ISSUE_KEY ==="
     run_agent_with_retry "$PROMPT" "$ISSUE_KEY"
     echo "=== AGENT END: $ISSUE_KEY ==="
 
-    # Verify the plan file was created
-    if [[ ! -f "$PLAN_PATH" ]]; then
-        error_exit "Agent did not create plan file at $PLAN_FILE"
-    fi
 
-    # Step 5: Commit and push the plan file to the target repo
-    echo "Committing and pushing plan for $ISSUE_KEY..."
-    git -C "$WORK_DIR" add "$PLAN_FILE"
-    git -C "$WORK_DIR" commit -m "Add implementation plan for $ISSUE_KEY"
-    git -C "$WORK_DIR" push
+    # Step 4: Commit and push changes
+    echo "Committing and pushing changes for $ISSUE_KEY..."
+    git -C "$WORK_DIR" add "plans/$ISSUE_KEY.md"
+    git -C "$WORK_DIR" commit -m "Add plan for $ISSUE_KEY"
+    git -C "$WORK_DIR" push "$GIT_REPO_URL" HEAD
 
-    # Construct plan file URL (main branch)
-    PLAN_URL="$(echo "$GIT_REPO_URL" | sed 's/.git$//')/blob/main/$PLAN_FILE"
-
-    # Comment on Jira issue with link to plan
-    echo "Posting plan comment on $ISSUE_KEY..."
+    # Step 5: Comment on Jira
+    PLAN_URL="https://github.com/$GIT_USERNAME/$REPO_NAME/blob/main/plans/$ISSUE_KEY.md"
+    echo "Plan URL: $PLAN_URL"
+    echo "Posting comment on $ISSUE_KEY..."
     set +e
-    acli jira workitem comment --key "$ISSUE_KEY" --comment "Implementation plan published: $PLAN_URL"
+    # plan url in github UI
+    acli jira workitem comment create --key "$ISSUE_KEY" \
+        --body "Created plan: $PLAN_URL" 2>/dev/null
     COMMENT_EXIT=$?
     set -e
     if [[ "$COMMENT_EXIT" -ne 0 ]]; then
-        echo "Warning: could not post plan comment on $ISSUE_KEY"
+        echo "Warning: could not post comment on $ISSUE_KEY"                
     fi
 
-    # Transition issue to Awaiting Plan Review (only if the status exists in the workflow)
-    TRANSITIONS_JSON=$(acli jira workitem transitions --key "$ISSUE_KEY" --json 2>&1) || true
-    APR_AVAILABLE=$(printf '%s\n' "$TRANSITIONS_JSON" \
-        | jq -r '[.[].name] | map(select(. == "Awaiting Plan Review")) | length' 2>/dev/null || echo "0")
-    if [[ "$APR_AVAILABLE" -eq 0 ]]; then
-        echo "Warning: Awaiting Plan Review status is absent from the workflow for $ISSUE_KEY, skipping transition"
-    else
-        echo "Transitioning $ISSUE_KEY to Awaiting Plan Review..."
-        set +e
-        acli jira workitem transition --key "$ISSUE_KEY" --status "Awaiting Plan Review" --yes
-        TRANSITION_EXIT=$?
-        set -e
-        if [[ "$TRANSITION_EXIT" -ne 0 ]]; then
-            echo "Warning: could not transition $ISSUE_KEY to Awaiting Plan Review"
-        fi
+    # Step 6: Transition to Awaiting Plan Review
+    echo "Transitioning $ISSUE_KEY to Awaiting Plan Review..."
+    set +e
+    acli jira workitem transition --key "$ISSUE_KEY" \
+        --status "Awaiting Plan Review" --yes 2>/dev/null
+    TRANSITION_EXIT=$?
+    set -e
+    if [[ "$TRANSITION_EXIT" -ne 0 ]]; then
+        echo "Warning: could not transition $ISSUE_KEY to Awaiting Plan Review"
     fi
 
-    echo "Planning phase complete for $ISSUE_KEY. Moving to next issue."
-    sleep 2
+    echo "Finished planning $ISSUE_KEY."
 
-    inter_issue_wait="${INTER_ISSUE_WAIT:-1200}"
+    inter_issue_wait="${INTER_ISSUE_WAIT:-300}"
     sleep "$inter_issue_wait" # Sleep before claiming the next issue
 done
