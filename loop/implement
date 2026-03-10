@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# implement — implement a specific issue
+#
+# Usage:
+#   implement <issue-key>
+#
+# Environment variables required: same as loop (git, task-manager backend vars)
+
+[[ $# -lt 1 ]] && { echo "Usage: implement <issue-key>" >&2; exit 1; }
+
+ISSUE_KEY="$1"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=git-utils.sh
+source "$SCRIPT_DIR/git-utils.sh"
+
+try_task_manager() {
+    local desc="$1"; shift
+    local rc
+    set +e
+    "$@" 2>/dev/null
+    rc=$?
+    set -e
+    [[ "$rc" -ne 0 ]] && echo "Warning: $desc"
+    return 0
+}
+
+run_agent_with_retry() {
+    local prompt="$1" issue_key="$2"
+    local default_wait=60
+
+    while true; do
+        local tmpout agent_exit=0
+        tmpout="$(mktemp)"
+
+        set +e
+        (cd "$WORK_DIR" && agent run "$prompt") 2>&1 | tee "$tmpout"
+        agent_exit="${PIPESTATUS[0]}"
+        set -e
+
+        if [[ "$agent_exit" -eq 0 ]]; then
+            rm -f "$tmpout"
+            return 0
+        fi
+
+        if grep -qi "rate.limit\|too many requests\|429\|overloaded" "$tmpout"; then
+            local wait_secs="$default_wait"
+            local parsed
+            parsed="$(grep -oiE "retry.?after:? ?[0-9]+" "$tmpout" | grep -oE "[0-9]+" | tail -1 || true)"
+            [[ -n "$parsed" ]] && wait_secs="$parsed"
+            echo "Agent hit rate limit for $issue_key. Waiting ${wait_secs}s before retry..."
+            rm -f "$tmpout"
+            sleep "$wait_secs"
+        else
+            rm -f "$tmpout"
+            return "$agent_exit"
+        fi
+    done
+}
+
+# Prints "true" if a feature branch should be used, "false" otherwise.
+# skip-branch takes precedence over FEATURE_BRANCHES=true and needs-branch.
+use_feature_branch() {
+    local labels_json="$1"
+    local result=false
+    [[ "${FEATURE_BRANCHES:-false}" == "true" ]] && result=true
+    echo "$labels_json" | grep -q '"needs-branch"' && result=true
+    echo "$labels_json" | grep -q '"skip-branch"'  && result=false
+    echo "$result"
+}
+
+# Read issue details (single call to get summary, description, and labels)
+issue_json="$(task-manager view "$ISSUE_KEY" 2>/dev/null || echo '{}')"
+ISSUE_SUMMARY="$(printf '%s\n' "$issue_json" | jq -r '.summary // ""' 2>/dev/null || true)"
+ISSUE_DESCRIPTION="$(printf '%s\n' "$issue_json" | jq -r '.description // ""' 2>/dev/null || true)"
+labels_json="$(printf '%s\n' "$issue_json" | jq -c '.labels // []' 2>/dev/null || echo '[]')"
+
+derive_work_dir
+setup_git_credentials
+configure_git_identity
+clone_or_pull
+
+echo "Working on $ISSUE_KEY: $ISSUE_SUMMARY"
+
+# Feature branch logic
+use_fb="$(use_feature_branch "$labels_json")"
+
+default_branch=""
+feature_branch=""
+if [[ "$use_fb" == "true" ]]; then
+    echo "Feature branch flow enabled for $ISSUE_KEY."
+    default_branch="$(git -C "$WORK_DIR" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')"
+    [[ -z "$default_branch" ]] && default_branch="main"
+    feature_branch="feature/$ISSUE_KEY"
+    if git -C "$WORK_DIR" show-ref --verify --quiet refs/heads/$feature_branch; then
+        echo "Resetting existing $feature_branch to $default_branch..."
+        echo "branch -f $feature_branch $default_branch"
+        git -C "$WORK_DIR" branch -f "$feature_branch" "$default_branch"
+        echo "checkout $feature_branch"
+        git -C "$WORK_DIR" checkout "$feature_branch"
+    else
+        echo "Creating $feature_branch from $default_branch..."
+        echo "checkout -b $feature_branch $default_branch"
+        git -C "$WORK_DIR" checkout -b "$feature_branch" "$default_branch"
+    fi
+fi
+
+# Build implementation prompt
+if [[ "$use_fb" == "true" ]]; then
+    prompt="Implement the issue described below. Make sure to run all necessary tests. Once the issue is implemented, commit all changes to the feature branch feature/$ISSUE_KEY and push the branch. You have the acli tool available for Jira interactions.\n\n"
+else
+    prompt="Implement the issue described below. Make sure to run all necessary tests. Once the issue is implemented, commit the change with a brief description of the change and push the changes. After pushing, update the Jira issue by commenting what was performed and transition the issue to Done. You have the acli tool available for Jira interactions.\n\n"
+fi
+prompt="$prompt [$ISSUE_KEY] $ISSUE_SUMMARY"
+[[ -n "$ISSUE_DESCRIPTION" ]] && prompt="$prompt
+$ISSUE_DESCRIPTION"
+
+plan_file="$WORK_DIR/plans/$ISSUE_KEY.md"
+if [[ -f "$plan_file" ]]; then
+    echo "Plan file found for $ISSUE_KEY, including in prompt..." >&2
+    plan_contents="$(cat "$plan_file")"
+    prompt="$prompt
+
+The following implementation plan has been approved for this issue. Implement according to this plan:
+
+$plan_contents"
+fi
+
+echo "Running agent for $ISSUE_KEY..."
+echo "=== AGENT START: $ISSUE_KEY ==="
+run_agent_with_retry "$prompt" "$ISSUE_KEY"
+echo "=== AGENT END: $ISSUE_KEY ==="
+
+# Push changes
+echo "Pushing changes for $ISSUE_KEY..."
+if [[ "$use_fb" == "true" ]]; then
+    git -C "$WORK_DIR" push "$GIT_REPO_URL" "$feature_branch"
+else
+    git -C "$WORK_DIR" push "$GIT_REPO_URL" HEAD
+fi
+
+if [[ "$use_fb" == "true" ]]; then
+    # Open a pull request
+    jira_url="https://${JIRA_SITE:-}/browse/$ISSUE_KEY"
+    pr_body="Jira: $jira_url
+
+Implements [$ISSUE_KEY] $ISSUE_SUMMARY"
+    echo "Opening pull request for $ISSUE_KEY..."
+    pr_url=""
+    pr_exit=0
+    set +e
+    pr_url="$(cd "$WORK_DIR" && gh pr create \
+        --base "$default_branch" \
+        --head "$feature_branch" \
+        --title "[$ISSUE_KEY] $ISSUE_SUMMARY" \
+        --body "$pr_body" 2>&1)"
+    pr_exit=$?
+    set -e
+
+    if [[ "$pr_exit" -ne 0 ]]; then
+        echo "Warning: could not open pull request for $ISSUE_KEY: $pr_url"
+    else
+        echo "Pull request opened: $pr_url"
+
+        echo "Posting comment on $ISSUE_KEY..."
+        try_task_manager "could not post comment on $ISSUE_KEY" \
+            task-manager comment "$ISSUE_KEY" --comment "Pull request opened: $pr_url"
+
+        echo "Transitioning $ISSUE_KEY to In Review..."
+        try_task_manager "could not transition $ISSUE_KEY to In Review, leaving in current state" \
+            task-manager transition "$ISSUE_KEY" --status "In Review"
+    fi
+else
+    echo "Posting comment on $ISSUE_KEY..."
+    try_task_manager "could not post comment on $ISSUE_KEY" \
+        task-manager comment "$ISSUE_KEY" --comment "Implemented: $ISSUE_SUMMARY"
+
+    echo "Transitioning $ISSUE_KEY to Done..."
+    try_task_manager "could not transition $ISSUE_KEY to Done" \
+        task-manager transition "$ISSUE_KEY" --status "Done"
+fi
+
+echo "Completed $ISSUE_KEY."

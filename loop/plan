@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# plan — create a plan for a specific issue
+#
+# Usage:
+#   plan <issue-key>
+#
+# Environment variables required: same as loop (git, task-manager backend vars)
+
+[[ $# -lt 1 ]] && { echo "Usage: plan <issue-key>" >&2; exit 1; }
+
+ISSUE_KEY="$1"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=git-utils.sh
+source "$SCRIPT_DIR/git-utils.sh"
+
+try_task_manager() {
+    local desc="$1"; shift
+    local rc
+    set +e
+    "$@" 2>/dev/null
+    rc=$?
+    set -e
+    [[ "$rc" -ne 0 ]] && echo "Warning: $desc"
+    return 0
+}
+
+run_agent_with_retry() {
+    local prompt="$1" issue_key="$2"
+    local default_wait=60
+
+    while true; do
+        local tmpout agent_exit=0
+        tmpout="$(mktemp)"
+
+        set +e
+        (cd "$WORK_DIR" && agent run "$prompt") 2>&1 | tee "$tmpout"
+        agent_exit="${PIPESTATUS[0]}"
+        set -e
+
+        if [[ "$agent_exit" -eq 0 ]]; then
+            rm -f "$tmpout"
+            return 0
+        fi
+
+        if grep -qi "rate.limit\|too many requests\|429\|overloaded" "$tmpout"; then
+            local wait_secs="$default_wait"
+            local parsed
+            parsed="$(grep -oiE "retry.?after:? ?[0-9]+" "$tmpout" | grep -oE "[0-9]+" | tail -1 || true)"
+            [[ -n "$parsed" ]] && wait_secs="$parsed"
+            echo "Agent hit rate limit for $issue_key. Waiting ${wait_secs}s before retry..."
+            rm -f "$tmpout"
+            sleep "$wait_secs"
+        else
+            rm -f "$tmpout"
+            return "$agent_exit"
+        fi
+    done
+}
+
+# Read issue details
+issue_json="$(task-manager view "$ISSUE_KEY" 2>/dev/null || echo '{}')"
+ISSUE_SUMMARY="$(printf '%s\n' "$issue_json" | jq -r '.summary // ""' 2>/dev/null || true)"
+ISSUE_DESCRIPTION="$(printf '%s\n' "$issue_json" | jq -r '.description // ""' 2>/dev/null || true)"
+
+derive_work_dir
+setup_git_credentials
+configure_git_identity
+clone_or_pull
+
+echo "Working on planning for $ISSUE_KEY"
+
+# Build prompt and run agent
+prompt="Create a plan for the issue described below and save it in plans/$ISSUE_KEY.md\n\n [$ISSUE_KEY] $ISSUE_SUMMARY"
+[[ -n "$ISSUE_DESCRIPTION" ]] && prompt="$prompt
+$ISSUE_DESCRIPTION"
+echo "Running agent for $ISSUE_KEY..."
+echo "=== AGENT START: $ISSUE_KEY ==="
+run_agent_with_retry "$prompt" "$ISSUE_KEY"
+echo "=== AGENT END: $ISSUE_KEY ==="
+
+# Commit and push the plan
+git -C "$WORK_DIR" add "plans/$ISSUE_KEY.md"
+git -C "$WORK_DIR" commit -m "Add plan for $ISSUE_KEY"
+git -C "$WORK_DIR" push "$GIT_REPO_URL" HEAD
+
+# Comment with plan URL
+plan_url="https://github.com/$GIT_USERNAME/$REPO_NAME/blob/main/plans/$ISSUE_KEY.md"
+echo "Posting plan comment on $ISSUE_KEY..."
+try_task_manager "could not post plan comment on $ISSUE_KEY" \
+    task-manager comment "$ISSUE_KEY" --comment "Created plan: $plan_url"
+
+# Transition to Awaiting Plan Review (graceful fallback if status absent)
+echo "Transitioning $ISSUE_KEY to Awaiting Plan Review..."
+transitions_json="$(task-manager transitions "$ISSUE_KEY" 2>/dev/null || echo '[]')"
+if printf '%s' "$transitions_json" | jq -e '.[] | select(. == "Awaiting Plan Review")' >/dev/null 2>&1; then
+    try_task_manager "could not transition $ISSUE_KEY to Awaiting Plan Review" \
+        task-manager transition "$ISSUE_KEY" --status "Awaiting Plan Review"
+else
+    echo "Warning: Awaiting Plan Review status is absent from the workflow"
+fi
+
+echo "Planning phase complete for $ISSUE_KEY."

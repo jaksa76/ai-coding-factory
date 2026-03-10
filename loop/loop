@@ -16,6 +16,9 @@ set -euo pipefail
 #   GIT_TOKEN                 — Git push credentials
 #   PLAN_BY_DEFAULT           — Optional, see docs/planning-phase.md (used by claim)
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="$PATH:$SCRIPT_DIR"
+
 usage() {
     echo "Usage: loop --project <key> [--for-planning]"
     echo ""
@@ -87,51 +90,13 @@ fi
 [[ -z "${GIT_USERNAME:-}" ]]  && error_exit "GIT_USERNAME environment variable is not set"
 [[ -z "${GIT_TOKEN:-}" ]]     && error_exit "GIT_TOKEN environment variable is not set"
 
-setup_git_credentials() {
-    # Set up git credential store for HTTPS authentication (avoids embedding
-    # credentials in URLs where they could appear in process listings or logs)
-    if [[ "$GIT_REPO_URL" == https://* ]]; then
-        local cred_file host
-        cred_file="$(mktemp)"
-        chmod 600 "$cred_file"
-        host="$(printf '%s\n' "$GIT_REPO_URL" | sed 's|https://||' | cut -d'/' -f1)"
-        printf 'https://%s:%s@%s\n' "$GIT_USERNAME" "$GIT_TOKEN" "$host" > "$cred_file"
-        git config --global credential.helper "store --file $cred_file"
-        trap "rm -f '$cred_file'" EXIT
-    fi
-}
-
-configure_git_identity() {
-    # Configure git user identity for commits
-    git config --global user.name "$GIT_USERNAME"
-    if [[ "${TASK_MANAGER:-jira}" == "github" ]]; then
-        git config --global user.email "$GITHUB_ASSIGNEE@users.noreply.github.com"
-    elif [[ "${TASK_MANAGER:-jira}" == "todo" ]]; then
-        git config --global user.email "${TODO_ASSIGNEE:-agent}@localhost"
-    else
-        git config --global user.email "$JIRA_EMAIL"
-    fi
-    git config --global pull.rebase true
-}
-
-clone_or_pull() {
-    if [[ -d "$WORK_DIR/.git" ]]; then
-        echo "Pulling latest changes for $REPO_NAME..."
-        git -C "$WORK_DIR" remote set-url origin "$GIT_REPO_URL"
-        git -C "$WORK_DIR" pull
-    else
-        echo "Cloning $GIT_REPO_URL..."
-        git clone "$GIT_REPO_URL" "$WORK_DIR"
-    fi
-}
-
 # Extract the JSON block (lines from first '{' onward) from claim output.
 parse_claim_output() {
     local output="$1"
     printf '%s\n' "$output" | awk '/^\{/{f=1} f'
 }
 
-# Claim an issue, setting ISSUE_KEY, ISSUE_SUMMARY, ISSUE_DESCRIPTION.
+# Claim an issue, setting ISSUE_KEY.
 # Pass --for-planning to claim a planning issue.
 # Returns 0 on success; sleeps and returns 1 when no issues are available;
 # exits with the claim exit code on other errors.
@@ -163,276 +128,23 @@ claim_issue() {
     local issue_json
     issue_json="$(parse_claim_output "$claim_output")"
     ISSUE_KEY="$(printf '%s\n' "$issue_json" | jq -r '.key')"
-    ISSUE_SUMMARY="$(printf '%s\n' "$issue_json" | jq -r '.summary')"
-    ISSUE_DESCRIPTION="$(task-manager view "$ISSUE_KEY" 2>/dev/null \
-        | jq -r '.description // ""' 2>/dev/null || true)"
-}
-
-# Prints "true" if a feature branch should be used, "false" otherwise.
-# skip-branch takes precedence over FEATURE_BRANCHES=true and needs-branch.
-use_feature_branch() {
-    local labels_json="$1"
-    local result=false
-    [[ "${FEATURE_BRANCHES:-false}" == "true" ]] && result=true
-    echo "$labels_json" | grep -q '"needs-branch"' && result=true
-    echo "$labels_json" | grep -q '"skip-branch"'  && result=false
-    echo "$result"
-}
-
-# Run a task-manager command, printing a warning on failure instead of exiting.
-try_task_manager() {
-    local desc="$1"; shift
-    local rc
-    set +e
-    "$@" 2>/dev/null
-    rc=$?
-    set -e
-    [[ "$rc" -ne 0 ]] && echo "Warning: $desc"
-    return 0
-}
-
-# Run the agent, retrying on rate-limit errors.
-# Usage: run_agent_with_retry <prompt> <issue_key>
-run_agent_with_retry() {
-    local prompt="$1" issue_key="$2"
-    local default_wait=60
-
-    while true; do
-        local tmpout agent_exit=0
-        tmpout="$(mktemp)"
-
-        # Run agent; stream output to stdout and capture to file for analysis
-        set +e
-        (cd "$WORK_DIR" && agent run "$prompt") 2>&1 | tee "$tmpout"
-        agent_exit="${PIPESTATUS[0]}"
-        set -e
-
-        if [[ "$agent_exit" -eq 0 ]]; then
-            rm -f "$tmpout"
-            return 0
-        fi
-
-        # Check for rate-limit indicators in captured output
-        if grep -qi "rate.limit\|too many requests\|429\|overloaded" "$tmpout"; then
-            # Try to parse a retry-after duration from the output
-            local wait_secs="$default_wait"
-            local parsed
-            parsed="$(grep -oiE "retry.?after:? ?[0-9]+" "$tmpout" | grep -oE "[0-9]+" | tail -1 || true)"
-            [[ -n "$parsed" ]] && wait_secs="$parsed"
-
-            echo "Agent hit rate limit for $issue_key. Waiting ${wait_secs}s before retry..."
-            rm -f "$tmpout"
-            sleep "$wait_secs"
-        else
-            rm -f "$tmpout"
-            return "$agent_exit"
-        fi
-    done
-}
-
-build_implementation_prompt() {
-    local issue_key="$1" issue_summary="$2" issue_description="$3" use_fb="$4"
-    local prompt
-    if [[ "$use_fb" == "true" ]]; then
-        prompt="Implement the issue described below. Make sure to run all necessary tests. Once the issue is implemented, commit all changes to the feature branch feature/$issue_key and push the branch. You have the acli tool available for Jira interactions.\n\n"
-    else
-        prompt="Implement the issue described below. Make sure to run all necessary tests. Once the issue is implemented, commit the change with a brief description of the change and push the changes. After pushing, update the Jira issue by commenting what was performed and transition the issue to Done. You have the acli tool available for Jira interactions.\n\n"
-    fi
-    prompt="$prompt [$issue_key] $issue_summary"
-    [[ -n "$issue_description" ]] && prompt="$prompt
-$issue_description"
-
-    local plan_file="$WORK_DIR/plans/$issue_key.md"
-    if [[ -f "$plan_file" ]]; then
-        echo "Plan file found for $issue_key, including in prompt..." >&2
-        local plan_contents
-        plan_contents="$(cat "$plan_file")"
-        prompt="$prompt
-
-The following implementation plan has been approved for this issue. Implement according to this plan:
-
-$plan_contents"
-    fi
-    printf '%s' "$prompt"
-}
-
-build_planning_prompt() {
-    local issue_key="$1" issue_summary="$2" issue_description="$3"
-    local prompt="Create a plan for the issue described below and save it in plans/$issue_key.md\n\n [$issue_key] $issue_summary"
-    [[ -n "$issue_description" ]] && prompt="$prompt
-$issue_description"
-    printf '%s' "$prompt"
-}
-
-run_implementation_loop() {
-    while true; do
-        # Step 1: Claim a Jira issue
-        claim_issue || continue
-
-        echo "Working on $ISSUE_KEY: $ISSUE_SUMMARY"
-
-        # Step 2: Clone or pull the repository
-        clone_or_pull
-
-        # Step 2.5: Feature branch logic
-        # Decision matrix: FEATURE_BRANCHES env, needs-branch/skip-branch labels
-        local labels_json
-        labels_json="$(task-manager view "$ISSUE_KEY" 2>/dev/null | jq -c '.labels // []' 2>/dev/null || echo '[]')"
-        local use_fb
-        use_fb="$(use_feature_branch "$labels_json")"
-
-        local default_branch="" feature_branch=""
-        if [[ "$use_fb" == "true" ]]; then
-            echo "Feature branch flow enabled for $ISSUE_KEY."
-            default_branch="$(git -C "$WORK_DIR" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')"
-            [[ -z "$default_branch" ]] && default_branch="main"
-            feature_branch="feature/$ISSUE_KEY"
-            if git -C "$WORK_DIR" show-ref --verify --quiet refs/heads/$feature_branch; then
-                echo "Resetting existing $feature_branch to $default_branch..."
-                echo "branch -f $feature_branch $default_branch"
-                git -C "$WORK_DIR" branch -f "$feature_branch" "$default_branch"
-                echo "checkout $feature_branch"
-                git -C "$WORK_DIR" checkout "$feature_branch"
-            else
-                echo "Creating $feature_branch from $default_branch..."
-                echo "checkout -b $feature_branch $default_branch"
-                git -C "$WORK_DIR" checkout -b "$feature_branch" "$default_branch"
-            fi
-        fi
-
-        # Step 3: Invoke the agent with the issue as prompt
-        local prompt
-        prompt="$(build_implementation_prompt "$ISSUE_KEY" "$ISSUE_SUMMARY" "$ISSUE_DESCRIPTION" "$use_fb")"
-        echo "Running agent for $ISSUE_KEY..."
-        echo "=== AGENT START: $ISSUE_KEY ==="
-        run_agent_with_retry "$prompt" "$ISSUE_KEY"
-        echo "=== AGENT END: $ISSUE_KEY ==="
-
-        # Step 4: Push changes
-        echo "Pushing changes for $ISSUE_KEY..."
-        if [[ "$use_fb" == "true" ]]; then
-            git -C "$WORK_DIR" push "$GIT_REPO_URL" "$feature_branch"
-        else
-            git -C "$WORK_DIR" push "$GIT_REPO_URL" HEAD
-        fi
-
-        if [[ "$use_fb" == "true" ]]; then
-            # Step 5: Open a pull request
-            local jira_url="https://$JIRA_SITE/browse/$ISSUE_KEY"
-            local pr_body="Jira: $jira_url
-
-Implements [$ISSUE_KEY] $ISSUE_SUMMARY"
-            echo "Opening pull request for $ISSUE_KEY..."
-            local pr_url pr_exit
-            set +e
-            pr_url="$(cd "$WORK_DIR" && gh pr create \
-                --base "$default_branch" \
-                --head "$feature_branch" \
-                --title "[$ISSUE_KEY] $ISSUE_SUMMARY" \
-                --body "$pr_body" 2>&1)"
-            pr_exit=$?
-            set -e
-
-            if [[ "$pr_exit" -ne 0 ]]; then
-                echo "Warning: could not open pull request for $ISSUE_KEY: $pr_url"
-            else
-                echo "Pull request opened: $pr_url"
-
-                # Step 6: Comment on Jira with PR link
-                echo "Posting comment on $ISSUE_KEY..."
-                try_task_manager "could not post comment on $ISSUE_KEY" \
-                    task-manager comment "$ISSUE_KEY" --comment "Pull request opened: $pr_url"
-
-                # Step 7: Transition to "In Review" (graceful fallback if status absent)
-                echo "Transitioning $ISSUE_KEY to In Review..."
-                try_task_manager "could not transition $ISSUE_KEY to In Review, leaving in current state" \
-                    task-manager transition "$ISSUE_KEY" --status "In Review"
-            fi
-        else
-            # Step 5: Comment on Jira
-            echo "Posting comment on $ISSUE_KEY..."
-            try_task_manager "could not post comment on $ISSUE_KEY" \
-                task-manager comment "$ISSUE_KEY" --comment "Implemented: $ISSUE_SUMMARY"
-
-            # Step 6: Transition to Done
-            echo "Transitioning $ISSUE_KEY to Done..."
-            try_task_manager "could not transition $ISSUE_KEY to Done" \
-                task-manager transition "$ISSUE_KEY" --status "Done"
-        fi
-
-        echo "Completed $ISSUE_KEY."
-
-        local inter_issue_wait="${INTER_ISSUE_WAIT:-1200}"
-        sleep "$inter_issue_wait" # Sleep before claiming the next issue
-    done
 }
 
 run_planning_loop() {
     while true; do
-        # Step 1: Claim a Jira issue for planning
         claim_issue --for-planning || continue
-
-        echo "Working on planning for $ISSUE_KEY"
-
-        # Step 2: Clone or pull the repository
-        clone_or_pull
-
-        # Step 3: Invoke the agent with the planning prompt
-        local prompt
-        prompt="$(build_planning_prompt "$ISSUE_KEY" "$ISSUE_SUMMARY" "$ISSUE_DESCRIPTION")"
-        echo "Running agent for $ISSUE_KEY..."
-        echo "=== AGENT START: $ISSUE_KEY ==="
-        run_agent_with_retry "$prompt" "$ISSUE_KEY"
-        echo "=== AGENT END: $ISSUE_KEY ==="
-
-        # Step 4: Commit and push the plan
-        git -C "$WORK_DIR" add "plans/$ISSUE_KEY.md"
-        git -C "$WORK_DIR" commit -m "Add plan for $ISSUE_KEY"
-        git -C "$WORK_DIR" push "$GIT_REPO_URL" HEAD
-
-        # Step 5: Comment on Jira with the plan URL
-        local plan_url="https://github.com/$GIT_USERNAME/$REPO_NAME/blob/main/plans/$ISSUE_KEY.md"
-        echo "Posting plan comment on $ISSUE_KEY..."
-        try_task_manager "could not post plan comment on $ISSUE_KEY" \
-            task-manager comment "$ISSUE_KEY" --comment "Created plan: $plan_url"
-
-        # Step 6: Transition to Awaiting Plan Review (check availability first)
-        echo "Transitioning $ISSUE_KEY to Awaiting Plan Review..."
-        local transitions_json
-        transitions_json="$(task-manager transitions "$ISSUE_KEY" 2>/dev/null || echo '[]')"
-        if printf '%s' "$transitions_json" | jq -e '.[] | select(. == "Awaiting Plan Review")' >/dev/null 2>&1; then
-            try_task_manager "could not transition $ISSUE_KEY to Awaiting Plan Review" \
-                task-manager transition "$ISSUE_KEY" --status "Awaiting Plan Review"
-        else
-            echo "Warning: Awaiting Plan Review status is absent from the workflow"
-        fi
-
-        echo "Planning phase complete for $ISSUE_KEY."
-
-        local inter_issue_wait="${INTER_ISSUE_WAIT:-300}"
-        sleep "$inter_issue_wait" # Sleep before claiming the next issue
+        plan "$ISSUE_KEY"
+        sleep "${INTER_ISSUE_WAIT:-300}"
     done
 }
 
-# Derive local repo directory name from URL
-REPO_NAME="$(basename "$GIT_REPO_URL" .git)"
-# LOOP_WORK_DIR allows tests to override the base directory; defaults to cwd
-BASE_DIR="${LOOP_WORK_DIR:-$(pwd)}"
-WORK_DIR="$BASE_DIR/$REPO_NAME"
-
-# If already running from inside the target repo, use the git root as WORK_DIR
-if [[ -z "${LOOP_WORK_DIR:-}" ]]; then
-    _git_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-    if [[ -n "$_git_root" ]]; then
-        _git_remote="$(git -C "$_git_root" remote get-url origin 2>/dev/null || true)"
-        if [[ "$_git_remote" == "$GIT_REPO_URL" ]]; then
-            WORK_DIR="$_git_root"
-        fi
-    fi
-fi
-
-setup_git_credentials
-configure_git_identity
+run_implementation_loop() {
+    while true; do
+        claim_issue || continue
+        implement "$ISSUE_KEY"
+        sleep "${INTER_ISSUE_WAIT:-1200}"
+    done
+}
 
 if [[ "$FOR_PLANNING" == "true" ]]; then
     run_planning_loop
