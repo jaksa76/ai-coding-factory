@@ -20,6 +20,12 @@ cmd="${1:-}"
 
 case "$cmd" in
     init)
+        # Install claude if not already available
+        if ! command -v claude &>/dev/null; then
+            echo "Claude CLI not found, installing..."
+            curl -fsSL https://claude.ai/install.sh | bash
+        fi
+
         # API key mode: no credentials file needed
         if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
             echo "Using ANTHROPIC_API_KEY for authentication — skipping OAuth credential setup"
