@@ -131,7 +131,7 @@ setup_bin() {
     header "[3/5] Setting up bin/"
     mkdir -p "$BIN_DIR"
 
-    for tool in claim loop factory worker-builder; do
+    for tool in task-manager loop factory worker-builder; do
         local src="$REPO_DIR/$tool/$tool"
         local dst="$BIN_DIR/$tool"
         if [[ ! -f "$src" ]]; then

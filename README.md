@@ -1,10 +1,12 @@
 # AI Coding Factory
 
-Autonomous AI agents that pull Jira issues, implement them, and push code — continuously. Inspired by [AI Coding Factories](https://jaksa.wordpress.com/2025/08/07/ai-coding-factories/).
+Autonomous AI agents that pull issues from a task manager, implement them, and push code — continuously. Inspired by [AI Coding Factories](https://jaksa.wordpress.com/2025/08/07/ai-coding-factories/).
 
 ## How it works
 
-Workers poll Jira for unassigned issues, claim one, clone the repo, invoke an AI agent to implement it, commit and push the result, then loop back for the next issue. Jira is the single source of truth — no local task store.
+Workers poll a task manager for unassigned issues, claim one, clone the repo, invoke an AI agent to implement it, commit and push the result, then loop back for the next issue. The task manager is the single source of truth — no local task store.
+
+The task management backend is pluggable via the `TASK_MANAGER` environment variable (default: `jira`).
 
 ```
 [Jira] ← issues queue
@@ -17,16 +19,17 @@ Workers poll Jira for unassigned issues, claim one, clone the repo, invoke an AI
 ## Prerequisites
 
 - Docker (for running workers)
-- A Jira project with issues to work on
+- A task manager project with issues to work on (e.g. Jira)
 - A Git repository for the codebase
 
 ## Configuration
 
-### Configure Jira
+### Configure task manager
 
-Set these environment variables with your Jira credentials and project info:
+The default backend is `jira`. Set `TASK_MANAGER=jira` (or omit it) and provide your Jira credentials:
 
 ```bash
+export TASK_MANAGER=jira   # optional, jira is the default
 export JIRA_SITE=mycompany.atlassian.net
 export JIRA_EMAIL=worker@mycompany.com
 export JIRA_TOKEN=<jira-api-token>

@@ -10,7 +10,7 @@ See `docs/ARCHITECTURE.md` for the full design, `TODO.md` for the ordered task l
 ## Repository layout
 
 ```
-claim/          CLI tool — claim a Jira issue (bash, uses acli)
+task-manager/   CLI tool — pluggable task management (bash, jira backend uses acli)
 loop/           CLI tool — agent-agnostic work loop (bash)
 worker-builder/ CLI tool — build worker images from a project devcontainer (bash)
 factory/        CLI tool — start/stop/monitor worker containers (bash)
@@ -26,18 +26,19 @@ legacy/         Previous hub-based implementation (reference only)
 ## Conventions
 
 - All tools are bash scripts.
-- Jira operations use `acli` (Atlassian CLI). (See `docs/acli.md` whenever interacting with Jira.)
+- Task management uses `task-manager`, a pluggable wrapper (default backend: `jira` via `acli`). (See `docs/acli.md` whenever interacting with Jira.)
 - All tools read credentials from environment variables — no config files with secrets.
-- `loop` shells out to `claim` for Jira operations; workers are thin Dockerfiles over `loop`.
+- `loop` shells out to `task-manager` for task operations; workers are thin Dockerfiles over `loop`.
 
 ## Environment variables
 
 | Variable | Purpose |
 |---|---|
-| `JIRA_SITE` | Jira host, e.g. `mycompany.atlassian.net` |
-| `JIRA_EMAIL` | Jira account email |
-| `JIRA_TOKEN` | Jira API token |
-| `JIRA_ASSIGNEE_ACCOUNT_ID` | Jira account ID used for self-assignment |
+| `TASK_MANAGER` | Task manager backend to use (default: `jira`) |
+| `JIRA_SITE` | Jira host, e.g. `mycompany.atlassian.net` (jira backend) |
+| `JIRA_EMAIL` | Jira account email (jira backend) |
+| `JIRA_TOKEN` | Jira API token (jira backend) |
+| `JIRA_ASSIGNEE_ACCOUNT_ID` | Jira account ID used for self-assignment (jira backend) |
 | `JIRA_PROJECT` | Jira project key to pull issues from, e.g. `MYPROJ` |
 | `GIT_REPO_URL` | Repository to work on |
 | `GIT_USERNAME` | Git push credentials |
