@@ -57,17 +57,17 @@ Extract the per-issue body of `run_implementation_loop()` into a new script `loo
 implement <issue-key>
 ```
 
-### 3. Shared helpers: extract `loop/loop-lib.sh`
+### 3. Shared helpers: extract `loop/git-utils.sh`
 
 Several functions are needed by both scripts and by `loop` itself:
-- `error_exit`
 - `setup_git_credentials`
 - `configure_git_identity`
 - `clone_or_pull`
-- `run_agent_with_retry`
 - WORK_DIR / REPO_NAME derivation logic
 
-Extract these into `loop/loop-lib.sh` (sourced by `loop`, `plan`, and `implement`).
+Extract these into `loop/git-utils.sh` (sourced by `loop`, `plan`, and `implement`).
+
+The rest can be repeated in both scripts for the time being.
 
 ### 4. Simplify `loop`
 
@@ -101,10 +101,10 @@ run_implementation_loop() {
 
 | File | Action |
 |------|--------|
-| `loop/loop-lib.sh` | **Create** — shared helpers (error_exit, setup_git_credentials, configure_git_identity, clone_or_pull, run_agent_with_retry, WORK_DIR logic) |
+| `loop/git-utils.sh` | **Create** — shared helpers (setup_git_credentials, configure_git_identity, clone_or_pull, WORK_DIR logic) |
 | `loop/plan` | **Create** — per-issue planning script |
 | `loop/implement` | **Create** — per-issue implementation script |
-| `loop/loop` | **Modify** — source loop-lib.sh, replace loop bodies with calls to `plan`/`implement` |
+| `loop/loop` | **Modify** — source git-utils.sh, replace loop bodies with calls to `plan`/`implement` |
 | `loop/loop.bats` | **Modify** — update tests to reflect simplified loop; add tests for plan/implement dispatch |
 | `loop/plan.bats` | **Create** — unit tests for `plan` script |
 | `loop/implement.bats` | **Create** — unit tests for `implement` script |
