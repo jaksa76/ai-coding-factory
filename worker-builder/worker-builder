@@ -4,27 +4,26 @@ set -euo pipefail
 # worker-builder — generate a project-specific worker Docker image
 #
 # Usage:
-#   worker-builder build --devcontainer <path> --type <claude|copilot|codex> [--tag <tag>] [--push]
+#   worker-builder build --devcontainer <workspace-folder> --type <claude|copilot|codex> [--tag <tag>] [--push]
 #
-# Reads the supplied devcontainer.json, extracts the base image, then generates
-# and builds a Dockerfile that layers the chosen agent CLI + loop + claim on top
-# of it.
+# Runs devcontainer build to build the project's devcontainer image, then layers
+# the chosen agent CLI + loop + task-manager on top of it.
 
 # Resolve the ai-coding-factory repo root (two levels up from this script)
 TOOL_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$TOOL_DIR/.." && pwd)"
 
 usage() {
-    echo "Usage: worker-builder build --devcontainer <path> --type <agent> [--tag <tag>] [--push]"
+    echo "Usage: worker-builder build --devcontainer <workspace-folder> --type <agent> [--tag <tag>] [--push]"
     echo ""
     echo "Subcommands:"
-    echo "  build   Build a worker image from a local devcontainer.json"
+    echo "  build   Build a worker image from a devcontainer workspace"
     echo ""
     echo "Options:"
-    echo "  --devcontainer <path>  Path to devcontainer.json file"
-    echo "  --type <type>          Agent type: claude, copilot, or codex"
-    echo "  --tag <tag>            Docker image tag (default: worker-<type>:latest)"
-    echo "  --push                 Push the image after building"
+    echo "  --devcontainer <workspace-folder>  Workspace folder containing .devcontainer/"
+    echo "  --type <type>                      Agent type: claude, copilot, or codex"
+    echo "  --tag <tag>                        Docker image tag (default: worker-<type>:latest)"
+    echo "  --push                             Push the image after building"
     exit 1
 }
 
@@ -88,7 +87,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-[[ -z "$DEVCONTAINER_ARG" ]] && error_exit "--devcontainer <path> is required"
+[[ -z "$DEVCONTAINER_ARG" ]] && error_exit "--devcontainer <workspace-folder> is required"
 [[ -z "$AGENT" ]]            && error_exit "--type <agent> is required"
 
 case "$AGENT" in
@@ -103,29 +102,23 @@ echo "Devcontainer: $DEVCONTAINER_ARG"
 echo "Agent: $AGENT"
 echo "Tag:   $TAG"
 
-# ── read devcontainer.json from local path ────────────────────────────────────
+# ── ensure devcontainer CLI is available ──────────────────────────────────────
+
+if ! command -v devcontainer >/dev/null 2>&1; then
+    echo "devcontainer CLI not found — installing via npm..."
+    npm install -g @devcontainers/cli
+fi
+
+# ── build devcontainer base image ─────────────────────────────────────────────
 
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
-# ── parse base image from devcontainer.json ───────────────────────────────────
-
-DEFAULT_BASE="mcr.microsoft.com/devcontainers/base:bullseye"
-BASE_IMAGE="$DEFAULT_BASE"
-
-if [[ -f "$DEVCONTAINER_ARG" ]]; then
-    # Strip // line comments (devcontainer.json allows them; jq does not)
-    CLEAN_JSON="$(sed 's|[[:space:]]//.*$||g; s|^//.*$||g' "$DEVCONTAINER_ARG")"
-    PARSED_IMAGE="$(printf '%s' "$CLEAN_JSON" | jq -r '.image // empty' 2>/dev/null || true)"
-    if [[ -n "$PARSED_IMAGE" ]]; then
-        BASE_IMAGE="$PARSED_IMAGE"
-        echo "Using devcontainer image: $BASE_IMAGE"
-    else
-        echo "No image field in devcontainer.json; using default: $BASE_IMAGE"
-    fi
-else
-    echo "devcontainer.json not found at $DEVCONTAINER_ARG; using default base image: $BASE_IMAGE"
-fi
+BASE_TAG="worker-base-${AGENT}:latest"
+devcontainer build \
+    --workspace-folder "$DEVCONTAINER_ARG" \
+    --image-name "$BASE_TAG"
+BASE_IMAGE="$BASE_TAG"
 
 # ── generate Dockerfile ───────────────────────────────────────────────────────
 

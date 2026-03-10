@@ -11,10 +11,7 @@ setup() {
 
     # Default stubs — overridden per test as needed
     stub docker ""
-    stub jq ""
-
-    # Default jq stub: return empty (no image field)
-    stub_script jq 'printf ""'
+    stub devcontainer ""
 }
 
 teardown() {
@@ -78,19 +75,19 @@ stub_script() {
 }
 
 @test "error: missing --type" {
-    run "$WORKER_BUILDER" build --devcontainer /some/path/devcontainer.json
+    run "$WORKER_BUILDER" build --devcontainer /some/workspace
     [ "$status" -eq 1 ]
     [[ "$output" == *"--type"* ]]
 }
 
 @test "error: unknown option" {
-    run "$WORKER_BUILDER" build --devcontainer /some/path/devcontainer.json --type claude --unknown
+    run "$WORKER_BUILDER" build --devcontainer /some/workspace --type claude --unknown
     [ "$status" -eq 1 ]
     [[ "$output" == *"Unknown option"* ]]
 }
 
 @test "error: unknown agent type" {
-    run "$WORKER_BUILDER" build --devcontainer /some/path/devcontainer.json --type llama
+    run "$WORKER_BUILDER" build --devcontainer /some/workspace --type llama
     [ "$status" -eq 1 ]
     [[ "$output" == *"Unknown agent type"* ]]
     [[ "$output" == *"llama"* ]]
@@ -103,13 +100,13 @@ stub_script() {
 }
 
 @test "error: --type requires a value" {
-    run "$WORKER_BUILDER" build --devcontainer /some/path/devcontainer.json --type --push
+    run "$WORKER_BUILDER" build --devcontainer /some/workspace --type --push
     [ "$status" -eq 1 ]
     [[ "$output" == *"--type requires a value"* ]]
 }
 
 @test "error: --tag requires a value" {
-    run "$WORKER_BUILDER" build --devcontainer /some/path/devcontainer.json --type claude --tag
+    run "$WORKER_BUILDER" build --devcontainer /some/workspace --type claude --tag
     [ "$status" -eq 1 ]
     [[ "$output" == *"--tag requires a value"* ]]
 }
@@ -117,231 +114,156 @@ stub_script() {
 # ── default tag derivation ─────────────────────────────────────────────────────
 
 @test "default tag includes agent type" {
-    local docker_log devcontainer_file
+    local docker_log workspace_dir
     docker_log="$(mktemp)"
-    devcontainer_file="$(mktemp)"
-    printf '{}' > "$devcontainer_file"
+    workspace_dir="$(mktemp -d)"
 
     stub_script docker "echo \"\$@\" >> '$docker_log'"
-    stub_script jq 'printf ""'
 
-    run "$WORKER_BUILDER" build --devcontainer "$devcontainer_file" --type claude
+    run "$WORKER_BUILDER" build --devcontainer "$workspace_dir" --type claude
 
     [[ "$(cat "$docker_log")" == *"worker-claude:latest"* ]]
 
-    rm -f "$docker_log" "$devcontainer_file"
+    rm -f "$docker_log"
+    rm -rf "$workspace_dir"
 }
 
 @test "--tag overrides the default image tag" {
-    local docker_log devcontainer_file
+    local docker_log workspace_dir
     docker_log="$(mktemp)"
-    devcontainer_file="$(mktemp)"
-    printf '{}' > "$devcontainer_file"
+    workspace_dir="$(mktemp -d)"
 
     stub_script docker "echo \"\$@\" >> '$docker_log'"
-    stub_script jq 'printf ""'
 
     run "$WORKER_BUILDER" build \
-        --devcontainer "$devcontainer_file" \
+        --devcontainer "$workspace_dir" \
         --type claude \
         --tag my-custom-tag:v1
 
     [[ "$(cat "$docker_log")" == *"my-custom-tag:v1"* ]]
 
-    rm -f "$docker_log" "$devcontainer_file"
+    rm -f "$docker_log"
+    rm -rf "$workspace_dir"
 }
 
-# ── devcontainer.json parsing ─────────────────────────────────────────────────
+# ── devcontainer build invocation ─────────────────────────────────────────────
 
-@test "falls back to default base image when devcontainer.json not found" {
-    stub_script docker "echo \"\$@\""
-    stub_script jq 'printf ""'
+@test "devcontainer build is called with workspace-folder and image-name" {
+    local devcontainer_log workspace_dir
+    devcontainer_log="$(mktemp)"
+    workspace_dir="$(mktemp -d)"
 
-    run "$WORKER_BUILDER" build \
-        --devcontainer /nonexistent/path/devcontainer.json \
-        --type claude
-
-    [[ "$output" == *"devcontainer.json not found"* ]]
-    [[ "$output" == *"mcr.microsoft.com/devcontainers/base:bullseye"* ]]
-}
-
-@test "uses image field from devcontainer.json" {
-    local devcontainer_file
-    devcontainer_file="$(mktemp)"
-    printf '{"image": "node:18-bullseye"}' > "$devcontainer_file"
-
-    stub_script docker "echo \"\$@\""
-    # Use the real jq for this test
-    rm -f "$STUB_DIR/jq"
+    stub_script devcontainer "echo \"\$@\" >> '$devcontainer_log'"
 
     run "$WORKER_BUILDER" build \
-        --devcontainer "$devcontainer_file" \
+        --devcontainer "$workspace_dir" \
         --type claude
 
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"node:18-bullseye"* ]]
-    [[ "$output" == *"FROM node:18-bullseye"* ]]
+    local args
+    args="$(cat "$devcontainer_log")"
+    [[ "$args" == *"build"* ]]
+    [[ "$args" == *"--workspace-folder"* ]]
+    [[ "$args" == *"$workspace_dir"* ]]
+    [[ "$args" == *"--image-name"* ]]
+    [[ "$args" == *"worker-base-claude:latest"* ]]
 
-    rm -f "$devcontainer_file"
-}
-
-@test "strips // comments from devcontainer.json before parsing" {
-    local devcontainer_file
-    devcontainer_file="$(mktemp)"
-    printf '// project devcontainer\n{"image": "ubuntu:22.04" // base image\n}' > "$devcontainer_file"
-
-    stub_script docker "echo \"\$@\""
-    rm -f "$STUB_DIR/jq"
-
-    run "$WORKER_BUILDER" build \
-        --devcontainer "$devcontainer_file" \
-        --type claude
-
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"ubuntu:22.04"* ]]
-    [[ "$output" == *"FROM ubuntu:22.04"* ]]
-
-    rm -f "$devcontainer_file"
-}
-
-@test "falls back to default when devcontainer.json has no image field" {
-    local devcontainer_file
-    devcontainer_file="$(mktemp)"
-    printf '{"name": "My Project"}' > "$devcontainer_file"
-
-    stub_script docker "echo \"\$@\""
-    rm -f "$STUB_DIR/jq"
-
-    run "$WORKER_BUILDER" build \
-        --devcontainer "$devcontainer_file" \
-        --type claude
-
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"No image field in devcontainer.json"* ]]
-    [[ "$output" == *"mcr.microsoft.com/devcontainers/base:bullseye"* ]]
-
-    rm -f "$devcontainer_file"
+    rm -f "$devcontainer_log"
+    rm -rf "$workspace_dir"
 }
 
 # ── Dockerfile generation ─────────────────────────────────────────────────────
 
-@test "generated Dockerfile starts with FROM <base-image>" {
-    local devcontainer_file
-    devcontainer_file="$(mktemp)"
-    printf '{}' > "$devcontainer_file"
-
-    stub_script docker "echo \"\$@\""
-    stub_script jq 'printf ""'
+@test "generated Dockerfile starts with FROM worker-base-<agent>:latest" {
+    local workspace_dir
+    workspace_dir="$(mktemp -d)"
 
     run "$WORKER_BUILDER" build \
-        --devcontainer "$devcontainer_file" \
+        --devcontainer "$workspace_dir" \
         --type claude
 
-    [[ "$output" == *"FROM mcr.microsoft.com/devcontainers/base:bullseye"* ]]
+    [[ "$output" == *"FROM worker-base-claude:latest"* ]]
 
-    rm -f "$devcontainer_file"
+    rm -rf "$workspace_dir"
 }
 
 @test "claude: Dockerfile installs Claude Code CLI" {
-    local devcontainer_file
-    devcontainer_file="$(mktemp)"
-    printf '{}' > "$devcontainer_file"
-
-    stub_script docker "echo \"\$@\""
-    stub_script jq 'printf ""'
+    local workspace_dir
+    workspace_dir="$(mktemp -d)"
 
     run "$WORKER_BUILDER" build \
-        --devcontainer "$devcontainer_file" \
+        --devcontainer "$workspace_dir" \
         --type claude
 
     [[ "$output" == *"claude.ai/install.sh"* ]]
 
-    rm -f "$devcontainer_file"
+    rm -rf "$workspace_dir"
 }
 
 @test "copilot: Dockerfile installs gh CLI and @github/copilot" {
-    local devcontainer_file
-    devcontainer_file="$(mktemp)"
-    printf '{}' > "$devcontainer_file"
-
-    stub_script docker "echo \"\$@\""
-    stub_script jq 'printf ""'
+    local workspace_dir
+    workspace_dir="$(mktemp -d)"
 
     run "$WORKER_BUILDER" build \
-        --devcontainer "$devcontainer_file" \
+        --devcontainer "$workspace_dir" \
         --type copilot
 
     [[ "$output" == *"gh"* ]]
     [[ "$output" == *"@github/copilot"* ]]
 
-    rm -f "$devcontainer_file"
+    rm -rf "$workspace_dir"
 }
 
 @test "codex: Dockerfile installs @openai/codex" {
-    local devcontainer_file
-    devcontainer_file="$(mktemp)"
-    printf '{}' > "$devcontainer_file"
-
-    stub_script docker "echo \"\$@\""
-    stub_script jq 'printf ""'
+    local workspace_dir
+    workspace_dir="$(mktemp -d)"
 
     run "$WORKER_BUILDER" build \
-        --devcontainer "$devcontainer_file" \
+        --devcontainer "$workspace_dir" \
         --type codex
 
     [[ "$output" == *"@openai/codex"* ]]
 
-    rm -f "$devcontainer_file"
+    rm -rf "$workspace_dir"
 }
 
 @test "generated Dockerfile installs acli" {
-    local devcontainer_file
-    devcontainer_file="$(mktemp)"
-    printf '{}' > "$devcontainer_file"
-
-    stub_script docker "echo \"\$@\""
-    stub_script jq 'printf ""'
+    local workspace_dir
+    workspace_dir="$(mktemp -d)"
 
     run "$WORKER_BUILDER" build \
-        --devcontainer "$devcontainer_file" \
+        --devcontainer "$workspace_dir" \
         --type claude
 
     [[ "$output" == *"acli"* ]]
 
-    rm -f "$devcontainer_file"
+    rm -rf "$workspace_dir"
 }
 
 @test "generated Dockerfile copies loop and claim" {
-    local devcontainer_file
-    devcontainer_file="$(mktemp)"
-    printf '{}' > "$devcontainer_file"
-
-    stub_script docker "echo \"\$@\""
-    stub_script jq 'printf ""'
+    local workspace_dir
+    workspace_dir="$(mktemp -d)"
 
     run "$WORKER_BUILDER" build \
-        --devcontainer "$devcontainer_file" \
+        --devcontainer "$workspace_dir" \
         --type claude
 
     [[ "$output" == *"COPY claim/claim"* ]]
     [[ "$output" == *"COPY loop/loop"* ]]
 
-    rm -f "$devcontainer_file"
+    rm -rf "$workspace_dir"
 }
 
 # ── docker build / push ───────────────────────────────────────────────────────
 
 @test "docker build is called with the generated tag" {
-    local docker_log devcontainer_file
+    local docker_log workspace_dir
     docker_log="$(mktemp)"
-    devcontainer_file="$(mktemp)"
-    printf '{}' > "$devcontainer_file"
+    workspace_dir="$(mktemp -d)"
 
     stub_script docker "echo \"\$@\" >> '$docker_log'"
-    stub_script jq 'printf ""'
 
     run "$WORKER_BUILDER" build \
-        --devcontainer "$devcontainer_file" \
+        --devcontainer "$workspace_dir" \
         --type claude \
         --tag test-image:v2
 
@@ -350,20 +272,19 @@ stub_script() {
     [[ "$docker_args" == *"build"* ]]
     [[ "$docker_args" == *"test-image:v2"* ]]
 
-    rm -f "$docker_log" "$devcontainer_file"
+    rm -f "$docker_log"
+    rm -rf "$workspace_dir"
 }
 
 @test "--push: docker push is called after build" {
-    local docker_log devcontainer_file
+    local docker_log workspace_dir
     docker_log="$(mktemp)"
-    devcontainer_file="$(mktemp)"
-    printf '{}' > "$devcontainer_file"
+    workspace_dir="$(mktemp -d)"
 
     stub_script docker "echo \"\$@\" >> '$docker_log'"
-    stub_script jq 'printf ""'
 
     run "$WORKER_BUILDER" build \
-        --devcontainer "$devcontainer_file" \
+        --devcontainer "$workspace_dir" \
         --type claude \
         --tag test-image:v2 \
         --push
@@ -373,55 +294,49 @@ stub_script() {
     [[ "$docker_args" == *"push"* ]]
     [[ "$docker_args" == *"test-image:v2"* ]]
 
-    rm -f "$docker_log" "$devcontainer_file"
+    rm -f "$docker_log"
+    rm -rf "$workspace_dir"
 }
 
 @test "without --push: docker push is NOT called" {
-    local docker_log devcontainer_file
+    local docker_log workspace_dir
     docker_log="$(mktemp)"
-    devcontainer_file="$(mktemp)"
-    printf '{}' > "$devcontainer_file"
+    workspace_dir="$(mktemp -d)"
 
     stub_script docker "echo \"\$@\" >> '$docker_log'"
-    stub_script jq 'printf ""'
 
     run "$WORKER_BUILDER" build \
-        --devcontainer "$devcontainer_file" \
+        --devcontainer "$workspace_dir" \
         --type claude \
         --tag test-image:v2
 
     [[ "$(cat "$docker_log")" != *"push"* ]]
 
-    rm -f "$docker_log" "$devcontainer_file"
+    rm -f "$docker_log"
+    rm -rf "$workspace_dir"
 }
 
 @test "docker build failure propagates non-zero exit" {
-    local devcontainer_file
-    devcontainer_file="$(mktemp)"
-    printf '{}' > "$devcontainer_file"
+    local workspace_dir
+    workspace_dir="$(mktemp -d)"
 
     stub_exit docker 1 "Build failed"
-    stub_script jq 'printf ""'
 
     run "$WORKER_BUILDER" build \
-        --devcontainer "$devcontainer_file" \
+        --devcontainer "$workspace_dir" \
         --type claude
 
     [ "$status" -ne 0 ]
 
-    rm -f "$devcontainer_file"
+    rm -rf "$workspace_dir"
 }
 
 @test "prints Done message with image tag on success" {
-    local devcontainer_file
-    devcontainer_file="$(mktemp)"
-    printf '{}' > "$devcontainer_file"
-
-    stub_script docker "echo \"\$@\""
-    stub_script jq 'printf ""'
+    local workspace_dir
+    workspace_dir="$(mktemp -d)"
 
     run "$WORKER_BUILDER" build \
-        --devcontainer "$devcontainer_file" \
+        --devcontainer "$workspace_dir" \
         --type claude \
         --tag final-image:latest
 
@@ -429,5 +344,5 @@ stub_script() {
     [[ "$output" == *"Done"* ]]
     [[ "$output" == *"final-image:latest"* ]]
 
-    rm -f "$devcontainer_file"
+    rm -rf "$workspace_dir"
 }
