@@ -1,0 +1,196 @@
+# TODO.md backend for task-manager
+# Sourced by task-manager; implements tm_* functions using a local TODO.md file.
+#
+# Checkbox → status mapping:
+#   - [ ]  Open (claimable)
+#   - [>]  In Progress
+#   - [~]  In Planning
+#   - [?]  Awaiting Plan Review
+#   - [p]  Plan Approved
+#   - [x]  Done
+#
+# The TODO_FILE env var must be set to the path of the TODO.md file.
+
+_todo_summary() {
+    local line="$1"
+    # Strip the checkbox prefix: "- [X] " → remainder
+    echo "$line" | sed 's/^- \[.\] *//'
+}
+
+_todo_set_state() {
+    local file="$1" lineno="$2" char="$3"
+    sed -i "${lineno}s/^- \[.\]/- [${char}]/" "$file"
+}
+
+_todo_filter_planning() {
+    local file="$1"
+    if [[ "${PLAN_BY_DEFAULT:-false}" == "true" ]]; then
+        grep -n '^\- \[ \]' "$file" | grep -v '\[skip-plan\]'
+    else
+        grep -n '^\- \[ \]' "$file" | grep '\[needs-plan\]'
+    fi
+}
+
+_todo_filter_implementation() {
+    local file="$1"
+    if [[ "${PLAN_BY_DEFAULT:-false}" == "true" ]]; then
+        grep -n '^\- \[ \]' "$file" | grep -E '\[plan-approved\]|\[skip-plan\]'
+    else
+        grep -n '^\- \[ \]' "$file" | grep -v '\[needs-plan\]'
+    fi
+}
+
+_todo_filter() {
+    # Returns ALL matching lines (format: "lineno:content")
+    local file="$1" for_planning="$2"
+    if [[ "$for_planning" -eq 1 ]]; then
+        _todo_filter_planning "$file"
+    else
+        _todo_filter_implementation "$file"
+    fi
+}
+
+tm_auth() {
+    : # no-op — no credentials required
+}
+
+tm_claim() {
+    local file="" account_id="" for_planning=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project)      file="$2";       shift 2 ;;
+            --account-id)   account_id="$2"; shift 2 ;;
+            --for-planning) for_planning=1;  shift 1 ;;
+            *) echo "Error: unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [[ -z "$file" ]] && { echo "Error: --project <path> is required" >&2; exit 1; }
+    [[ ! -f "$file" ]] && { echo "Error: TODO file not found: $file" >&2; exit 1; }
+
+    export TODO_FILE="$file"
+
+    while true; do
+        local match
+        match=$(_todo_filter "$file" "$for_planning" | head -1)
+
+        if [[ -z "$match" ]]; then
+            echo "No eligible items found. Retrying in 30s..." >&2
+            sleep 30
+            continue
+        fi
+
+        local lineno summary
+        lineno="${match%%:*}"
+        summary=$(_todo_summary "${match#*:}")
+
+        if [[ "$for_planning" -eq 1 ]]; then
+            _todo_set_state "$file" "$lineno" "~"
+        else
+            _todo_set_state "$file" "$lineno" ">"
+        fi
+
+        echo "Successfully claimed TODO-${lineno}." >&2
+
+        jq -cn \
+            --arg key         "TODO-${lineno}" \
+            --arg summary     "$summary" \
+            --arg description "" \
+            '{key: $key, summary: $summary, description: $description}'
+        break
+    done
+}
+
+tm_list() {
+    local file="" for_planning=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project)      file="$2"; shift 2 ;;
+            --for-planning) for_planning=1; shift 1 ;;
+            *) echo "Error: unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [[ -z "$file" ]] && { echo "Error: --project <path> is required" >&2; exit 1; }
+    [[ ! -f "$file" ]] && { echo "Error: TODO file not found: $file" >&2; exit 1; }
+
+    local results="[]"
+    while IFS=: read -r lineno line; do
+        local summary
+        summary=$(_todo_summary "$line")
+        results=$(printf '%s' "$results" | jq \
+            --arg key "TODO-${lineno}" \
+            --arg summary "$summary" \
+            '. + [{key: $key, summary: $summary}]')
+    done < <(_todo_filter "$file" "$for_planning" | cat)
+
+    printf '%s\n' "$results"
+}
+
+tm_view() {
+    local key="$1"
+    [[ -z "$key" ]] && { echo "Error: issue key required" >&2; exit 1; }
+    [[ -z "${TODO_FILE:-}" ]] && { echo "Error: TODO_FILE is not set" >&2; exit 1; }
+
+    local lineno="${key#TODO-}"
+    local line
+    line=$(sed -n "${lineno}p" "$TODO_FILE")
+    [[ -z "$line" ]] && { echo "Error: no item at line $lineno in $TODO_FILE" >&2; exit 1; }
+
+    local summary
+    summary=$(_todo_summary "$line")
+
+    jq -n \
+        --arg key         "$key" \
+        --arg summary     "$summary" \
+        --arg description "" \
+        '{key: $key, summary: $summary, description: $description, labels: [], assignee: {accountId: ""}}'
+}
+
+tm_assign() {
+    : # no-op — single-user local file; ownership is implied
+}
+
+tm_comment() {
+    local key="$1"; shift
+    local comment=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --comment) comment="$2"; shift 2 ;;
+            *) echo "Error: unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [[ -z "$key" ]]           && { echo "Error: issue key required" >&2; exit 1; }
+    [[ -z "$comment" ]]       && { echo "Error: --comment <text> is required" >&2; exit 1; }
+    [[ -z "${TODO_FILE:-}" ]] && { echo "Error: TODO_FILE is not set" >&2; exit 1; }
+
+    local lineno="${key#TODO-}"
+    sed -i "${lineno}a\\  - Note: ${comment}" "$TODO_FILE"
+}
+
+tm_transition() {
+    local key="$1"; shift
+    local status=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --status) status="$2"; shift 2 ;;
+            *) echo "Error: unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [[ -z "$key" ]]           && { echo "Error: issue key required" >&2; exit 1; }
+    [[ -z "$status" ]]        && { echo "Error: --status <status> is required" >&2; exit 1; }
+    [[ -z "${TODO_FILE:-}" ]] && { echo "Error: TODO_FILE is not set" >&2; exit 1; }
+
+    local lineno="${key#TODO-}"
+    case "$status" in
+        "In Progress")           _todo_set_state "$TODO_FILE" "$lineno" ">" ;;
+        "In Review")             _todo_set_state "$TODO_FILE" "$lineno" ">" ;;
+        "Planning")              _todo_set_state "$TODO_FILE" "$lineno" "~" ;;
+        "Awaiting Plan Review")  _todo_set_state "$TODO_FILE" "$lineno" "?" ;;
+        "Plan Approved")         _todo_set_state "$TODO_FILE" "$lineno" "p" ;;
+        "Done")                  _todo_set_state "$TODO_FILE" "$lineno" "x" ;;
+        *) echo "Warning: unknown status '$status' — no change made" >&2 ;;
+    esac
+}
+
+tm_transitions() {
+    echo '["In Progress","In Review","Planning","Awaiting Plan Review","Plan Approved","Done"]'
+}

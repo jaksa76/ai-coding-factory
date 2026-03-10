@@ -72,6 +72,10 @@ if [[ "${TASK_MANAGER:-jira}" == "github" ]]; then
     [[ -z "${GITHUB_ASSIGNEE:-}" ]] && error_exit "GITHUB_ASSIGNEE is not set"
     ASSIGNEE_ID="$GITHUB_ASSIGNEE"
     export GITHUB_REPO="$PROJECT"
+elif [[ "${TASK_MANAGER:-jira}" == "todo" ]]; then
+    [[ -z "${TODO_ASSIGNEE:-}" ]] && error_exit "TODO_ASSIGNEE is not set"
+    ASSIGNEE_ID="$TODO_ASSIGNEE"
+    export TODO_FILE="$PROJECT"
 else
     [[ -z "${JIRA_SITE:-}" ]]                && error_exit "JIRA_SITE environment variable is not set"
     [[ -z "${JIRA_EMAIL:-}" ]]               && error_exit "JIRA_EMAIL environment variable is not set"
@@ -102,6 +106,8 @@ configure_git_identity() {
     git config --global user.name "$GIT_USERNAME"
     if [[ "${TASK_MANAGER:-jira}" == "github" ]]; then
         git config --global user.email "$GITHUB_ASSIGNEE@users.noreply.github.com"
+    elif [[ "${TASK_MANAGER:-jira}" == "todo" ]]; then
+        git config --global user.email "${TODO_ASSIGNEE:-agent}@localhost"
     else
         git config --global user.email "$JIRA_EMAIL"
     fi

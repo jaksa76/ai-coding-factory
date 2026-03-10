@@ -18,8 +18,9 @@ Standard GFM checkbox syntax, extended with additional checkbox characters to en
 |----------|------------------------|
 | `- [ ]`  | Open (claimable)       |
 | `- [>]`  | In Progress            |
-| `- [?]`  | In Planning            |
-| `- [~]`  | Awaiting Plan Review   |
+| `- [~]`  | In Planning            |
+| `- [?]`  | Awaiting Plan Review   |
+| `- [p]`  | Plan Approved          |
 | `- [x]`  | Done                   |
 
 Example:
@@ -72,7 +73,7 @@ No-op — no credentials required.
 
 ### `tm_transitions` / `tm_transition`
 
-Returns a fixed list: `["In Progress", "In Review", "Planning", "Awaiting Plan Review", "Done"]`. `tm_transition` maps each status to a checkbox character update.
+Returns a fixed list: `["In Progress", "In Review", "Planning", "Awaiting Plan Review", "Plan Approved", "Done"]`. `tm_transition` maps each status to a checkbox character update.
 
 ## `loop` integration
 
@@ -125,7 +126,7 @@ _todo_set_state() {
 ### `tm_claim`
 
 1. Find first `- [ ]` line matching the planning/implementation filter
-2. Replace `[ ]` with `[>]` (or `[?]` for planning) in-place
+2. Replace `[ ]` with `[>]` (or `[~]` for planning) in-place
 3. Output `{"key": "TODO-<N>", "summary": "<text>", "description": ""}`
 
 ### `tm_list`
@@ -153,19 +154,20 @@ Map status string → checkbox char, call `_todo_set_state`.
 4. `todo: list: --for-planning returns only needs-plan items when PLAN_BY_DEFAULT unset`
 5. `todo: list: --for-planning returns all open items when PLAN_BY_DEFAULT=true`
 6. `todo: claim: marks first open item as in-progress`
-7. `todo: claim: --for-planning marks first eligible item as in-planning`
+7. `todo: claim: --for-planning marks first eligible item as [~]`
 8. `todo: claim: returns correct JSON with key, summary, description`
 9. `todo: claim: waits and retries when no open items found`
 10. `todo: view: returns normalized JSON for given key`
 11. `todo: transition: Done marks item as [x]`
 12. `todo: transition: In Progress marks item as [>]`
-13. `todo: transition: Awaiting Plan Review marks item as [~]`
-14. `todo: comment: appends note line below the task`
-15. `todo: transitions: returns JSON array of available statuses`
+13. `todo: transition: Awaiting Plan Review marks item as [?]`
+14. `todo: transition: Plan Approved marks item as [p]`
+15. `todo: comment: appends note line below the task`
+16. `todo: transitions: returns JSON array of available statuses`
 
 ### `loop/loop.bats`
 
-16. `loop: TASK_MANAGER=todo: claims and processes a task from TODO.md`
+17. `loop: TASK_MANAGER=todo: claims and processes a task from TODO.md`
 
 ## Out of scope
 

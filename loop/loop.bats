@@ -1214,3 +1214,33 @@ esac
     [[ "$(cat "$tm_log")" == *"GITHUB_REPO=owner/myrepo"* ]]
     rm -f "$tm_log" "$counter_file"
 }
+
+@test "todo backend: claims and processes a task from TODO.md" {
+    unset JIRA_SITE JIRA_EMAIL JIRA_TOKEN JIRA_ASSIGNEE_ACCOUNT_ID
+    local todo_file
+    todo_file="$(mktemp --suffix=.md)"
+    printf '%s\n' "- [ ] Fix the widget" > "$todo_file"
+
+    local counter_file
+    counter_file="$(mktemp)"
+    echo "0" > "$counter_file"
+
+    stub_script task-manager "
+case \"\$1\" in
+  claim)
+    count=\$(cat '$counter_file')
+    echo \$((count + 1)) > '$counter_file'
+    if [ \"\$count\" -eq 0 ]; then
+        printf '{\"key\":\"TODO-1\",\"summary\":\"Fix the widget\"}\n'
+    else
+        exit 1
+    fi
+    ;;
+  *) ;;
+esac
+"
+    run env TASK_MANAGER=todo TODO_ASSIGNEE=agent1 \
+        "$LOOP" --project "$todo_file"
+    [[ "$output" == *"TODO-1"* ]]
+    rm -f "$todo_file" "$counter_file"
+}

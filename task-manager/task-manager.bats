@@ -650,3 +650,163 @@ esac
     [[ "$(cat "$gh_log")" == *"hello world"* ]]
     rm -f "$gh_log"
 }
+
+# ── todo backend ──────────────────────────────────────────────────────────────
+
+_todo_tmpfile() {
+    # Create a temp TODO.md with given content and echo path
+    local tmpfile
+    tmpfile="$(mktemp --suffix=.md)"
+    printf '%s\n' "$@" > "$tmpfile"
+    echo "$tmpfile"
+}
+
+@test "todo: dispatcher selects todo backend (auth exits 0)" {
+    run env TASK_MANAGER=todo "$TASK_MANAGER" auth
+    [ "$status" -eq 0 ]
+}
+
+@test "todo: list: returns open items as JSON array" {
+    local f
+    f=$(_todo_tmpfile "- [ ] Task one" "- [>] In progress" "- [x] Done item")
+    run env TASK_MANAGER=todo TODO_FILE="$f" "$TASK_MANAGER" list --project "$f"
+    [ "$status" -eq 0 ]
+    [[ "$(printf '%s' "$output" | jq -r '.[0].key')"     == "TODO-1" ]]
+    [[ "$(printf '%s' "$output" | jq -r '.[0].summary')" == "Task one" ]]
+    [[ "$(printf '%s' "$output" | jq 'length')"          == "1" ]]
+    rm -f "$f"
+}
+
+@test "todo: list: excludes in-progress and done items" {
+    local f
+    f=$(_todo_tmpfile "- [>] In progress" "- [x] Done" "- [ ] Open")
+    run env TASK_MANAGER=todo TODO_FILE="$f" "$TASK_MANAGER" list --project "$f"
+    [ "$status" -eq 0 ]
+    [[ "$(printf '%s' "$output" | jq 'length')" == "1" ]]
+    [[ "$(printf '%s' "$output" | jq -r '.[0].summary')" == "Open" ]]
+    rm -f "$f"
+}
+
+@test "todo: list: --for-planning returns only needs-plan items when PLAN_BY_DEFAULT unset" {
+    local f
+    f=$(_todo_tmpfile "- [ ] Regular task" "- [ ] Plan this [needs-plan]")
+    unset PLAN_BY_DEFAULT
+    run env TASK_MANAGER=todo TODO_FILE="$f" "$TASK_MANAGER" list --project "$f" --for-planning
+    [ "$status" -eq 0 ]
+    [[ "$(printf '%s' "$output" | jq 'length')" == "1" ]]
+    [[ "$(printf '%s' "$output" | jq -r '.[0].summary')" == *"needs-plan"* ]]
+    rm -f "$f"
+}
+
+@test "todo: list: --for-planning returns all open items when PLAN_BY_DEFAULT=true" {
+    local f
+    f=$(_todo_tmpfile "- [ ] Regular task" "- [ ] Another task" "- [ ] skip [skip-plan]")
+    run env TASK_MANAGER=todo TODO_FILE="$f" PLAN_BY_DEFAULT=true "$TASK_MANAGER" list --project "$f" --for-planning
+    [ "$status" -eq 0 ]
+    # skip-plan item is excluded; the other 2 are included
+    [[ "$(printf '%s' "$output" | jq 'length')" == "2" ]]
+    rm -f "$f"
+}
+
+@test "todo: claim: marks first open item as [>] (in-progress)" {
+    local f
+    f=$(_todo_tmpfile "- [ ] Task one" "- [ ] Task two")
+    run env TASK_MANAGER=todo TODO_FILE="$f" "$TASK_MANAGER" claim --project "$f" --account-id "agent1"
+    [ "$status" -eq 0 ]
+    [[ "$(head -1 "$f")" == "- [>] Task one" ]]
+    rm -f "$f"
+}
+
+@test "todo: claim: --for-planning marks first eligible item as [~] (in-planning)" {
+    local f
+    f=$(_todo_tmpfile "- [ ] Plan this [needs-plan]" "- [ ] Other task")
+    unset PLAN_BY_DEFAULT
+    run env TASK_MANAGER=todo TODO_FILE="$f" "$TASK_MANAGER" claim --project "$f" --account-id "agent1" --for-planning
+    [ "$status" -eq 0 ]
+    [[ "$(head -1 "$f")" == "- [~] Plan this [needs-plan]" ]]
+    rm -f "$f"
+}
+
+@test "todo: claim: returns correct JSON with key, summary, description" {
+    local f
+    f=$(_todo_tmpfile "- [ ] Fix the bug")
+    run env TASK_MANAGER=todo TODO_FILE="$f" "$TASK_MANAGER" claim --project "$f" --account-id "agent1"
+    [ "$status" -eq 0 ]
+    local json
+    json=$(printf '%s\n' "$output" | grep '^{')
+    [[ "$(printf '%s' "$json" | jq -r '.key')"         == "TODO-1" ]]
+    [[ "$(printf '%s' "$json" | jq -r '.summary')"     == "Fix the bug" ]]
+    [[ "$(printf '%s' "$json" | jq -r '.description')" == "" ]]
+    rm -f "$f"
+}
+
+@test "todo: view: returns normalized JSON for given key" {
+    local f
+    f=$(_todo_tmpfile "- [>] Fix the bug")
+    run env TASK_MANAGER=todo TODO_FILE="$f" "$TASK_MANAGER" view "TODO-1"
+    [ "$status" -eq 0 ]
+    [[ "$(printf '%s' "$output" | jq -r '.key')"     == "TODO-1" ]]
+    [[ "$(printf '%s' "$output" | jq -r '.summary')" == "Fix the bug" ]]
+    rm -f "$f"
+}
+
+@test "todo: transition: In Progress marks item as [>]" {
+    local f
+    f=$(_todo_tmpfile "- [ ] Task")
+    run env TASK_MANAGER=todo TODO_FILE="$f" "$TASK_MANAGER" transition "TODO-1" --status "In Progress"
+    [ "$status" -eq 0 ]
+    [[ "$(head -1 "$f")" == "- [>] Task" ]]
+    rm -f "$f"
+}
+
+@test "todo: transition: Planning marks item as [~]" {
+    local f
+    f=$(_todo_tmpfile "- [ ] Task")
+    run env TASK_MANAGER=todo TODO_FILE="$f" "$TASK_MANAGER" transition "TODO-1" --status "Planning"
+    [ "$status" -eq 0 ]
+    [[ "$(head -1 "$f")" == "- [~] Task" ]]
+    rm -f "$f"
+}
+
+@test "todo: transition: Awaiting Plan Review marks item as [?]" {
+    local f
+    f=$(_todo_tmpfile "- [~] Task")
+    run env TASK_MANAGER=todo TODO_FILE="$f" "$TASK_MANAGER" transition "TODO-1" --status "Awaiting Plan Review"
+    [ "$status" -eq 0 ]
+    [[ "$(head -1 "$f")" == "- [?] Task" ]]
+    rm -f "$f"
+}
+
+@test "todo: transition: Plan Approved marks item as [p]" {
+    local f
+    f=$(_todo_tmpfile "- [?] Task")
+    run env TASK_MANAGER=todo TODO_FILE="$f" "$TASK_MANAGER" transition "TODO-1" --status "Plan Approved"
+    [ "$status" -eq 0 ]
+    [[ "$(head -1 "$f")" == "- [p] Task" ]]
+    rm -f "$f"
+}
+
+@test "todo: transition: Done marks item as [x]" {
+    local f
+    f=$(_todo_tmpfile "- [>] Task")
+    run env TASK_MANAGER=todo TODO_FILE="$f" "$TASK_MANAGER" transition "TODO-1" --status "Done"
+    [ "$status" -eq 0 ]
+    [[ "$(head -1 "$f")" == "- [x] Task" ]]
+    rm -f "$f"
+}
+
+@test "todo: comment: appends note line below the task" {
+    local f
+    f=$(_todo_tmpfile "- [>] Fix the bug" "- [ ] Other task")
+    run env TASK_MANAGER=todo TODO_FILE="$f" "$TASK_MANAGER" comment "TODO-1" --comment "Done in PR #42"
+    [ "$status" -eq 0 ]
+    [[ "$(sed -n '2p' "$f")" == "  - Note: Done in PR #42" ]]
+    rm -f "$f"
+}
+
+@test "todo: transitions: returns JSON array including Plan Approved" {
+    run env TASK_MANAGER=todo "$TASK_MANAGER" transitions "TODO-1"
+    [ "$status" -eq 0 ]
+    [[ "$(printf '%s' "$output" | jq -r '.[]' | grep -c 'Plan Approved')" == "1" ]]
+    [[ "$(printf '%s' "$output" | jq -r '.[0]')" == "In Progress" ]]
+}
