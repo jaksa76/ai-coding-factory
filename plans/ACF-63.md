@@ -44,14 +44,32 @@ Replace the manual parse-and-build pipeline with two steps:
 
 ## Dependency
 
-The `devcontainer` CLI must be available in the environment. It is installable via:
-```
-npm install -g @devcontainers/cli
+The `devcontainer` CLI is installed automatically if not present. Add this near the top of the script (after the helper functions):
+```bash
+if ! command -v devcontainer >/dev/null 2>&1; then
+    echo "devcontainer CLI not found — installing via npm..."
+    npm install -g @devcontainers/cli
+fi
 ```
 
-Add a check at the top of the script:
+This keeps the script self-contained so workers and CI environments don't need to pre-install it.
+
+### `worker-builder/worker-builder-integration.bats`
+
+Add a new integration test file (skipped when Docker or network is unavailable) that:
+
+1. Creates a minimal temporary workspace with a `.devcontainer/devcontainer.json` that uses a small base image (e.g. `ubuntu:22.04`).
+2. Runs `worker-builder build --devcontainer <tmpdir> --type claude --tag test-worker-integration:latest` against the real `devcontainer` CLI and real `docker build`.
+3. Runs the built image with `docker run --rm test-worker-integration:latest <tool> --version` for each expected tool:
+   - `loop` (the work loop script)
+   - `task-manager` (the task manager wrapper)
+   - `claude` (the agent CLI)
+4. Asserts each command exits 0 and produces recognisable output.
+5. Cleans up: removes the image and the temp workspace on exit.
+
+Skip conditions (use `skip` at the top of the test file):
 ```bash
-command -v devcontainer >/dev/null 2>&1 || error_exit "devcontainer CLI not found (npm install -g @devcontainers/cli)"
+if ! command -v docker >/dev/null 2>&1; then skip "docker not available"; fi
 ```
 
 ## Non-goals
@@ -63,5 +81,7 @@ command -v devcontainer >/dev/null 2>&1 || error_exit "devcontainer CLI not foun
 ## Acceptance criteria
 
 - `worker-builder build --devcontainer ./my-project --type claude` calls `devcontainer build --workspace-folder ./my-project --image-name worker-base-claude:latest` then `docker build` using that image as the base
-- All existing `.bats` tests pass with updated mocks
+- If `devcontainer` is not installed, the script installs it via `npm install -g @devcontainers/cli` and continues without user intervention
+- All existing `.bats` unit tests pass with updated mocks
 - A project whose devcontainer uses `build.dockerfile` (not `image`) now builds correctly instead of silently falling back to the default base image
+- The integration test builds a real image, runs it, and confirms `loop`, `task-manager`, and the agent CLI are all present and executable inside the container
