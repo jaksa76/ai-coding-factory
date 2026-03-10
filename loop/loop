@@ -400,6 +400,17 @@ REPO_NAME="$(basename "$GIT_REPO_URL" .git)"
 BASE_DIR="${LOOP_WORK_DIR:-$(pwd)}"
 WORK_DIR="$BASE_DIR/$REPO_NAME"
 
+# If already running from inside the target repo, use the git root as WORK_DIR
+if [[ -z "${LOOP_WORK_DIR:-}" ]]; then
+    _git_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    if [[ -n "$_git_root" ]]; then
+        _git_remote="$(git -C "$_git_root" remote get-url origin 2>/dev/null || true)"
+        if [[ "$_git_remote" == "$GIT_REPO_URL" ]]; then
+            WORK_DIR="$_git_root"
+        fi
+    fi
+fi
+
 setup_git_credentials
 configure_git_identity
 

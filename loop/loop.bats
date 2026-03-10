@@ -314,6 +314,32 @@ esac
     rm -f "$agent_log"
 }
 
+@test "when run from inside the cloned repo, uses git root as work dir (no clone)" {
+    local git_log repo_dir
+    git_log="$(mktemp)"
+    repo_dir="$(mktemp -d)"
+    mkdir -p "$repo_dir/.git"
+
+    stub_script git "
+echo \"\$*\" >> '$git_log'
+if [[ \"\$1\" == 'rev-parse' ]]; then
+    echo '$repo_dir'
+elif [[ \"\$1\" == '-C' && \"\$3\" == 'remote' ]]; then
+    echo '$GIT_REPO_URL'
+fi
+"
+    unset LOOP_WORK_DIR
+    cd "$repo_dir"
+    run "$LOOP" --project PROJ
+
+    # pull was called (not clone) — loop detected it was already inside the repo
+    [[ "$(cat "$git_log")" == *"pull"* ]]
+    [[ "$(cat "$git_log")" != *"clone"* ]]
+
+    rm -f "$git_log"
+    rm -rf "$repo_dir"
+}
+
 @test "pulls instead of clones when repo directory already exists" {
     local git_log
     git_log="$(mktemp)"
