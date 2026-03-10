@@ -143,7 +143,7 @@ run_implementation_loop() {
         # Step 1: Claim a Jira issue
         echo "Claiming issue from project $PROJECT..."
         set +e
-        CLAIM_OUTPUT="$(claim --project "$PROJECT" --account-id "$JIRA_ASSIGNEE_ACCOUNT_ID")"
+        CLAIM_OUTPUT="$(task-manager claim --project "$PROJECT" --account-id "$JIRA_ASSIGNEE_ACCOUNT_ID")"
         CLAIM_EXIT=$?
         set -e
         echo "$CLAIM_OUTPUT"
@@ -161,9 +161,8 @@ run_implementation_loop() {
         ISSUE_JSON="$(printf '%s\n' "$CLAIM_OUTPUT" | awk '/^\{/{f=1} f')"
         ISSUE_KEY="$(printf '%s\n' "$ISSUE_JSON" | jq -r '.key')"
         ISSUE_SUMMARY="$(printf '%s\n' "$ISSUE_JSON" | jq -r '.summary')"
-        # Fetch description separately (claim only outputs key and summary)
-        ISSUE_DESCRIPTION="$(acli jira workitem view "$ISSUE_KEY" --json 2>/dev/null \
-            | jq -r '.fields.description // ""' 2>/dev/null || true)"
+        ISSUE_DESCRIPTION="$(task-manager view "$ISSUE_KEY" 2>/dev/null \
+            | jq -r '.description // ""' 2>/dev/null || true)"
 
         echo "Working on $ISSUE_KEY: $ISSUE_SUMMARY"
 
@@ -173,7 +172,7 @@ run_implementation_loop() {
         # Step 2.5: Feature branch logic (if enabled)
         # Decision matrix: FEATURE_BRANCHES env, needs-branch/skip-branch labels
         USE_FEATURE_BRANCH=false
-        LABELS_JSON="$(acli jira workitem view "$ISSUE_KEY" --fields labels --json 2>/dev/null | jq -c '.fields.labels // []' 2>/dev/null || echo '[]')"
+        LABELS_JSON="$(task-manager view "$ISSUE_KEY" 2>/dev/null | jq -c '.labels // []' 2>/dev/null || echo '[]')"
         if [[ "${FEATURE_BRANCHES:-false}" == "true" ]]; then
             USE_FEATURE_BRANCH=true
         fi
@@ -264,8 +263,8 @@ Implements [$ISSUE_KEY] $ISSUE_SUMMARY"
                 # Step 6: Comment on Jira with PR link
                 echo "Posting comment on $ISSUE_KEY..."
                 set +e
-                acli jira workitem comment create --key "$ISSUE_KEY" \
-                    --body "Pull request opened: $PR_URL" 2>/dev/null
+                task-manager comment "$ISSUE_KEY" \
+                    --comment "Pull request opened: $PR_URL" 2>/dev/null
                 COMMENT_EXIT=$?
                 set -e
                 if [[ "$COMMENT_EXIT" -ne 0 ]]; then
@@ -275,8 +274,8 @@ Implements [$ISSUE_KEY] $ISSUE_SUMMARY"
                 # Step 7: Transition to "In Review" (graceful fallback if status absent)
                 echo "Transitioning $ISSUE_KEY to In Review..."
                 set +e
-                acli jira workitem transition --key "$ISSUE_KEY" \
-                    --status "In Review" --yes 2>/dev/null
+                task-manager transition "$ISSUE_KEY" \
+                    --status "In Review" 2>/dev/null
                 IN_REVIEW_EXIT=$?
                 set -e
                 if [[ "$IN_REVIEW_EXIT" -ne 0 ]]; then
@@ -287,8 +286,8 @@ Implements [$ISSUE_KEY] $ISSUE_SUMMARY"
             # Step 5: Comment on Jira
             echo "Posting comment on $ISSUE_KEY..."
             set +e
-            acli jira workitem comment create --key "$ISSUE_KEY" \
-                --body "Implemented: $ISSUE_SUMMARY" 2>/dev/null
+            task-manager comment "$ISSUE_KEY" \
+                --comment "Implemented: $ISSUE_SUMMARY" 2>/dev/null
             COMMENT_EXIT=$?
             set -e
             if [[ "$COMMENT_EXIT" -ne 0 ]]; then
@@ -298,8 +297,8 @@ Implements [$ISSUE_KEY] $ISSUE_SUMMARY"
             # Step 6: Transition to Done
             echo "Transitioning $ISSUE_KEY to Done..."
             set +e
-            acli jira workitem transition --key "$ISSUE_KEY" \
-                --status "Done" --yes 2>/dev/null
+            task-manager transition "$ISSUE_KEY" \
+                --status "Done" 2>/dev/null
             TRANSITION_EXIT=$?
             set -e
             if [[ "$TRANSITION_EXIT" -ne 0 ]]; then
@@ -319,7 +318,7 @@ run_planning_loop() {
         # Step 1: Claim a Jira issue for planning
         echo "Claiming issue from project $PROJECT..."
         set +e
-        CLAIM_OUTPUT="$(claim --project "$PROJECT" --account-id "$JIRA_ASSIGNEE_ACCOUNT_ID" --for-planning)"
+        CLAIM_OUTPUT="$(task-manager claim --project "$PROJECT" --account-id "$JIRA_ASSIGNEE_ACCOUNT_ID" --for-planning)"
         CLAIM_EXIT=$?
         set -e
         echo "$CLAIM_OUTPUT"
@@ -337,9 +336,8 @@ run_planning_loop() {
         ISSUE_JSON="$(printf '%s\n' "$CLAIM_OUTPUT" | awk '/^\{/{f=1} f')"
         ISSUE_KEY="$(printf '%s\n' "$ISSUE_JSON" | jq -r '.key')"
         ISSUE_SUMMARY="$(printf '%s\n' "$ISSUE_JSON" | jq -r '.summary')"
-        # Fetch description separately (claim only outputs key and summary)
-        ISSUE_DESCRIPTION="$(acli jira workitem view "$ISSUE_KEY" --json 2>/dev/null \
-            | jq -r '.fields.description // ""' 2>/dev/null || true)"
+        ISSUE_DESCRIPTION="$(task-manager view "$ISSUE_KEY" 2>/dev/null \
+            | jq -r '.description // ""' 2>/dev/null || true)"
 
         echo "Working on planning for $ISSUE_KEY"
 
@@ -365,8 +363,8 @@ $ISSUE_DESCRIPTION"
         PLAN_URL="https://github.com/$GIT_USERNAME/$REPO_NAME/blob/main/plans/$ISSUE_KEY.md"
         echo "Posting plan comment on $ISSUE_KEY..."
         set +e
-        acli jira workitem comment create --key "$ISSUE_KEY" \
-            --body "Created plan: $PLAN_URL" 2>/dev/null
+        task-manager comment "$ISSUE_KEY" \
+            --comment "Created plan: $PLAN_URL" 2>/dev/null
         COMMENT_EXIT=$?
         set -e
         if [[ "$COMMENT_EXIT" -ne 0 ]]; then
@@ -375,11 +373,11 @@ $ISSUE_DESCRIPTION"
 
         # Step 6: Transition to Awaiting Plan Review (check availability first)
         echo "Transitioning $ISSUE_KEY to Awaiting Plan Review..."
-        TRANSITIONS_JSON="$(acli jira workitem transitions --key "$ISSUE_KEY" --json 2>/dev/null || echo '[]')"
-        if echo "$TRANSITIONS_JSON" | jq -e '.[] | select(.name == "Awaiting Plan Review")' >/dev/null 2>&1; then
+        TRANSITIONS_JSON="$(task-manager transitions "$ISSUE_KEY" 2>/dev/null || echo '[]')"
+        if printf '%s' "$TRANSITIONS_JSON" | jq -e '.[] | select(. == "Awaiting Plan Review")' >/dev/null 2>&1; then
             set +e
-            acli jira workitem transition --key "$ISSUE_KEY" \
-                --status "Awaiting Plan Review" --yes 2>/dev/null
+            task-manager transition "$ISSUE_KEY" \
+                --status "Awaiting Plan Review" 2>/dev/null
             TRANSITION_EXIT=$?
             set -e
             if [[ "$TRANSITION_EXIT" -ne 0 ]]; then

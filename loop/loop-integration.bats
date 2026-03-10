@@ -9,7 +9,7 @@
 # Creates and deletes real Jira issues in the SCRUM project.
 
 LOOP="$BATS_TEST_DIRNAME/loop"
-REAL_CLAIM="$(cd "$BATS_TEST_DIRNAME/.." && pwd)/claim/claim"
+REAL_TASK_MANAGER="$(cd "$BATS_TEST_DIRNAME/.." && pwd)/task-manager/task-manager"
 ENV_FILE="$(cd "$BATS_TEST_DIRNAME/.." && pwd)/.env"
 
 # Account ID for jaksa76@gmail.com on jaksa.atlassian.net
@@ -169,25 +169,32 @@ setup() {
     LOOP_TMPDIR="$(mktemp -d)"
     export LOOP_WORK_DIR="$LOOP_TMPDIR"
 
-    # Stub dir: no-op sleep + claim wrapper that delegates to real claim once
-    # then exits 1 to terminate the loop's infinite loop.
+    # Stub dir: no-op sleep + task-manager wrapper that delegates to real
+    # task-manager claim once then exits 1 to terminate the loop's infinite loop.
     STUB_DIR="$(mktemp -d)"
     printf '#!/usr/bin/env bash\n' > "$STUB_DIR/sleep"
     chmod +x "$STUB_DIR/sleep"
 
     CLAIM_COUNTER="$(mktemp)"
     echo "0" > "$CLAIM_COUNTER"
-    cat > "$STUB_DIR/claim" << STUB_EOF
+    cat > "$STUB_DIR/task-manager" << STUB_EOF
 #!/usr/bin/env bash
-count=\$(cat '$CLAIM_COUNTER')
-echo \$((count + 1)) > '$CLAIM_COUNTER'
-if [ "\$count" -eq 0 ]; then
-    exec '$REAL_CLAIM' "\$@"
-else
-    exit 1
-fi
+case "\$1" in
+  claim)
+    count=\$(cat '$CLAIM_COUNTER')
+    echo \$((count + 1)) > '$CLAIM_COUNTER'
+    if [ "\$count" -eq 0 ]; then
+        exec '$REAL_TASK_MANAGER' "\$@"
+    else
+        exit 1
+    fi
+    ;;
+  *)
+    exec '$REAL_TASK_MANAGER' "\$@"
+    ;;
+esac
 STUB_EOF
-    chmod +x "$STUB_DIR/claim"
+    chmod +x "$STUB_DIR/task-manager"
 
     # Git identity for commits made during tests
     export GIT_AUTHOR_NAME="Test Agent"
@@ -207,6 +214,7 @@ teardown() {
     rm -rf "${STUB_DIR:-}" "${LOOP_TMPDIR:-}" "${REPO_TMPDIR:-}" \
            "${PLANNER_BARE_REPO:-}" "${PLANNER_LOOP_TMPDIR:-}" "${PLANNER_STUB_DIR:-}"
     rm -f "${CLAIM_COUNTER:-}"
+
 
     # Delete test issues created by this specific test
     if [[ -f "${CLEANUP_FILE:-}" ]]; then
@@ -292,9 +300,9 @@ echo "# Plan for $KEY" > "plans/$KEY.md"
 EOF
     chmod +x "$PLANNER_STUB_DIR/agent"
 
-    # Prepend the planner stub dir and the real claim dir to PATH
-    # ($STUB_DIR/claim from setup() is still the claim entry point)
-    export PATH="$PLANNER_STUB_DIR:$BATS_TEST_DIRNAME/../claim:$PATH"
+    # Prepend the planner stub dir to PATH
+    # ($STUB_DIR/task-manager from setup() is still the task-manager entry point)
+    export PATH="$PLANNER_STUB_DIR:$PATH"
 }
 
 @test "L1: loop --for-planning: PLAN_BY_DEFAULT=false, needs-plan — claimed, plan committed, transitioned" {

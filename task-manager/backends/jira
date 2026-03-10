@@ -1,0 +1,187 @@
+# Jira backend for task-manager
+# Sourced by task-manager; implements tm_* functions using acli jira.
+
+tm_auth() {
+    local auth_status
+    auth_status=$(acli jira auth status 2>&1 || true)
+    if echo "$auth_status" | grep -q "unauthorized"; then
+        echo "Logging into Jira as $JIRA_EMAIL on $JIRA_SITE..." >&2
+        echo "$JIRA_TOKEN" | acli jira auth login \
+            --site "$JIRA_SITE" \
+            --email "$JIRA_EMAIL" \
+            --token
+    fi
+}
+
+_build_search_jql_for_planning() {
+    local project="$1"
+    if [[ "${PLAN_BY_DEFAULT:-false}" == "true" ]]; then
+        echo "project = \"$project\" AND assignee is EMPTY AND status = \"To Do\" AND (labels NOT IN (\"skip-plan\") OR labels is EMPTY)"
+    else
+        echo "project = \"$project\" AND assignee is EMPTY AND status = \"To Do\" AND labels IN (\"needs-plan\")"
+    fi
+}
+
+_build_search_jql_for_implementation() {
+    local project="$1"
+    if [[ "${PLAN_BY_DEFAULT:-false}" == "true" ]]; then
+        echo "project = \"$project\" AND assignee is EMPTY AND (status = \"Plan Approved\" OR (status = \"To Do\" AND labels IN (\"skip-plan\")))"
+    else
+        echo "project = \"$project\" AND assignee is EMPTY AND status = \"To Do\" AND (labels NOT IN (\"needs-plan\") OR labels is EMPTY)"
+    fi
+}
+
+_build_search_jql() {
+    local project="$1" for_planning="$2"
+    if [[ "$for_planning" -eq 1 ]]; then
+        _build_search_jql_for_planning "$project"
+    else
+        _build_search_jql_for_implementation "$project"
+    fi
+}
+
+_assign_and_verify() {
+    local issue_key="$1" account_id="$2"
+    acli jira workitem assign --key "$issue_key" --assignee "$account_id" --yes >&2
+    echo "Waiting 10s to verify assignment..." >&2
+    sleep 10
+    acli jira workitem view "$issue_key" --json 2>&1 \
+        | jq -r '.fields.assignee.accountId // empty' 2>/dev/null || true
+}
+
+tm_claim() {
+    local project="" account_id="" for_planning=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project)      project="$2";    shift 2 ;;
+            --account-id)   account_id="$2"; shift 2 ;;
+            --for-planning) for_planning=1;  shift 1 ;;
+            *) echo "Error: unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [[ -z "$project" ]]    && { echo "Error: --project <key> is required" >&2; exit 1; }
+    [[ -z "$account_id" ]] && { echo "Error: --account-id <id> is required" >&2; exit 1; }
+    [[ -z "${JIRA_SITE:-}" ]]  && { echo "Error: JIRA_SITE environment variable is not set" >&2; exit 1; }
+    [[ -z "${JIRA_EMAIL:-}" ]] && { echo "Error: JIRA_EMAIL environment variable is not set" >&2; exit 1; }
+    [[ -z "${JIRA_TOKEN:-}" ]] && { echo "Error: JIRA_TOKEN environment variable is not set" >&2; exit 1; }
+
+    tm_auth
+
+    while true; do
+        echo "Searching for unassigned open issues in project $project..." >&2
+        local jql search_output
+        jql=$(_build_search_jql "$project" "$for_planning")
+        echo "Running JQL: $jql" >&2
+        search_output=$(acli jira workitem search --jql "$jql" --json --paginate 2>&1) || {
+            echo "Error running search: $search_output" >&2
+            exit 1
+        }
+
+        if [[ -z "$search_output" || "$search_output" == "[]" ]]; then
+            echo "No unassigned open issues found. Retrying in 30s..." >&2
+            sleep 30
+            continue
+        fi
+
+        local issue_key
+        issue_key=$(printf '%s\n' "$search_output" | jq -r '.[0].key // empty' 2>/dev/null || true)
+        echo "Attempting to claim $issue_key..." >&2
+
+        local assignee
+        assignee=$(_assign_and_verify "$issue_key" "$account_id")
+        if [[ "$assignee" != "$account_id" ]]; then
+            echo "Assignment race detected on $issue_key (assignee is now ${assignee:-unassigned}). Retrying..." >&2
+            continue
+        fi
+
+        echo "Successfully claimed $issue_key." >&2
+
+        local transition_status=0 transition_output
+        if [[ "$for_planning" -eq 1 ]]; then
+            echo "Transitioning $issue_key to Planning..." >&2
+            transition_output=$(acli jira workitem transition --key "$issue_key" --status "Planning" --yes 2>&1) || transition_status=$?
+            echo "Transition output: $transition_output" >&2
+            [[ $transition_status -ne 0 ]] && echo "Warning: could not transition $issue_key to Planning (transition may not be available)" >&2
+        else
+            echo "Transitioning $issue_key to In Progress..." >&2
+            transition_output=$(acli jira workitem transition --key "$issue_key" --status "In Progress" --yes 2>&1) || transition_status=$?
+            echo "Transition output: $transition_output" >&2
+            [[ $transition_status -ne 0 ]] && echo "Warning: could not transition $issue_key to In Progress (transition may not be available)" >&2
+        fi
+
+        acli jira workitem view "$issue_key" --json \
+            | jq '{key: .key, summary: .fields.summary, description: .fields.description}'
+        break
+    done
+}
+
+tm_list() {
+    local project="" for_planning=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project)      project="$2"; shift 2 ;;
+            --for-planning) for_planning=1; shift 1 ;;
+            *) echo "Error: unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [[ -z "$project" ]] && { echo "Error: --project <key> is required" >&2; exit 1; }
+    local jql
+    jql=$(_build_search_jql "$project" "$for_planning")
+    acli jira workitem search --jql "$jql" --json --paginate \
+        | jq '[.[] | {key: .key, summary: .fields.summary}]'
+}
+
+tm_view() {
+    local key="$1"
+    [[ -z "$key" ]] && { echo "Error: issue key required" >&2; exit 1; }
+    acli jira workitem view "$key" --json \
+        | jq '{key: .key, summary: .fields.summary, description: .fields.description, labels: (.fields.labels // []), assignee: {accountId: .fields.assignee.accountId}}'
+}
+
+tm_assign() {
+    local key="$1"; shift
+    local account_id=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --account-id) account_id="$2"; shift 2 ;;
+            *) echo "Error: unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [[ -z "$key" ]]        && { echo "Error: issue key required" >&2; exit 1; }
+    [[ -z "$account_id" ]] && { echo "Error: --account-id <id> is required" >&2; exit 1; }
+    acli jira workitem assign --key "$key" --assignee "$account_id" --yes
+}
+
+tm_comment() {
+    local key="$1"; shift
+    local comment=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --comment) comment="$2"; shift 2 ;;
+            *) echo "Error: unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [[ -z "$key" ]]     && { echo "Error: issue key required" >&2; exit 1; }
+    [[ -z "$comment" ]] && { echo "Error: --comment <text> is required" >&2; exit 1; }
+    acli jira comment add --issue "$key" --comment "$comment"
+}
+
+tm_transition() {
+    local key="$1"; shift
+    local status=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --status) status="$2"; shift 2 ;;
+            *) echo "Error: unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [[ -z "$key" ]]    && { echo "Error: issue key required" >&2; exit 1; }
+    [[ -z "$status" ]] && { echo "Error: --status <status> is required" >&2; exit 1; }
+    acli jira workitem transition --key "$key" --status "$status" --yes
+}
+
+tm_transitions() {
+    local key="$1"
+    [[ -z "$key" ]] && { echo "Error: issue key required" >&2; exit 1; }
+    acli jira workitem transitions --key "$key" --json | jq '[.[].name]'
+}

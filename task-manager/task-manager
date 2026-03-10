@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# task-manager — thin wrapper for task management backends
+#
+# Usage:
+#   task-manager <subcommand> [args...]
+#
+# Backend is selected via the TASK_MANAGER environment variable (default: jira).
+# The backend file is sourced from task-manager/backends/$TASK_MANAGER.
+
+TASK_MANAGER="${TASK_MANAGER:-jira}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND="$SCRIPT_DIR/backends/$TASK_MANAGER"
+
+if [[ ! -f "$BACKEND" ]]; then
+    echo "Error: unknown task manager backend: '$TASK_MANAGER'" >&2
+    exit 1
+fi
+
+# shellcheck source=/dev/null
+source "$BACKEND"
+
+usage() {
+    echo "Usage: task-manager <subcommand> [args...]"
+    echo ""
+    echo "Subcommands:"
+    echo "  auth                                      Authenticate with the backend"
+    echo "  claim --project <key> --account-id <id> [--for-planning]"
+    echo "                                            Claim an unassigned issue"
+    echo "  list --project <key> [--for-planning]     List claimable issues"
+    echo "  view <issue-key>                          Fetch full issue details"
+    echo "  assign <issue-key> --account-id <id>      Assign an issue"
+    echo "  comment <issue-key> --comment <text>      Add a comment"
+    echo "  transition <issue-key> --status <status>  Transition to a new status"
+    echo "  transitions <issue-key>                   List available transitions"
+    echo ""
+    echo "Environment variables:"
+    echo "  TASK_MANAGER  Backend to use (default: jira)"
+    exit 1
+}
+
+[[ $# -eq 0 ]] && usage
+
+SUBCOMMAND="$1"
+shift
+
+case "$SUBCOMMAND" in
+    auth)        tm_auth        "$@" ;;
+    claim)       tm_claim       "$@" ;;
+    list)        tm_list        "$@" ;;
+    view)        tm_view        "$@" ;;
+    assign)      tm_assign      "$@" ;;
+    comment)     tm_comment     "$@" ;;
+    transition)  tm_transition  "$@" ;;
+    transitions) tm_transitions "$@" ;;
+    --help|-h)   usage ;;
+    *)
+        echo "Error: unknown subcommand: '$SUBCOMMAND'" >&2
+        echo "Run 'task-manager --help' for usage." >&2
+        exit 1
+        ;;
+esac

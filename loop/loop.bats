@@ -6,9 +6,9 @@ LOOP="$BATS_TEST_DIRNAME/loop"
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 setup() {
-    # Per-test stub directory on PATH
+    # Per-test stub directory on PATH; real task-manager comes after
     STUB_DIR="$(mktemp -d)"
-    export PATH="$STUB_DIR:$PATH"
+    export PATH="$STUB_DIR:$BATS_TEST_DIRNAME/../task-manager:$PATH"
 
     # Temporary directory for LOOP_WORK_DIR (controls where repos are cloned)
     WORK_TMPDIR="$(mktemp -d)"
@@ -29,18 +29,29 @@ setup() {
     stub acli ""
     stub agent ""
 
-    # claim: succeed once (return JSON), then exit 1 to break the loop
+    # task-manager claim: succeed once (return JSON), then exit 1 to break the loop.
+    # Other subcommands (view, comment, transition, transitions) delegate to the real
+    # task-manager dispatcher, which calls the stubbed acli.
     local counter_file
     counter_file="$(mktemp)"
     echo "0" > "$counter_file"
-    stub_script claim "
-count=\$(cat '$counter_file')
-echo \$((count + 1)) > '$counter_file'
-if [ \"\$count\" -eq 0 ]; then
-    printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\"}\n'
-else
-    exit 1
-fi
+    local real_tm
+    real_tm="$BATS_TEST_DIRNAME/../task-manager/task-manager"
+    stub_script task-manager "
+case \"\$1\" in
+  claim)
+    count=\$(cat '$counter_file')
+    echo \$((count + 1)) > '$counter_file'
+    if [ \"\$count\" -eq 0 ]; then
+        printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\"}\n'
+    else
+        exit 1
+    fi
+    ;;
+  *)
+    exec '$real_tm' \"\$@\"
+    ;;
+esac
 "
 
     # git: create WORK_DIR/.git on clone; no-op for other subcommands
@@ -167,7 +178,10 @@ stub_script() {
       *) ;;
     esac
     '
-    stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
+    stub_script acli 'case "$*" in
+  *"workitem view"*) echo '"'"'{"key":"PROJ-1","fields":{"assignee":{"accountId":"acc1"},"summary":"Fix bug","description":"","status":{"name":"To Do"},"labels":["needs-branch"]}}'"'"' ;;
+  *) echo "$*" >> '"'$acli_log'"' ;;
+esac'
     export FEATURE_BRANCHES=true
     run "$LOOP" --project PROJ
     [[ "$(cat "$git_log")" == *"checkout -b feature/PROJ-1 main"* ]]
@@ -188,7 +202,10 @@ stub_script() {
       *) ;;
     esac
     '
-    stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
+    stub_script acli 'case "$*" in
+  *"workitem view"*) echo '"'"'{"key":"PROJ-1","fields":{"assignee":{"accountId":"acc1"},"summary":"Fix bug","description":"","status":{"name":"To Do"},"labels":["needs-branch"]}}'"'"' ;;
+  *) echo "$*" >> '"'$acli_log'"' ;;
+esac'
     export FEATURE_BRANCHES=true
     run "$LOOP" --project PROJ
     [[ "$(cat "$git_log")" == *"branch -f feature/PROJ-1 main"* ]]
@@ -200,7 +217,10 @@ stub_script() {
     git_log="$(mktemp)"
     acli_log="$(mktemp)"
     stub_script git 'echo "$*" >> '$git_log'; case "$*" in clone*) mkdir -p "${@: -1}/.git" ;; *) ;; esac'
-    stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["skip-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
+    stub_script acli 'case "$*" in
+  *"workitem view"*) echo '"'"'{"key":"PROJ-1","fields":{"assignee":{"accountId":"acc1"},"summary":"Fix bug","description":"","status":{"name":"To Do"},"labels":["skip-branch"]}}'"'"' ;;
+  *) echo "$*" >> '"'$acli_log'"' ;;
+esac'
     export FEATURE_BRANCHES=true
     run "$LOOP" --project PROJ
     [[ "$(cat "$git_log")" != *"checkout -b feature"* ]]
@@ -219,7 +239,10 @@ stub_script() {
       *) ;;
     esac
     '
-    stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
+    stub_script acli 'case "$*" in
+  *"workitem view"*) echo '"'"'{"key":"PROJ-1","fields":{"assignee":{"accountId":"acc1"},"summary":"Fix bug","description":"","status":{"name":"To Do"},"labels":["needs-branch"]}}'"'"' ;;
+  *) echo "$*" >> '"'$acli_log'"' ;;
+esac'
     unset FEATURE_BRANCHES
     run "$LOOP" --project PROJ
     [[ "$(cat "$git_log")" == *"checkout -b feature/PROJ-1"* ]]
@@ -231,7 +254,10 @@ stub_script() {
     git_log="$(mktemp)"
     acli_log="$(mktemp)"
     stub_script git 'echo "$*" >> '$git_log'; case "$*" in clone*) mkdir -p "${@: -1}/.git" ;; *) ;; esac'
-    stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch","skip-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
+    stub_script acli 'case "$*" in
+  *"workitem view"*) echo '"'"'{"key":"PROJ-1","fields":{"assignee":{"accountId":"acc1"},"summary":"Fix bug","description":"","status":{"name":"To Do"},"labels":["needs-branch","skip-branch"]}}'"'"' ;;
+  *) echo "$*" >> '"'$acli_log'"' ;;
+esac'
     export FEATURE_BRANCHES=true
     run "$LOOP" --project PROJ
     [[ "$(cat "$git_log")" != *"checkout -b feature"* ]]
@@ -369,22 +395,30 @@ esac
 }
 
 @test "claim output with progress messages: JSON is correctly extracted" {
-    # Simulate claim printing progress messages before the JSON
-    local counter_file
+    # Simulate task-manager claim printing progress messages before the JSON
+    local counter_file real_tm
     counter_file="$(mktemp)"
+    real_tm="$BATS_TEST_DIRNAME/../task-manager/task-manager"
     echo "0" > "$counter_file"
 
-    stub_script claim "
-count=\$(cat '$counter_file')
-echo \$((count + 1)) > '$counter_file'
-if [ \"\$count\" -eq 0 ]; then
-    echo 'Searching for unassigned open issues in project PROJ...'
-    echo 'Attempting to claim PROJ-2...'
-    echo 'Successfully claimed PROJ-2.'
-    printf '{\"key\":\"PROJ-2\",\"summary\":\"Add feature\"}\n'
-else
-    exit 1
-fi
+    stub_script task-manager "
+case \"\$1\" in
+  claim)
+    count=\$(cat '$counter_file')
+    echo \$((count + 1)) > '$counter_file'
+    if [ \"\$count\" -eq 0 ]; then
+        echo 'Searching for unassigned open issues in project PROJ...'
+        echo 'Attempting to claim PROJ-2...'
+        echo 'Successfully claimed PROJ-2.'
+        printf '{\"key\":\"PROJ-2\",\"summary\":\"Add feature\"}\n'
+    else
+        exit 1
+    fi
+    ;;
+  *)
+    exec '$real_tm' \"\$@\"
+    ;;
+esac
 "
     run "$LOOP" --project PROJ
     [[ "$output" == *"Working on PROJ-2: Add feature"* ]]
@@ -470,21 +504,29 @@ fi
 }
 
 @test "no issues: waits and polls again when claim exits 2" {
-    local counter_file
+    local counter_file real_tm
     counter_file="$(mktemp)"
+    real_tm="$BATS_TEST_DIRNAME/../task-manager/task-manager"
     echo "0" > "$counter_file"
 
-    stub_script claim "
-count=\$(cat '$counter_file')
-echo \$((count + 1)) > '$counter_file'
-if [ \"\$count\" -eq 0 ]; then
-    echo 'No unassigned open issues found in project PROJ.'
-    exit 2
-elif [ \"\$count\" -eq 1 ]; then
-    printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\"}\n'
-else
-    exit 1
-fi
+    stub_script task-manager "
+case \"\$1\" in
+  claim)
+    count=\$(cat '$counter_file')
+    echo \$((count + 1)) > '$counter_file'
+    if [ \"\$count\" -eq 0 ]; then
+        echo 'No unassigned open issues found in project PROJ.'
+        exit 2
+    elif [ \"\$count\" -eq 1 ]; then
+        printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\"}\n'
+    else
+        exit 1
+    fi
+    ;;
+  *)
+    exec '$real_tm' \"\$@\"
+    ;;
+esac
 "
     run "$LOOP" --project PROJ
     [[ "$output" == *"Working on PROJ-1"* ]]
@@ -494,24 +536,32 @@ fi
 }
 
 @test "no issues: default wait is 60 seconds" {
-    local counter_file sleep_log
+    local counter_file sleep_log real_tm
     counter_file="$(mktemp)"
     sleep_log="$(mktemp)"
+    real_tm="$BATS_TEST_DIRNAME/../task-manager/task-manager"
     echo "0" > "$counter_file"
 
     stub_script sleep "echo \"\$*\" >> '$sleep_log'"
 
-    stub_script claim "
-count=\$(cat '$counter_file')
-echo \$((count + 1)) > '$counter_file'
-if [ \"\$count\" -eq 0 ]; then
-    echo 'No unassigned open issues found in project PROJ.'
-    exit 2
-elif [ \"\$count\" -eq 1 ]; then
-    printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\"}\n'
-else
-    exit 1
-fi
+    stub_script task-manager "
+case \"\$1\" in
+  claim)
+    count=\$(cat '$counter_file')
+    echo \$((count + 1)) > '$counter_file'
+    if [ \"\$count\" -eq 0 ]; then
+        echo 'No unassigned open issues found in project PROJ.'
+        exit 2
+    elif [ \"\$count\" -eq 1 ]; then
+        printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\"}\n'
+    else
+        exit 1
+    fi
+    ;;
+  *)
+    exec '$real_tm' \"\$@\"
+    ;;
+esac
 "
     run "$LOOP" --project PROJ
     [[ "$(cat "$sleep_log")" == *"60"* ]]
@@ -520,24 +570,32 @@ fi
 }
 
 @test "no issues: NO_ISSUES_WAIT overrides default wait" {
-    local counter_file sleep_log
+    local counter_file sleep_log real_tm
     counter_file="$(mktemp)"
     sleep_log="$(mktemp)"
+    real_tm="$BATS_TEST_DIRNAME/../task-manager/task-manager"
     echo "0" > "$counter_file"
 
     stub_script sleep "echo \"\$*\" >> '$sleep_log'"
 
-    stub_script claim "
-count=\$(cat '$counter_file')
-echo \$((count + 1)) > '$counter_file'
-if [ \"\$count\" -eq 0 ]; then
-    echo 'No unassigned open issues found in project PROJ.'
-    exit 2
-elif [ \"\$count\" -eq 1 ]; then
-    printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\"}\n'
-else
-    exit 1
-fi
+    stub_script task-manager "
+case \"\$1\" in
+  claim)
+    count=\$(cat '$counter_file')
+    echo \$((count + 1)) > '$counter_file'
+    if [ \"\$count\" -eq 0 ]; then
+        echo 'No unassigned open issues found in project PROJ.'
+        exit 2
+    elif [ \"\$count\" -eq 1 ]; then
+        printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\"}\n'
+    else
+        exit 1
+    fi
+    ;;
+  *)
+    exec '$real_tm' \"\$@\"
+    ;;
+esac
 "
     export NO_ISSUES_WAIT=120
     run "$LOOP" --project PROJ
@@ -656,7 +714,10 @@ _setup_feature_branch_pr_test() {
       *) ;;
     esac
     '
-    stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
+    stub_script acli 'case "$*" in
+  *"workitem view"*) echo '"'"'{"key":"PROJ-1","fields":{"assignee":{"accountId":"acc1"},"summary":"Fix bug","description":"","status":{"name":"To Do"},"labels":["needs-branch"]}}'"'"' ;;
+  *) echo "$*" >> '"'$acli_log'"' ;;
+esac'
     stub_script gh 'echo "$*" >> '$gh_log'; echo "https://github.com/org/repo/pull/42"'
     export FEATURE_BRANCHES=true
 }
@@ -737,7 +798,10 @@ _setup_feature_branch_pr_test() {
       *) ;;
     esac
     '
-    stub_script acli 'if [[ "$*" == *"--field labels"* ]]; then printf '"'"'["needs-branch"]\n'"'"'; else echo "$*" >> '$acli_log'; fi'
+    stub_script acli 'case "$*" in
+  *"workitem view"*) echo '"'"'{"key":"PROJ-1","fields":{"assignee":{"accountId":"acc1"},"summary":"Fix bug","description":"","status":{"name":"To Do"},"labels":["needs-branch"]}}'"'"' ;;
+  *) echo "$*" >> '"'$acli_log'"' ;;
+esac'
     stub_script gh 'exit 1'
     export FEATURE_BRANCHES=true
 
@@ -764,7 +828,7 @@ _setup_feature_branch_pr_test() {
     '
     stub_script acli '
 case "$*" in
-  *"--field labels"*) printf '"'"'["needs-branch"]\n'"'"' ;;
+  *"workitem view"*) echo '"'"'{"key":"PROJ-1","fields":{"assignee":{"accountId":"acc1"},"summary":"Fix bug","description":"","status":{"name":"To Do"},"labels":["needs-branch"]}}'"'"' ;;
   *transition*) exit 1 ;;
   *) ;;
 esac
@@ -937,23 +1001,31 @@ esac
 }
 
 @test "planning mode: no issues: waits and polls again when claim exits 2" {
-    local counter_file
+    local counter_file real_tm
     counter_file="$(mktemp)"
+    real_tm="$BATS_TEST_DIRNAME/../task-manager/task-manager"
     echo "0" > "$counter_file"
 
     _setup_planning_agent_stub
 
-    stub_script claim "
-count=\$(cat '$counter_file')
-echo \$((count + 1)) > '$counter_file'
-if [ \"\$count\" -eq 0 ]; then
-    echo 'No planning issues found.'
-    exit 2
-elif [ \"\$count\" -eq 1 ]; then
-    printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\"}\n'
-else
-    exit 1
-fi
+    stub_script task-manager "
+case \"\$1\" in
+  claim)
+    count=\$(cat '$counter_file')
+    echo \$((count + 1)) > '$counter_file'
+    if [ \"\$count\" -eq 0 ]; then
+        echo 'No planning issues found.'
+        exit 2
+    elif [ \"\$count\" -eq 1 ]; then
+        printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\"}\n'
+    else
+        exit 1
+    fi
+    ;;
+  *)
+    exec '$real_tm' \"\$@\"
+    ;;
+esac
 "
 
     run "$LOOP" --project PROJ --for-planning
@@ -966,25 +1038,33 @@ fi
 }
 
 @test "planning mode: NO_ISSUES_WAIT overrides default wait" {
-    local counter_file sleep_log
+    local counter_file sleep_log real_tm
     counter_file="$(mktemp)"
     sleep_log="$(mktemp)"
+    real_tm="$BATS_TEST_DIRNAME/../task-manager/task-manager"
     echo "0" > "$counter_file"
 
     stub_script sleep "echo \"\$*\" >> '$sleep_log'"
     _setup_planning_agent_stub
 
-    stub_script claim "
-count=\$(cat '$counter_file')
-echo \$((count + 1)) > '$counter_file'
-if [ \"\$count\" -eq 0 ]; then
-    echo 'No planning issues found.'
-    exit 2
-elif [ \"\$count\" -eq 1 ]; then
-    printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\"}\n'
-else
-    exit 1
-fi
+    stub_script task-manager "
+case \"\$1\" in
+  claim)
+    count=\$(cat '$counter_file')
+    echo \$((count + 1)) > '$counter_file'
+    if [ \"\$count\" -eq 0 ]; then
+        echo 'No planning issues found.'
+        exit 2
+    elif [ \"\$count\" -eq 1 ]; then
+        printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\"}\n'
+    else
+        exit 1
+    fi
+    ;;
+  *)
+    exec '$real_tm' \"\$@\"
+    ;;
+esac
 "
 
     export NO_ISSUES_WAIT=120

@@ -1,15 +1,15 @@
 #!/usr/bin/env bats
-# Integration tests for claim/claim — uses the real Jira API.
+# Integration tests for task-manager — uses the real Jira API.
 #
 # Prerequisites:
 #   - .env exists at the repo root with JIRA_SITE, JIRA_EMAIL, JIRA_TOKEN
 #   - acli is authenticated (tests will authenticate if needed)
 #   - JIRA_SITE may include https:// prefix; tests strip it automatically
 #
-# These tests create and delete real Jira issues in the SCRUM project.
-# They assume the SCRUM project has no other matching unassigned issues between runs.
+# These tests create and delete real Jira issues in the ACFTEST project.
+# They assume the project has no other matching unassigned issues between runs.
 
-CLAIM="$BATS_TEST_DIRNAME/claim"
+TASK_MANAGER="$BATS_TEST_DIRNAME/task-manager"
 ENV_FILE="$(cd "$BATS_TEST_DIRNAME/.." && pwd)/.env"
 
 # Account ID for jaksa76@gmail.com on jaksa.atlassian.net
@@ -22,24 +22,24 @@ create_test_issue() {
     local label="${1:-}"
     local json key
     json=$(acli jira workitem create \
-        --summary "[test] claim-integration $(date +%s%N)" \
+        --summary "[test] task-manager-integration $(date +%s%N)" \
         --project "$PROJECT" --type "Task" --json 2>&1)
     key=$(printf '%s' "$json" | jq -r '.key // empty')
     [[ -z "$key" ]] && { echo "create failed: $json" >&3; return 1; }
     if [[ -n "$label" ]]; then
         acli jira workitem edit --key "$key" --labels "$label" --yes >/dev/null 2>&1 || true
-        sleep 3  # allow label to propagate in Jira's JQL index
+        sleep 3
     fi
-    echo "$key" >> "$CLAIM_CLEANUP_FILE"
+    echo "$key" >> "$TM_CLEANUP_FILE"
     echo "$key"
 }
 
-issue_assignee() {   # returns accountId or empty
+issue_assignee() {
     acli jira workitem view "$1" --json 2>/dev/null \
         | jq -r '.fields.assignee.accountId // empty'
 }
 
-issue_status() {     # returns status name
+issue_status() {
     acli jira workitem view "$1" --json 2>/dev/null \
         | jq -r '.fields.status.name // empty'
 }
@@ -52,36 +52,32 @@ setup_file() {
         skip "No .env file found"
     fi
 
-    # Load credentials
     set -a
     # shellcheck source=/dev/null
     source "$ENV_FILE"
     set +a
 
-    # acli expects just the hostname, not https://hostname/
     JIRA_SITE="${JIRA_SITE#https://}"
     JIRA_SITE="${JIRA_SITE%/}"
     export JIRA_SITE
 
-    # Authenticate if needed
     if ! acli jira auth status 2>/dev/null | grep -q "Authenticated"; then
         printf '%s' "$JIRA_TOKEN" \
             | acli jira auth login --site "$JIRA_SITE" --email "$JIRA_EMAIL" --token 2>&1
     fi
 
-    # Temp file to collect all created issue keys for cleanup
-    CLAIM_CLEANUP_FILE=$(mktemp)
-    export CLAIM_CLEANUP_FILE
+    TM_CLEANUP_FILE=$(mktemp)
+    export TM_CLEANUP_FILE
 }
 
 teardown_file() {
-    if [[ -f "${CLAIM_CLEANUP_FILE:-}" ]]; then
+    if [[ -f "${TM_CLEANUP_FILE:-}" ]]; then
         while IFS= read -r key; do
             [[ -z "$key" ]] && continue
             acli jira workitem delete "$key" --force 2>/dev/null || true
             echo "# Deleted test issue: $key" >&3
-        done < "$CLAIM_CLEANUP_FILE"
-        rm -f "$CLAIM_CLEANUP_FILE"
+        done < "$TM_CLEANUP_FILE"
+        rm -f "$TM_CLEANUP_FILE"
     fi
 }
 
@@ -103,15 +99,13 @@ setup() {
 
     unset PLAN_BY_DEFAULT
 
-    # Record how many issues have been registered so far so teardown can clean
-    # up only the issues created by this test, preventing cross-test interference.
-    CLEANUP_BASELINE=$(wc -l < "$CLAIM_CLEANUP_FILE" 2>/dev/null || echo 0)
+    CLEANUP_BASELINE=$(wc -l < "$TM_CLEANUP_FILE" 2>/dev/null || echo 0)
     export CLEANUP_BASELINE
 }
 
 teardown() {
-    if [[ -f "${CLAIM_CLEANUP_FILE:-}" ]]; then
-        tail -n +"$((CLEANUP_BASELINE + 1))" "$CLAIM_CLEANUP_FILE" | while IFS= read -r key; do
+    if [[ -f "${TM_CLEANUP_FILE:-}" ]]; then
+        tail -n +"$((CLEANUP_BASELINE + 1))" "$TM_CLEANUP_FILE" | while IFS= read -r key; do
             [[ -z "$key" ]] && continue
             acli jira workitem delete --key "$key" -y 2>/dev/null || true
             echo "# [teardown] Deleted $key" >&3
@@ -119,13 +113,11 @@ teardown() {
     fi
 }
 
-# ── tests ─────────────────────────────────────────────────────────────────────
+# ── auth ──────────────────────────────────────────────────────────────────────
 
-@test "authentication: acli reports authenticated with provided credentials" {
-    run acli jira auth status
+@test "auth: acli reports authenticated with provided credentials" {
+    run "$TASK_MANAGER" auth
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Authenticated"* ]]
-    [[ "$output" == *"jaksa.atlassian.net"* ]]
 }
 
 # ── Planning mode (--for-planning) ────────────────────────────────────────────
@@ -133,7 +125,7 @@ teardown() {
 @test "P1: --for-planning, PLAN_BY_DEFAULT=false, no label — issue NOT claimed" {
     KEY=$(create_test_issue)
     export PLAN_BY_DEFAULT=false
-    run timeout 15 "$CLAIM" --for-planning --project "$PROJECT" --account-id "$ACCOUNT_ID"
+    run timeout 15 "$TASK_MANAGER" claim --for-planning --project "$PROJECT" --account-id "$ACCOUNT_ID"
     assignee=$(issue_assignee "$KEY")
     [[ "$assignee" != "$ACCOUNT_ID" ]]
 }
@@ -141,7 +133,7 @@ teardown() {
 @test "P2: --for-planning, PLAN_BY_DEFAULT=false, needs-plan label — claimed + Planning" {
     KEY=$(create_test_issue "needs-plan")
     export PLAN_BY_DEFAULT=false
-    run "$CLAIM" --for-planning --project "$PROJECT" --account-id "$ACCOUNT_ID"
+    run "$TASK_MANAGER" claim --for-planning --project "$PROJECT" --account-id "$ACCOUNT_ID"
     [ "$status" -eq 0 ]
     [[ "$(issue_assignee "$KEY")" == "$ACCOUNT_ID" ]]
     [[ "$(issue_status "$KEY")" == "Planning" ]]
@@ -150,7 +142,7 @@ teardown() {
 @test "P3: --for-planning, PLAN_BY_DEFAULT=false, skip-plan label — issue NOT claimed" {
     KEY=$(create_test_issue "skip-plan")
     export PLAN_BY_DEFAULT=false
-    run timeout 15 "$CLAIM" --for-planning --project "$PROJECT" --account-id "$ACCOUNT_ID"
+    run timeout 15 "$TASK_MANAGER" claim --for-planning --project "$PROJECT" --account-id "$ACCOUNT_ID"
     assignee=$(issue_assignee "$KEY")
     [[ "$assignee" != "$ACCOUNT_ID" ]]
 }
@@ -158,7 +150,7 @@ teardown() {
 @test "P4: --for-planning, PLAN_BY_DEFAULT=true, no label — claimed + Planning" {
     KEY=$(create_test_issue)
     export PLAN_BY_DEFAULT=true
-    run "$CLAIM" --for-planning --project "$PROJECT" --account-id "$ACCOUNT_ID"
+    run "$TASK_MANAGER" claim --for-planning --project "$PROJECT" --account-id "$ACCOUNT_ID"
     [ "$status" -eq 0 ]
     [[ "$(issue_assignee "$KEY")" == "$ACCOUNT_ID" ]]
     [[ "$(issue_status "$KEY")" == "Planning" ]]
@@ -167,7 +159,7 @@ teardown() {
 @test "P5: --for-planning, PLAN_BY_DEFAULT=true, skip-plan label — issue NOT claimed" {
     KEY=$(create_test_issue "skip-plan")
     export PLAN_BY_DEFAULT=true
-    run timeout 15 "$CLAIM" --for-planning --project "$PROJECT" --account-id "$ACCOUNT_ID"
+    run timeout 15 "$TASK_MANAGER" claim --for-planning --project "$PROJECT" --account-id "$ACCOUNT_ID"
     assignee=$(issue_assignee "$KEY")
     [[ "$assignee" != "$ACCOUNT_ID" ]]
 }
@@ -177,7 +169,7 @@ teardown() {
 @test "I1: no --for-planning, PLAN_BY_DEFAULT=false, no label — claimed + In Progress" {
     KEY=$(create_test_issue)
     export PLAN_BY_DEFAULT=false
-    run "$CLAIM" --project "$PROJECT" --account-id "$ACCOUNT_ID"
+    run "$TASK_MANAGER" claim --project "$PROJECT" --account-id "$ACCOUNT_ID"
     [ "$status" -eq 0 ]
     [[ "$(issue_assignee "$KEY")" == "$ACCOUNT_ID" ]]
     [[ "$(issue_status "$KEY")" == "In Progress" ]]
@@ -186,7 +178,7 @@ teardown() {
 @test "I2: no --for-planning, PLAN_BY_DEFAULT=false, needs-plan label — issue NOT claimed" {
     KEY=$(create_test_issue "needs-plan")
     export PLAN_BY_DEFAULT=false
-    run timeout 15 "$CLAIM" --project "$PROJECT" --account-id "$ACCOUNT_ID"
+    run timeout 15 "$TASK_MANAGER" claim --project "$PROJECT" --account-id "$ACCOUNT_ID"
     assignee=$(issue_assignee "$KEY")
     [[ "$assignee" != "$ACCOUNT_ID" ]]
 }
@@ -194,7 +186,7 @@ teardown() {
 @test "I3: no --for-planning, PLAN_BY_DEFAULT=false, skip-plan label — claimed + In Progress" {
     KEY=$(create_test_issue "skip-plan")
     export PLAN_BY_DEFAULT=false
-    run "$CLAIM" --project "$PROJECT" --account-id "$ACCOUNT_ID"
+    run "$TASK_MANAGER" claim --project "$PROJECT" --account-id "$ACCOUNT_ID"
     [ "$status" -eq 0 ]
     [[ "$(issue_assignee "$KEY")" == "$ACCOUNT_ID" ]]
     [[ "$(issue_status "$KEY")" == "In Progress" ]]
@@ -203,7 +195,7 @@ teardown() {
 @test "I4: no --for-planning, PLAN_BY_DEFAULT=true, no label — issue NOT claimed" {
     KEY=$(create_test_issue)
     export PLAN_BY_DEFAULT=true
-    run timeout 15 "$CLAIM" --project "$PROJECT" --account-id "$ACCOUNT_ID"
+    run timeout 15 "$TASK_MANAGER" claim --project "$PROJECT" --account-id "$ACCOUNT_ID"
     assignee=$(issue_assignee "$KEY")
     [[ "$assignee" != "$ACCOUNT_ID" ]]
 }
@@ -211,7 +203,7 @@ teardown() {
 @test "I5: no --for-planning, PLAN_BY_DEFAULT=true, skip-plan label — claimed + In Progress" {
     KEY=$(create_test_issue "skip-plan")
     export PLAN_BY_DEFAULT=true
-    run "$CLAIM" --project "$PROJECT" --account-id "$ACCOUNT_ID"
+    run "$TASK_MANAGER" claim --project "$PROJECT" --account-id "$ACCOUNT_ID"
     [ "$status" -eq 0 ]
     [[ "$(issue_assignee "$KEY")" == "$ACCOUNT_ID" ]]
     [[ "$(issue_status "$KEY")" == "In Progress" ]]
@@ -219,14 +211,13 @@ teardown() {
 
 @test "I6: no --for-planning, PLAN_BY_DEFAULT=true, Plan Approved status — claimed + In Progress" {
     KEY=$(create_test_issue)
-    # Skip if Plan Approved transition is not in this workflow
     transitions=$(acli jira workitem transitions --key "$KEY" --json 2>/dev/null || echo "[]")
     if ! printf '%s' "$transitions" | jq -e '[.[].name] | map(select(. == "Plan Approved")) | length > 0' >/dev/null 2>&1; then
         skip "Plan Approved status not available in workflow"
     fi
     acli jira workitem transition --key "$KEY" --status "Plan Approved" --yes
     export PLAN_BY_DEFAULT=true
-    run "$CLAIM" --project "$PROJECT" --account-id "$ACCOUNT_ID"
+    run "$TASK_MANAGER" claim --project "$PROJECT" --account-id "$ACCOUNT_ID"
     [ "$status" -eq 0 ]
     [[ "$(issue_assignee "$KEY")" == "$ACCOUNT_ID" ]]
 }
