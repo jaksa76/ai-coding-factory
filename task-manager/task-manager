@@ -10,7 +10,7 @@ set -euo pipefail
 # The backend file is sourced from task-manager/backends/$TASK_MANAGER.
 
 TASK_MANAGER="${TASK_MANAGER:-jira}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 BACKEND="$SCRIPT_DIR/backends/$TASK_MANAGER"
 
 if [[ ! -f "$BACKEND" ]]; then
