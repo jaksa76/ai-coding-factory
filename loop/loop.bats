@@ -1142,3 +1142,75 @@ esac
 
     rm -f "$git_log"
 }
+
+# ── TASK_MANAGER=github: validation ──────────────────────────────────────────
+
+@test "github backend: error: GH_TOKEN not set" {
+    unset JIRA_SITE JIRA_EMAIL JIRA_TOKEN JIRA_ASSIGNEE_ACCOUNT_ID
+    run env TASK_MANAGER=github "$LOOP" --project "owner/repo"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"GH_TOKEN"* ]]
+}
+
+@test "github backend: error: GITHUB_ASSIGNEE not set" {
+    unset JIRA_SITE JIRA_EMAIL JIRA_TOKEN JIRA_ASSIGNEE_ACCOUNT_ID
+    run env TASK_MANAGER=github GH_TOKEN=tok "$LOOP" --project "owner/repo"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"GITHUB_ASSIGNEE"* ]]
+}
+
+@test "github backend: Jira vars not required" {
+    unset JIRA_SITE JIRA_EMAIL JIRA_TOKEN JIRA_ASSIGNEE_ACCOUNT_ID
+    # task-manager claim stub returns one issue then exits 1 to break the loop
+    local counter_file
+    counter_file="$(mktemp)"
+    echo "0" > "$counter_file"
+    stub_script task-manager "
+case \"\$1\" in
+  claim)
+    count=\$(cat '$counter_file')
+    echo \$((count + 1)) > '$counter_file'
+    if [ \"\$count\" -eq 0 ]; then
+        printf '{\"key\":\"1\",\"summary\":\"Do it\"}\n'
+    else
+        exit 1
+    fi
+    ;;
+  *) ;;
+esac
+"
+    run env TASK_MANAGER=github GH_TOKEN=tok GITHUB_ASSIGNEE=myuser \
+        "$LOOP" --project "owner/repo"
+    # Should not fail on missing Jira vars; exits from claim returning non-zero
+    [[ "$output" != *"JIRA_SITE"* ]]
+    [[ "$output" != *"JIRA_EMAIL"* ]]
+    rm -f "$counter_file"
+}
+
+@test "github backend: GITHUB_REPO exported for task-manager subcommands" {
+    unset JIRA_SITE JIRA_EMAIL JIRA_TOKEN JIRA_ASSIGNEE_ACCOUNT_ID
+    local tm_log
+    tm_log="$(mktemp)"
+    local counter_file
+    counter_file="$(mktemp)"
+    echo "0" > "$counter_file"
+    stub_script task-manager "
+echo \"GITHUB_REPO=\$GITHUB_REPO\" >> '$tm_log'
+case \"\$1\" in
+  claim)
+    count=\$(cat '$counter_file')
+    echo \$((count + 1)) > '$counter_file'
+    if [ \"\$count\" -eq 0 ]; then
+        printf '{\"key\":\"5\",\"summary\":\"Task\"}\n'
+    else
+        exit 1
+    fi
+    ;;
+  *) ;;
+esac
+"
+    run env TASK_MANAGER=github GH_TOKEN=tok GITHUB_ASSIGNEE=myuser \
+        "$LOOP" --project "owner/myrepo"
+    [[ "$(cat "$tm_log")" == *"GITHUB_REPO=owner/myrepo"* ]]
+    rm -f "$tm_log" "$counter_file"
+}

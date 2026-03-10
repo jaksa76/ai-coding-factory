@@ -1,0 +1,244 @@
+# GitHub Issues backend for task-manager
+# Sourced by task-manager; implements tm_* functions using the gh CLI.
+#
+# The GITHUB_REPO env var (owner/repo format) must be set by the caller
+# (loop exports it from the --project argument).
+
+tm_auth() {
+    if ! gh auth status &>/dev/null; then
+        echo "GitHub CLI not authenticated — running gh auth login..." >&2
+        gh auth login
+    fi
+}
+
+_gh_list_issues_for_planning() {
+    local repo="$1"
+    if [[ "${PLAN_BY_DEFAULT:-false}" == "true" ]]; then
+        # All unassigned open issues that don't have skip-plan
+        gh issue list --repo "$repo" \
+            --state open \
+            --json number,title,body,labels,assignees \
+            --jq '[.[] | select((.assignees | length) == 0)
+                       | select([.labels[].name] | index("skip-plan") == null)]'
+    else
+        # Only unassigned issues with needs-plan label
+        gh issue list --repo "$repo" \
+            --label "needs-plan" \
+            --state open \
+            --json number,title,body,labels,assignees \
+            --jq '[.[] | select((.assignees | length) == 0)]'
+    fi
+}
+
+_gh_list_issues_for_implementation() {
+    local repo="$1"
+    if [[ "${PLAN_BY_DEFAULT:-false}" == "true" ]]; then
+        # Unassigned issues with plan-approved OR skip-plan label
+        gh issue list --repo "$repo" \
+            --state open \
+            --json number,title,body,labels,assignees \
+            --jq '[.[] | select((.assignees | length) == 0)
+                       | select([.labels[].name]
+                           | (index("plan-approved") != null or index("skip-plan") != null))]'
+    else
+        # Unassigned open issues without needs-plan
+        gh issue list --repo "$repo" \
+            --state open \
+            --json number,title,body,labels,assignees \
+            --jq '[.[] | select((.assignees | length) == 0)
+                       | select([.labels[].name] | index("needs-plan") == null)]'
+    fi
+}
+
+_gh_assign_and_verify() {
+    local repo="$1" number="$2" assignee="$3"
+    gh issue edit "$number" --repo "$repo" --add-assignee "$assignee" >&2
+    gh issue edit "$number" --repo "$repo" --add-label "in-progress" >&2
+    echo "Waiting 5s to verify assignment..." >&2
+    sleep 5
+    gh issue view "$number" --repo "$repo" --json assignees \
+        | jq -r --arg a "$assignee" \
+            'if ([.assignees[].login] | index($a)) != null then $a else "" end' \
+        2>/dev/null || true
+}
+
+tm_claim() {
+    local repo="" account_id="" for_planning=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project)      repo="$2";       shift 2 ;;
+            --account-id)   account_id="$2"; shift 2 ;;
+            --for-planning) for_planning=1;  shift 1 ;;
+            *) echo "Error: unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [[ -z "$repo" ]]       && { echo "Error: --project <owner/repo> is required" >&2; exit 1; }
+    [[ -z "$account_id" ]] && { echo "Error: --account-id <username> is required" >&2; exit 1; }
+
+    tm_auth
+
+    while true; do
+        echo "Searching for unassigned open issues in $repo..." >&2
+        local issues
+        if [[ "$for_planning" -eq 1 ]]; then
+            issues=$(_gh_list_issues_for_planning "$repo")
+        else
+            issues=$(_gh_list_issues_for_implementation "$repo")
+        fi
+
+        if [[ -z "$issues" || "$issues" == "[]" ]]; then
+            echo "No eligible issues found. Retrying in 30s..." >&2
+            sleep 30
+            continue
+        fi
+
+        local number title
+        number=$(printf '%s\n' "$issues" | jq -r '.[0].number')
+        title=$(printf '%s\n'  "$issues" | jq -r '.[0].title')
+        echo "Attempting to claim #$number: $title..." >&2
+
+        local actual_assignee
+        actual_assignee=$(_gh_assign_and_verify "$repo" "$number" "$account_id")
+
+        if [[ "$actual_assignee" != "$account_id" ]]; then
+            echo "Assignment race detected on #$number (assignee is now ${actual_assignee:-unassigned}). Retrying..." >&2
+            continue
+        fi
+
+        echo "Successfully claimed #$number." >&2
+
+        if [[ "$for_planning" -eq 1 ]]; then
+            echo "Adding in-planning label to #$number..." >&2
+            gh issue edit "$number" --repo "$repo" \
+                --add-label "in-planning" \
+                --remove-label "in-progress" 2>/dev/null || true
+        fi
+
+        local body
+        body=$(gh issue view "$number" --repo "$repo" --json body | jq -r '.body // ""')
+
+        jq -n \
+            --arg key    "$number" \
+            --arg summary "$title" \
+            --arg description "$body" \
+            '{key: $key, summary: $summary, description: $description}'
+        break
+    done
+}
+
+tm_list() {
+    local repo="" for_planning=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project)      repo="$2"; shift 2 ;;
+            --for-planning) for_planning=1; shift 1 ;;
+            *) echo "Error: unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [[ -z "$repo" ]] && { echo "Error: --project <owner/repo> is required" >&2; exit 1; }
+
+    local issues
+    if [[ "$for_planning" -eq 1 ]]; then
+        issues=$(_gh_list_issues_for_planning "$repo")
+    else
+        issues=$(_gh_list_issues_for_implementation "$repo")
+    fi
+
+    printf '%s\n' "$issues" | jq '[.[] | {key: (.number | tostring), summary: .title}]'
+}
+
+tm_view() {
+    local number="$1"
+    [[ -z "$number" ]]            && { echo "Error: issue number required" >&2; exit 1; }
+    [[ -z "${GITHUB_REPO:-}" ]]   && { echo "Error: GITHUB_REPO is not set" >&2; exit 1; }
+    gh issue view "$number" --repo "$GITHUB_REPO" \
+        --json number,title,body,labels,assignees \
+        | jq '{
+            key:         (.number | tostring),
+            summary:     .title,
+            description: (.body // ""),
+            labels:      [.labels[].name],
+            assignee:    {accountId: (.assignees[0].login // "")}
+          }'
+}
+
+tm_assign() {
+    local number="$1"; shift
+    local account_id=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --account-id) account_id="$2"; shift 2 ;;
+            *) echo "Error: unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [[ -z "$number" ]]            && { echo "Error: issue number required" >&2; exit 1; }
+    [[ -z "$account_id" ]]        && { echo "Error: --account-id <username> is required" >&2; exit 1; }
+    [[ -z "${GITHUB_REPO:-}" ]]   && { echo "Error: GITHUB_REPO is not set" >&2; exit 1; }
+    gh issue edit "$number" --repo "$GITHUB_REPO" --add-assignee "$account_id"
+}
+
+tm_comment() {
+    local number="$1"; shift
+    local comment=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --comment) comment="$2"; shift 2 ;;
+            *) echo "Error: unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [[ -z "$number" ]]          && { echo "Error: issue number required" >&2; exit 1; }
+    [[ -z "$comment" ]]         && { echo "Error: --comment <text> is required" >&2; exit 1; }
+    [[ -z "${GITHUB_REPO:-}" ]] && { echo "Error: GITHUB_REPO is not set" >&2; exit 1; }
+    gh issue comment "$number" --repo "$GITHUB_REPO" --body "$comment"
+}
+
+tm_transition() {
+    local number="$1"; shift
+    local status=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --status) status="$2"; shift 2 ;;
+            *) echo "Error: unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [[ -z "$number" ]]          && { echo "Error: issue number required" >&2; exit 1; }
+    [[ -z "$status" ]]          && { echo "Error: --status <status> is required" >&2; exit 1; }
+    [[ -z "${GITHUB_REPO:-}" ]] && { echo "Error: GITHUB_REPO is not set" >&2; exit 1; }
+
+    case "$status" in
+        "In Progress")
+            gh issue edit "$number" --repo "$GITHUB_REPO" \
+                --add-label "in-progress" 2>/dev/null || true
+            ;;
+        "In Review")
+            gh issue edit "$number" --repo "$GITHUB_REPO" \
+                --add-label "in-review" \
+                --remove-label "in-progress" 2>/dev/null || true
+            ;;
+        "Planning")
+            gh issue edit "$number" --repo "$GITHUB_REPO" \
+                --add-label "in-planning" \
+                --remove-label "in-progress" 2>/dev/null || true
+            ;;
+        "Awaiting Plan Review")
+            gh issue edit "$number" --repo "$GITHUB_REPO" \
+                --add-label "awaiting-review" \
+                --remove-label "in-planning" 2>/dev/null || true
+            ;;
+        "Done")
+            gh issue edit "$number" --repo "$GITHUB_REPO" \
+                --remove-label "in-progress" \
+                --remove-label "in-review" 2>/dev/null || true
+            gh issue close "$number" --repo "$GITHUB_REPO" 2>/dev/null || true
+            ;;
+        *)
+            echo "Warning: unknown status '$status' — no label changes made" >&2
+            ;;
+    esac
+}
+
+tm_transitions() {
+    local number="$1"
+    [[ -z "$number" ]] && { echo "Error: issue number required" >&2; exit 1; }
+    echo '["In Progress","In Review","Planning","Awaiting Plan Review","Done"]'
+}

@@ -96,10 +96,13 @@ loop --for-planning:
 
 | Variable | Purpose |
 |---|---|
-| `JIRA_SITE` | Jira host, e.g. `mycompany.atlassian.net` |
-| `JIRA_EMAIL` | Worker's Jira account email |
-| `JIRA_TOKEN` | Jira API token |
-| `JIRA_ASSIGNEE_ACCOUNT_ID` | Account ID used for self-assignment |
+| `TASK_MANAGER` | Backend: `jira` (default) or `github` |
+| `JIRA_SITE` | Jira host, e.g. `mycompany.atlassian.net` (jira backend) |
+| `JIRA_EMAIL` | Worker's Jira account email (jira backend) |
+| `JIRA_TOKEN` | Jira API token (jira backend) |
+| `JIRA_ASSIGNEE_ACCOUNT_ID` | Account ID used for self-assignment (jira backend) |
+| `GITHUB_ASSIGNEE` | GitHub username for self-assignment (github backend) |
+| `GH_TOKEN` | GitHub personal access token (github backend) |
 | `GIT_REPO_URL` | Repository to work on |
 | `GIT_USERNAME` | Push credentials |
 | `GIT_TOKEN` | Push credentials |

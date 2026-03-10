@@ -39,7 +39,9 @@ legacy/         Previous hub-based implementation (reference only)
 | `JIRA_EMAIL` | Jira account email (jira backend) |
 | `JIRA_TOKEN` | Jira API token (jira backend) |
 | `JIRA_ASSIGNEE_ACCOUNT_ID` | Jira account ID used for self-assignment (jira backend) |
-| `JIRA_PROJECT` | Jira project key to pull issues from, e.g. `MYPROJ` |
+| `JIRA_PROJECT` | Jira project key to pull issues from, e.g. `MYPROJ` (jira backend) |
+| `GITHUB_ASSIGNEE` | GitHub username used for self-assignment (github backend) |
+| `GH_TOKEN` | GitHub personal access token (github backend; also used by `workers/copilot`) |
 | `GIT_REPO_URL` | Repository to work on |
 | `GIT_USERNAME` | Git push credentials |
 | `GIT_TOKEN` | Git push credentials |

@@ -424,3 +424,229 @@ esac
     [[ "$output" == *"Warning"* ]]
     [[ "$output" == *"Successfully claimed PROJ-5"* ]]
 }
+
+# ── github backend ────────────────────────────────────────────────────────────
+
+@test "github: dispatcher selects github backend (no unknown-backend error)" {
+    stub_script gh 'case "$*" in "auth status") exit 0 ;; *) ;; esac'
+    run env TASK_MANAGER=github "$TASK_MANAGER" auth
+    [ "$status" -eq 0 ]
+}
+
+@test "github: claim: error: missing --project" {
+    stub_script gh ""
+    run env TASK_MANAGER=github "$TASK_MANAGER" claim --account-id "user1"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"--project"* ]]
+}
+
+@test "github: claim: error: missing --account-id" {
+    stub_script gh ""
+    run env TASK_MANAGER=github "$TASK_MANAGER" claim --project "owner/repo"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"--account-id"* ]]
+}
+
+@test "github: claim: error: unknown option" {
+    stub_script gh ""
+    run env TASK_MANAGER=github "$TASK_MANAGER" claim --project "owner/repo" --account-id "user1" --unknown
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"unknown option"* ]]
+}
+
+@test "github: claim: happy path: claims first eligible issue" {
+    local gh_log
+    gh_log="$(mktemp)"
+    stub_script gh "
+echo \"\$*\" >> '$gh_log'
+case \"\$*\" in
+  'auth status') exit 0 ;;
+  'issue list'*'--json'*)
+      echo '[{\"number\":42,\"title\":\"Fix bug\",\"body\":\"desc\",\"labels\":[],\"assignees\":[]}]' ;;
+  'issue edit 42'*'--add-assignee user1'*) ;;
+  'issue edit 42'*'--add-label in-progress'*) ;;
+  'issue view 42'*'--json assignees'*)
+      echo '{\"assignees\":[{\"login\":\"user1\"}]}' ;;
+  'issue view 42'*'--json body'*)
+      echo '{\"body\":\"desc\"}' ;;
+  *) ;;
+esac
+"
+    run env TASK_MANAGER=github "$TASK_MANAGER" claim --project "owner/repo" --account-id "user1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Successfully claimed #42"* ]]
+    issue_json="$(printf '%s\n' "$output" | awk '/^\{/{f=1} f')"
+    [[ "$(printf '%s' "$issue_json" | jq -r '.key')"     == "42" ]]
+    [[ "$(printf '%s' "$issue_json" | jq -r '.summary')" == "Fix bug" ]]
+    rm -f "$gh_log"
+}
+
+@test "github: claim: race condition: retries when assignee does not match" {
+    local counter_file
+    counter_file="$(mktemp)"
+    echo "0" > "$counter_file"
+    stub_script gh "
+case \"\$*\" in
+  'auth status') exit 0 ;;
+  'issue list'*'--json'*)
+      echo '[{\"number\":7,\"title\":\"Task\",\"body\":\"\",\"labels\":[],\"assignees\":[]}]' ;;
+  'issue edit'*'--add-assignee'*) ;;
+  'issue edit'*'--add-label'*) ;;
+  'issue view 7'*'--json assignees'*)
+      count=\$(cat '$counter_file')
+      echo \$((count + 1)) > '$counter_file'
+      if [ \"\$count\" -eq 0 ]; then
+          echo '{\"assignees\":[{\"login\":\"other\"}]}'
+      else
+          echo '{\"assignees\":[{\"login\":\"user1\"}]}'
+      fi
+      ;;
+  'issue view 7'*'--json body'*) echo '{\"body\":\"\"}' ;;
+  *) ;;
+esac
+"
+    run env TASK_MANAGER=github "$TASK_MANAGER" claim --project "owner/repo" --account-id "user1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"race detected"* ]]
+    [[ "$output" == *"Successfully claimed #7"* ]]
+    rm -f "$counter_file"
+}
+
+@test "github: claim: no issues exits non-zero on list empty (waits and retries once)" {
+    local counter_file
+    counter_file="$(mktemp)"
+    echo "0" > "$counter_file"
+    stub_script gh "
+case \"\$*\" in
+  'auth status') exit 0 ;;
+  'issue list'*'--json'*)
+      count=\$(cat '$counter_file')
+      echo \$((count + 1)) > '$counter_file'
+      if [ \"\$count\" -eq 0 ]; then
+          echo '[]'
+      else
+          exit 99
+      fi
+      ;;
+  *) ;;
+esac
+"
+    # Stub sleep to avoid actual waiting, but make second gh call exit non-zero to stop loop
+    run env TASK_MANAGER=github "$TASK_MANAGER" claim --project "owner/repo" --account-id "user1"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"No eligible issues found"* ]]
+    rm -f "$counter_file"
+}
+
+@test "github: claim: --for-planning: adds in-planning label, removes in-progress" {
+    local gh_log
+    gh_log="$(mktemp)"
+    stub_script gh "
+echo \"\$*\" >> '$gh_log'
+case \"\$*\" in
+  'auth status') exit 0 ;;
+  'issue list'*'needs-plan'*'--json'*)
+      echo '[{\"number\":5,\"title\":\"Plan me\",\"body\":\"\",\"labels\":[{\"name\":\"needs-plan\"}],\"assignees\":[]}]' ;;
+  'issue edit 5'*'--add-assignee user1'*) ;;
+  'issue edit 5'*'--add-label in-progress'*) ;;
+  'issue view 5'*'--json assignees'*)
+      echo '{\"assignees\":[{\"login\":\"user1\"}]}' ;;
+  'issue edit 5'*'--add-label in-planning'*) ;;
+  'issue edit 5'*'--remove-label in-progress'*) ;;
+  'issue view 5'*'--json body'*) echo '{\"body\":\"\"}' ;;
+  *) ;;
+esac
+"
+    run env TASK_MANAGER=github "$TASK_MANAGER" claim --project "owner/repo" --account-id "user1" --for-planning
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Successfully claimed #5"* ]]
+    [[ "$(cat "$gh_log")" == *"in-planning"* ]]
+    rm -f "$gh_log"
+}
+
+@test "github: claim: PLAN_BY_DEFAULT=true selects issues without skip-plan" {
+    local gh_log
+    gh_log="$(mktemp)"
+    stub_script gh "
+echo \"\$*\" >> '$gh_log'
+case \"\$*\" in
+  'auth status') exit 0 ;;
+  'issue list'*'--json'*)
+      echo '[{\"number\":3,\"title\":\"Task\",\"body\":\"\",\"labels\":[],\"assignees\":[]}]' ;;
+  'issue edit'*) ;;
+  'issue view 3'*'--json assignees'*)
+      echo '{\"assignees\":[{\"login\":\"user1\"}]}' ;;
+  'issue view 3'*'--json body'*) echo '{\"body\":\"\"}' ;;
+  *) ;;
+esac
+"
+    run env TASK_MANAGER=github PLAN_BY_DEFAULT=true "$TASK_MANAGER" claim --project "owner/repo" --account-id "user1"
+    [ "$status" -eq 0 ]
+    # skip-plan filter appears in the jq expression passed to gh
+    [[ "$(cat "$gh_log")" == *"skip-plan"* ]]
+    rm -f "$gh_log"
+}
+
+@test "github: view: returns normalized JSON" {
+    stub_script gh '
+case "$*" in
+  "issue view 42"*)
+      echo '"'"'{"number":42,"title":"Fix bug","body":"Bug details","labels":[{"name":"in-progress"}],"assignees":[{"login":"user1"}]}'"'"' ;;
+  *) ;;
+esac
+'
+    run env TASK_MANAGER=github GITHUB_REPO="owner/repo" "$TASK_MANAGER" view "42"
+    [ "$status" -eq 0 ]
+    [[ "$(printf '%s' "$output" | jq -r '.key')"         == "42" ]]
+    [[ "$(printf '%s' "$output" | jq -r '.summary')"     == "Fix bug" ]]
+    [[ "$(printf '%s' "$output" | jq -r '.description')" == "Bug details" ]]
+    [[ "$(printf '%s' "$output" | jq -r '.labels[0]')"   == "in-progress" ]]
+    [[ "$(printf '%s' "$output" | jq -r '.assignee.accountId')" == "user1" ]]
+}
+
+@test "github: view: error when GITHUB_REPO is not set" {
+    stub_script gh ""
+    run env TASK_MANAGER=github "$TASK_MANAGER" view "42"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"GITHUB_REPO"* ]]
+}
+
+@test "github: transition: Done closes the issue" {
+    local gh_log
+    gh_log="$(mktemp)"
+    stub_script gh "echo \"\$*\" >> '$gh_log'"
+    run env TASK_MANAGER=github GITHUB_REPO="owner/repo" "$TASK_MANAGER" transition "42" --status "Done"
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$gh_log")" == *"issue close 42"* ]]
+    rm -f "$gh_log"
+}
+
+@test "github: transition: In Review adds in-review label, removes in-progress" {
+    local gh_log
+    gh_log="$(mktemp)"
+    stub_script gh "echo \"\$*\" >> '$gh_log'"
+    run env TASK_MANAGER=github GITHUB_REPO="owner/repo" "$TASK_MANAGER" transition "42" --status "In Review"
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$gh_log")" == *"--add-label in-review"* ]]
+    [[ "$(cat "$gh_log")" == *"--remove-label in-progress"* ]]
+    rm -f "$gh_log"
+}
+
+@test "github: transitions: returns JSON array of status names" {
+    stub_script gh ""
+    run env TASK_MANAGER=github GITHUB_REPO="owner/repo" "$TASK_MANAGER" transitions "42"
+    [ "$status" -eq 0 ]
+    [[ "$(printf '%s' "$output" | jq -r '.[0]')" == "In Progress" ]]
+    [[ "$(printf '%s' "$output" | jq -r '.[-1]')" == "Done" ]]
+}
+
+@test "github: comment: posts body via gh issue comment" {
+    local gh_log
+    gh_log="$(mktemp)"
+    stub_script gh "echo \"\$*\" >> '$gh_log'"
+    run env TASK_MANAGER=github GITHUB_REPO="owner/repo" "$TASK_MANAGER" comment "42" --comment "hello world"
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$gh_log")" == *"issue comment 42"* ]]
+    [[ "$(cat "$gh_log")" == *"hello world"* ]]
+    rm -f "$gh_log"
+}
