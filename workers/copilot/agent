@@ -29,6 +29,15 @@ case "$cmd" in
             exit 1
         fi
 
+        if ! command -v copilot &>/dev/null; then
+            echo "copilot not found — installing @github/copilot via npm..."
+            npm install -g @github/copilot
+            bin_dir="${COPILOT_BIN_DIR:-/usr/local/bin}"
+            printf '#!/bin/sh\nexec node /usr/local/lib/node_modules/@github/copilot/index.js "$@"\n' \
+                > "$bin_dir/copilot"
+            chmod +x "$bin_dir/copilot"
+        fi
+
         sed -i "s|\${GH_USERNAME}|${GH_USERNAME}|g; s|\${GH_TOKEN}|${GH_TOKEN}|g" \
             /root/.copilot/config.json
 

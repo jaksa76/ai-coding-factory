@@ -94,6 +94,41 @@ stub_script() {
     [[ "$output" == *"GH_USERNAME"* ]]
 }
 
+@test "init: skips npm install when copilot is already installed" {
+    local npm_log
+    npm_log="$(mktemp)"
+    stub_script npm "echo 'npm called' >> '$npm_log'"
+
+    run "$AGENT" init
+
+    [ "$status" -eq 0 ]
+    # copilot stub is in PATH so npm should NOT be called
+    [ ! -s "$npm_log" ]
+
+    rm -f "$npm_log"
+}
+
+@test "init: installs copilot via npm when not found in PATH" {
+    # Remove the copilot stub so command -v copilot fails
+    rm -f "$STUB_DIR/copilot"
+
+    local npm_log
+    npm_log="$(mktemp)"
+    stub_script npm "echo \"\$*\" >> '$npm_log'"
+
+    # Point wrapper write to a writable temp dir
+    export COPILOT_BIN_DIR="$(mktemp -d)"
+
+    run "$AGENT" init
+
+    [ "$status" -eq 0 ]
+    grep -q "install" "$npm_log"
+    grep -q "@github/copilot" "$npm_log"
+
+    rm -f "$npm_log"
+    rm -rf "$COPILOT_BIN_DIR"
+}
+
 # ── agent run ─────────────────────────────────────────────────────────────────
 
 @test "run: invokes copilot with --allow-all --no-ask-user and -p flags" {
