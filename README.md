@@ -89,6 +89,17 @@ export GH_TOKEN=<your-github-token>
 export GH_USERNAME=<your-github-username>
 ```
 
+### Optional
+
+```bash
+export FEATURE_BRANCHES=true           # create a feature branch + PR per issue
+export PLAN_BY_DEFAULT=true            # require a planning step for all issues
+export NO_ISSUES_WAIT=60               # seconds to wait when no issues are available
+export INTER_ISSUE_WAIT=1200           # seconds to wait between issues
+export IMPLEMENTATION_PROMPT="..."     # override the default implementation prompt
+export PLANNING_PROMPT="..."           # override the default planning prompt
+```
+
 ## Running
 
 There are three ways to run workers: directly, via Docker, or via the factory.
@@ -122,7 +133,7 @@ factory workers 3                        # start 3 implementation workers
 factory workers --env-file .env.factory  # pass credentials to workers
 ```
 
-This uses the `worker-claude` image by default. Override with `FACTORY_WORKER_IMAGE=<image>`.
+This uses the `worker-claude` image by default. Override with `FACTORY_WORKER_IMAGE=<image>`. Images are automatically built or rebuilt when missing or outdated.
 
 You can also set the env file globally:
 
@@ -145,6 +156,37 @@ For lower-level control (e.g. a specific image):
 ```bash
 factory add --image worker-copilot 2
 ```
+
+### Via AWS ECS (Fargate)
+
+To run workers on AWS ECS Fargate instead of local Docker, create a `runtime` symlink in the factory directory pointing to `runtime-aws`:
+
+```bash
+ln -sf runtime-aws factory/runtime
+```
+
+Then set the required AWS variables:
+
+```bash
+export FACTORY_AWS_REGION=us-east-1
+export FACTORY_AWS_CLUSTER=ai-coding-factory
+export FACTORY_AWS_SUBNET_ID=subnet-...
+export FACTORY_AWS_SECURITY_GROUP_ID=sg-...
+```
+
+All other factory commands (`factory workers`, `factory status`, `factory logs`, etc.) work the same way.
+
+### Feature branches
+
+To open a PR per issue instead of pushing directly to the default branch:
+
+```bash
+export FEATURE_BRANCHES=true
+```
+
+Or add a `needs-branch` label to individual Jira issues. The worker creates `feature/<ISSUE-KEY>`, pushes it, opens a PR, posts a comment with the PR URL, and attempts to transition the issue to **In Review**.
+
+Individual issues can opt out with the `skip-branch` label (takes precedence over `FEATURE_BRANCHES=true`).
 
 ### Importing Claude credentials
 

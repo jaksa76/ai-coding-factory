@@ -68,6 +68,13 @@ loop --project MYPROJ
 loop --project MYPROJ --for-planning
 ```
 
+The implementation and planning logic is extracted into separate scripts (`implement`, `plan`) that can also be called directly with an issue key:
+
+```bash
+implement <issue-key>
+plan <issue-key>
+```
+
 ### Implementation loop
 
 1. Claim an implementation-eligible issue with task-manager
@@ -81,6 +88,7 @@ Features currently supported:
 
 - Rate-limit retry when the agent returns 429/overload signals
 - Configurable polling/spacing intervals (NO_ISSUES_WAIT, INTER_ISSUE_WAIT)
+- Customizable agent prompt via IMPLEMENTATION_PROMPT
 - Optional feature-branch flow:
   - Enabled by FEATURE_BRANCHES=true or needs-branch label
   - Disabled by skip-branch label (takes precedence)
@@ -90,7 +98,7 @@ Features currently supported:
 
 1. Claim a planning-eligible issue with task-manager claim --for-planning
 2. Clone or pull GIT_REPO_URL
-3. Run agent to create plans/<ISSUE-KEY>.md
+3. Run agent to create plans/<ISSUE-KEY>.md (customizable via PLANNING_PROMPT)
 4. Commit and push plan file
 5. Comment with GitHub plan URL
 6. Transition to Awaiting Plan Review when available
@@ -115,7 +123,7 @@ Flow:
 
 ## factory
 
-factory operates the worker pool directly through Docker (no long-running server).
+factory operates the worker pool through a pluggable runtime backend (no long-running server).
 
 ```bash
 factory status
@@ -130,9 +138,23 @@ factory import-claude-credentials --env-file <file>
 
 Key behavior:
 
-- Worker containers are started with --restart=on-failure
+- Worker containers are started with --restart=on-failure (Docker) or equivalent
 - Environment is injected via --env-file or FACTORY_ENV_FILE
 - workers and planners commands are convenience wrappers around add
+- Worker images are automatically built or rebuilt when missing or outdated
+- The runtime backend is selected via a `runtime` symlink in the factory directory:
+  - `runtime-docker` (default) — local Docker
+  - `runtime-aws` — AWS ECS Fargate
+
+AWS ECS runtime environment variables:
+
+| Variable | Purpose |
+|---|---|
+| FACTORY_AWS_REGION | AWS region (default: us-east-1) |
+| FACTORY_AWS_CLUSTER | ECS cluster name (default: ai-coding-factory) |
+| FACTORY_AWS_SUBNET_ID | Subnet for ECS tasks |
+| FACTORY_AWS_SECURITY_GROUP_ID | Security group for ECS tasks |
+| FACTORY_AWS_LOG_GROUP | CloudWatch log group (default: /ecs/ai-coding-factory) |
 
 ## Worker images
 
@@ -161,6 +183,8 @@ The system is configured through environment variables (typically in an env file
 | PLAN_BY_DEFAULT | Planning policy default |
 | FEATURE_BRANCHES | Enable feature-branch workflow by default |
 | NO_ISSUES_WAIT, INTER_ISSUE_WAIT | Polling and pacing controls |
+| IMPLEMENTATION_PROMPT | Override the default implementation prompt |
+| PLANNING_PROMPT | Override the default planning prompt |
 
 Agent-specific variables are added per worker type (for example ANTHROPIC_API_KEY for Claude workers).
 

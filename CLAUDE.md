@@ -5,22 +5,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-This project is being built fresh. The previous implementation is in `legacy/` for reference.
-See `docs/ARCHITECTURE.md` for the full design, `TODO.md` for the ordered task list, and `docs/TESTING_STRATEGY.md` for how tests are structured and run.
+This project is complete and production-ready. The previous implementation is in `legacy/` for reference.
+See `docs/ARCHITECTURE.md` for the full design and `docs/TESTING_STRATEGY.md` for how tests are structured and run.
 
 
 ## Repository layout
 
 ```
 task-manager/   CLI tool — pluggable task management (bash, jira backend uses acli)
-loop/           CLI tool — agent-agnostic work loop (bash)
+loop/           CLI tool — agent-agnostic work loop, implement, and plan scripts (bash)
 worker-builder/ CLI tool — build worker images from a project devcontainer (bash)
 factory/        CLI tool — start/stop/monitor worker containers (bash)
 
 workers/
   claude/       Dockerfile: loop + Claude CLI
   copilot/      Dockerfile: loop + Copilot CLI
-  codex/        Dockerfile: loop + Codex CLI
+
+planner/        Dockerfile: loop --for-planning + Claude CLI
+plans/          Plan files generated during planning mode
 
 legacy/         Previous hub-based implementation (reference only)
 ```
@@ -49,6 +51,12 @@ legacy/         Previous hub-based implementation (reference only)
 | `GIT_REPO_URL` | Repository to work on |
 | `GIT_USERNAME` | Git push credentials |
 | `GIT_TOKEN` | Git push credentials |
+| `PLAN_BY_DEFAULT` | Set to `true` to require a planning step for all issues |
+| `FEATURE_BRANCHES` | Set to `true` to use feature branches for all issues |
+| `NO_ISSUES_WAIT` | Seconds to wait when no issues are available (default: 60) |
+| `INTER_ISSUE_WAIT` | Seconds to wait between issues (default: 1200; 300 in planning mode) |
+| `IMPLEMENTATION_PROMPT` | Override the default implementation prompt sent to the agent |
+| `PLANNING_PROMPT` | Override the default planning prompt sent to the agent |
 
 Agent-specific vars (add on top of the above per worker type):
 
@@ -56,7 +64,6 @@ Agent-specific vars (add on top of the above per worker type):
 |---|---|
 | `ANTHROPIC_API_KEY` | `workers/claude` |
 | `GH_TOKEN` | `workers/copilot` |
-| `OPENAI_API_KEY` | `workers/codex` |
 
 
 ## Testing
