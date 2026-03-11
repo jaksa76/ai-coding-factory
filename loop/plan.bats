@@ -97,6 +97,34 @@ esac
     rm -f "$agent_log"
 }
 
+@test "uses PLANNING_PROMPT env var when set instead of default prompt" {
+    local agent_log
+    agent_log="$(mktemp)"
+    stub_script agent "echo \"\$*\" >> '$agent_log'
+mkdir -p plans
+echo '# Plan' > plans/PROJ-1.md
+"
+
+    stub_script acli '
+case "$*" in
+  "jira workitem view"*"--json") echo '"'"'{"key":"PROJ-1","fields":{"description":"Bug details","summary":"Fix the bug","labels":[],"status":{"name":"To Do"},"assignee":null}}'"'"' ;;
+  *) ;;
+esac
+'
+
+    export PLANNING_PROMPT="Custom planning instructions for my project"
+
+    run "$PLAN" "PROJ-1"
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$agent_log")" == *"Custom planning instructions for my project"* ]]
+    [[ "$(cat "$agent_log")" == *"PROJ-1"* ]]
+    [[ "$(cat "$agent_log")" == *"Fix the bug"* ]]
+    [[ "$(cat "$agent_log")" != *"Explore the codebase"* ]]
+
+    unset PLANNING_PROMPT
+    rm -f "$agent_log"
+}
+
 # ── git operations ────────────────────────────────────────────────────────────
 
 @test "commits plans/<key>.md and pushes after agent succeeds" {
