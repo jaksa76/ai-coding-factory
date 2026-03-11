@@ -123,6 +123,31 @@ esac
     rm -f "$agent_log"
 }
 
+@test "uses IMPLEMENTATION_PROMPT env var when set instead of default prompt" {
+    local agent_log
+    agent_log="$(mktemp)"
+    stub_script agent "echo \"\$*\" >> '$agent_log'"
+
+    stub_script acli '
+case "$*" in
+  "jira workitem view"*"--json") echo '"'"'{"key":"PROJ-1","fields":{"description":"Bug details","summary":"Fix the bug","labels":[],"status":{"name":"To Do"},"assignee":null}}'"'"' ;;
+  *) ;;
+esac
+'
+
+    export IMPLEMENTATION_PROMPT="Custom implementation instructions for my project"
+
+    run "$IMPLEMENT" "PROJ-1"
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$agent_log")" == *"Custom implementation instructions for my project"* ]]
+    [[ "$(cat "$agent_log")" == *"PROJ-1"* ]]
+    [[ "$(cat "$agent_log")" == *"Fix the bug"* ]]
+    [[ "$(cat "$agent_log")" != *"Explore the codebase"* ]]
+
+    unset IMPLEMENTATION_PROMPT
+    rm -f "$agent_log"
+}
+
 @test "plan file for a different issue key is not used" {
     local agent_log
     agent_log="$(mktemp)"

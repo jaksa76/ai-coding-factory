@@ -108,7 +108,9 @@ if [[ "$use_fb" == "true" ]]; then
 fi
 
 # Build implementation prompt
-if [[ "$use_fb" == "true" ]]; then
+if [[ -n "${IMPLEMENTATION_PROMPT:-}" ]]; then
+    prompt="$IMPLEMENTATION_PROMPT"
+elif [[ "$use_fb" == "true" ]]; then
     prompt="Implement the issue described below. Work methodically:
 
 1. Explore the codebase to understand the relevant files and components.
