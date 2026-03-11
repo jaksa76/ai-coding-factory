@@ -89,6 +89,10 @@ esac
     [[ "$(cat "$agent_log")" == *"Fix the bug"* ]]
     [[ "$(cat "$agent_log")" == *"Bug details"* ]]
     [[ "$(cat "$agent_log")" == *"plans/PROJ-1.md"* ]]
+    [[ "$(cat "$agent_log")" == *"Explore the codebase"* ]]
+    [[ "$(cat "$agent_log")" == *"Implementation Steps"* ]]
+    [[ "$(cat "$agent_log")" == *"Testing"* ]]
+    [[ "$(cat "$agent_log")" == *"Risks"* ]]
 
     rm -f "$agent_log"
 }

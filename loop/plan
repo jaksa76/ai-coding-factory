@@ -73,7 +73,22 @@ clone_or_pull
 echo "Working on planning for $ISSUE_KEY"
 
 # Build prompt and run agent
-prompt="Create a plan for the issue described below and save it in plans/$ISSUE_KEY.md\n\n [$ISSUE_KEY] $ISSUE_SUMMARY"
+prompt="Create an implementation plan for the issue below. Work methodically:
+
+1. Explore the codebase to understand the relevant files and components.
+2. Identify what needs to change and why.
+3. Break the implementation into discrete, ordered steps.
+4. Identify what tests need to be added or modified.
+5. Note any risks, edge cases, or dependencies to consider.
+
+Save the plan in plans/$ISSUE_KEY.md with these sections:
+- Summary
+- Files to Change
+- Implementation Steps
+- Testing
+- Risks / Edge Cases
+
+Issue: [$ISSUE_KEY] $ISSUE_SUMMARY"
 [[ -n "$ISSUE_DESCRIPTION" ]] && prompt="$prompt
 $ISSUE_DESCRIPTION"
 echo "Running agent for $ISSUE_KEY..."
