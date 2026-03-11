@@ -1,0 +1,282 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# runtime-aws — AWS ECS Fargate runtime for factory
+#
+# Usage:
+#   runtime-aws add <name> <image> [--env-file <file>]
+#   runtime-aws status
+#   runtime-aws logs <task-arn>
+#   runtime-aws stop <task-arn>
+#   runtime-aws stop-all
+
+WORKER_TAG_KEY="ai-coding-factory.worker"
+WORKER_TAG_VALUE="true"
+
+REGION="${FACTORY_AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
+CLUSTER="${FACTORY_AWS_CLUSTER:-ai-coding-factory}"
+SUBNET_ID="${FACTORY_AWS_SUBNET_ID:-}"
+SECURITY_GROUP_ID="${FACTORY_AWS_SECURITY_GROUP_ID:-}"
+LOG_GROUP="${FACTORY_AWS_LOG_GROUP:-/ecs/ai-coding-factory}"
+
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+ensure_cluster() {
+    local cluster_status
+    cluster_status="$(aws ecs describe-clusters --clusters "$CLUSTER" --region "$REGION" \
+        --query 'clusters[0].status' --output text 2>/dev/null || true)"
+    [[ "$cluster_status" == "ACTIVE" ]] \
+        || aws ecs create-cluster --cluster-name "$CLUSTER" --region "$REGION" \
+            --tags "key=${WORKER_TAG_KEY},value=${WORKER_TAG_VALUE}" \
+            --output text > /dev/null
+}
+
+ensure_execution_role() {
+    aws iam get-role --role-name ecsTaskExecutionRole --output text > /dev/null 2>&1 && return 0
+
+    local trust_doc
+    trust_doc='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ecs-tasks.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+    aws iam create-role --role-name ecsTaskExecutionRole \
+        --assume-role-policy-document "$trust_doc" --output text > /dev/null
+    aws iam attach-role-policy --role-name ecsTaskExecutionRole \
+        --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+}
+
+resolve_network() {
+    if [[ -z "$SUBNET_ID" ]]; then
+        local vpc_id
+        vpc_id="$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" \
+            --region "$REGION" --query 'Vpcs[0].VpcId' --output text)"
+        SUBNET_ID="$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$vpc_id" \
+            --region "$REGION" --query 'Subnets[0].SubnetId' --output text)"
+    fi
+    if [[ -z "$SECURITY_GROUP_ID" ]]; then
+        local vpc_id
+        vpc_id="$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" \
+            --region "$REGION" --query 'Vpcs[0].VpcId' --output text)"
+        SECURITY_GROUP_ID="$(aws ec2 describe-security-groups \
+            --filters "Name=vpc-id,Values=$vpc_id" "Name=group-name,Values=default" \
+            --region "$REGION" --query 'SecurityGroups[0].GroupId' --output text)"
+    fi
+}
+
+ensure_log_group() {
+    aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" --region "$REGION" \
+        --query 'logGroups[0].logGroupName' --output text 2>/dev/null | grep -q "$LOG_GROUP" \
+        || aws logs create-log-group --log-group-name "$LOG_GROUP" --region "$REGION"
+}
+
+env_file_to_json() {
+    local env_file="$1"
+    local json="["
+    local first=true
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ -z "$line" || "$line" == \#* ]] && continue
+        local key="${line%%=*}"
+        local val="${line#*=}"
+        "$first" || json+=","
+        json+="{\"name\":$(printf '%s' "$key" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),\"value\":$(printf '%s' "$val" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}"
+        first=false
+    done < "$env_file"
+    json+="]"
+    echo "$json"
+}
+
+register_task_def() {
+    local name="$1"
+    local image="$2"
+    local env_file="${3:-}"
+
+    local account_id
+    account_id="$(aws sts get-caller-identity --query Account --output text)"
+    local exec_role_arn="arn:aws:iam::${account_id}:role/ecsTaskExecutionRole"
+    local family="ai-coding-factory-${name}"
+
+    local env_json="[]"
+    [[ -n "$env_file" ]] && env_json="$(env_file_to_json "$env_file")"
+
+    local task_def
+    task_def="$(cat <<EOF
+{
+  "family": "${family}",
+  "executionRoleArn": "${exec_role_arn}",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "containerDefinitions": [
+    {
+      "name": "${name}",
+      "image": "${image}",
+      "environment": ${env_json},
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "${LOG_GROUP}",
+          "awslogs-region": "${REGION}",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
+EOF
+)"
+
+    aws ecs register-task-definition --region "$REGION" \
+        --cli-input-json "$task_def" \
+        --query 'taskDefinition.taskDefinitionArn' --output text
+}
+
+task_id_from_arn() {
+    local arn="$1"
+    echo "${arn##*/}"
+}
+
+cmd_add() {
+    local name="${1:-}"
+    local image="${2:-}"
+    shift 2 || true
+
+    [[ -z "$name" ]]  && error_exit "name is required"
+    [[ -z "$image" ]] && error_exit "image is required"
+
+    local env_file=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --env-file)
+                [[ -z "${2:-}" ]] && error_exit "--env-file requires a value"
+                env_file="$2"
+                shift 2
+                ;;
+            *)
+                error_exit "Unknown option: $1"
+                ;;
+        esac
+    done
+
+    ensure_cluster
+    ensure_execution_role
+    ensure_log_group
+    resolve_network
+
+    local task_def_arn
+    task_def_arn="$(register_task_def "$name" "$image" "$env_file")"
+
+    aws ecs run-task \
+        --region "$REGION" \
+        --cluster "$CLUSTER" \
+        --task-definition "$task_def_arn" \
+        --launch-type FARGATE \
+        --network-configuration "awsvpcConfiguration={subnets=[${SUBNET_ID}],securityGroups=[${SECURITY_GROUP_ID}],assignPublicIp=ENABLED}" \
+        --tags "key=${WORKER_TAG_KEY},value=${WORKER_TAG_VALUE}" \
+        --enable-ecs-managed-tags \
+        --query 'tasks[0].taskArn' --output text
+}
+
+cmd_status() {
+    local task_arns
+    task_arns="$(aws ecs list-tasks --region "$REGION" --cluster "$CLUSTER" \
+        --query 'taskArns' --output json 2>/dev/null || echo '[]')"
+
+    if [[ "$task_arns" == "[]" || -z "$task_arns" ]]; then
+        echo -e "ID\tImage\tStatus\tName"
+        return 0
+    fi
+
+    local tasks_json
+    tasks_json="$(aws ecs describe-tasks --region "$REGION" --cluster "$CLUSTER" \
+        --tasks "$task_arns" --include TAGS --output json)"
+
+    echo -e "ID\tImage\tStatus\tName"
+    echo "$tasks_json" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for task in data.get('tasks', []):
+    tags = {t['key']: t['value'] for t in task.get('tags', [])}
+    if tags.get('ai-coding-factory.worker') != 'true':
+        continue
+    task_id = task['taskArn'].split('/')[-1]
+    status = task.get('lastStatus', 'UNKNOWN')
+    containers = task.get('containers', [{}])
+    image = containers[0].get('image', '') if containers else ''
+    name = containers[0].get('name', '') if containers else ''
+    print(f'{task_id}\t{image}\t{status}\t{name}')
+"
+}
+
+cmd_logs() {
+    local task_arn="${1:-}"
+    [[ -z "$task_arn" ]] && error_exit "task-arn is required"
+
+    local task_id
+    task_id="$(task_id_from_arn "$task_arn")"
+
+    # Determine container name from task
+    local container_name
+    container_name="$(aws ecs describe-tasks --region "$REGION" --cluster "$CLUSTER" \
+        --tasks "$task_arn" --query 'tasks[0].containers[0].name' --output text 2>/dev/null || echo "$task_id")"
+
+    local log_stream="ecs/${container_name}/${task_id}"
+    local next_token=""
+
+    while true; do
+        local args=(logs get-log-events --region "$REGION"
+            --log-group-name "$LOG_GROUP"
+            --log-stream-name "$log_stream"
+            --start-from-head
+            --output json)
+        [[ -n "$next_token" ]] && args+=(--next-token "$next_token")
+
+        local result
+        result="$(aws "${args[@]}" 2>/dev/null || echo '{"events":[],"nextForwardToken":""}')"
+
+        local new_token
+        new_token="$(echo "$result" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('nextForwardToken',''))")"
+
+        echo "$result" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+for e in d.get('events', []):
+    print(e.get('message', ''))
+"
+        [[ "$new_token" == "$next_token" ]] && sleep 2
+        next_token="$new_token"
+    done
+}
+
+cmd_stop() {
+    local task_arn="${1:-}"
+    [[ -z "$task_arn" ]] && error_exit "task-arn is required"
+    aws ecs stop-task --region "$REGION" --cluster "$CLUSTER" --task "$task_arn" --output text > /dev/null
+}
+
+cmd_stop_all() {
+    local task_arns
+    task_arns="$(aws ecs list-tasks --region "$REGION" --cluster "$CLUSTER" \
+        --query 'taskArns[]' --output text 2>/dev/null || true)"
+
+    if [[ -z "$task_arns" ]]; then
+        echo "No running workers to stop."
+        return 0
+    fi
+
+    for arn in $task_arns; do
+        aws ecs stop-task --region "$REGION" --cluster "$CLUSTER" --task "$arn" --output text > /dev/null
+        echo "Stopped: $arn"
+    done
+}
+
+[[ $# -eq 0 ]] && error_exit "subcommand is required"
+
+case "$1" in
+    add)      shift; cmd_add "$@" ;;
+    status)   shift; cmd_status ;;
+    logs)     shift; cmd_logs "$@" ;;
+    stop)     shift; cmd_stop "$@" ;;
+    stop-all) shift; cmd_stop_all ;;
+    *)        error_exit "Unknown subcommand: $1" ;;
+esac

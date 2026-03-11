@@ -8,10 +8,19 @@ FACTORY="$BATS_TEST_DIRNAME/factory"
 setup() {
     STUB_DIR="$(mktemp -d)"
     export PATH="$STUB_DIR:$PATH"
+
+    # Create a runtime stub in the same dir as factory, so factory finds it
+    RUNTIME_STUB="$BATS_TEST_DIRNAME/runtime"
+    _orig_runtime="$(readlink "$RUNTIME_STUB" 2>/dev/null || true)"
 }
 
 teardown() {
     rm -rf "$STUB_DIR"
+    # Restore original runtime symlink if we changed it
+    if [[ -n "${_RUNTIME_STUB_INSTALLED:-}" ]]; then
+        ln -sf "${_orig_runtime:-runtime-docker}" "$BATS_TEST_DIRNAME/runtime"
+        unset _RUNTIME_STUB_INSTALLED
+    fi
 }
 
 stub() {
@@ -31,6 +40,21 @@ stub_script() {
     local cmd="$1" body="$2"
     printf '#!/usr/bin/env bash\n%s\n' "$body" > "$STUB_DIR/$cmd"
     chmod +x "$STUB_DIR/$cmd"
+}
+
+# Install a runtime stub at factory/runtime (replaces the symlink temporarily)
+install_runtime_stub() {
+    local body="$1"
+    rm -f "$BATS_TEST_DIRNAME/runtime"
+    printf '#!/usr/bin/env bash\n%s\n' "$body" > "$BATS_TEST_DIRNAME/runtime"
+    chmod +x "$BATS_TEST_DIRNAME/runtime"
+    _RUNTIME_STUB_INSTALLED=1
+}
+
+restore_runtime_symlink() {
+    rm -f "$BATS_TEST_DIRNAME/runtime"
+    ln -sf "runtime-docker" "$BATS_TEST_DIRNAME/runtime"
+    unset _RUNTIME_STUB_INSTALLED
 }
 
 # ── argument / command validation ─────────────────────────────────────────────
@@ -61,39 +85,26 @@ stub_script() {
 
 # ── status ────────────────────────────────────────────────────────────────────
 
-@test "status: exits 0 and returns docker ps output" {
-    stub docker "CONTAINER ID   IMAGE          STATUS      NAMES"
-    run "$FACTORY" status
-    [ "$status" -eq 0 ]
-}
-
-@test "status: lists running workers" {
-    stub_script docker 'printf "CONTAINER ID\tIMAGE\tSTATUS\tNAMES\nabc123\tworker-claude\tUp 2 hours\tfactory-worker-1\n789xyz\tworker-claude\tUp 1 hour\tfactory-worker-2\n"'
-    run "$FACTORY" status
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"factory-worker-1"* ]]
-    [[ "$output" == *"factory-worker-2"* ]]
-}
-
-@test "status: passes factory worker label filter to docker ps" {
-    local called_file
-    called_file="$(mktemp)"
-    stub_script docker "echo \"\$@\" > '$called_file'"
+@test "status: delegates to runtime status" {
+    local calls_file
+    calls_file="$(mktemp)"
+    install_runtime_stub "echo \"\$@\" > '$calls_file'"
 
     run "$FACTORY" status
     [ "$status" -eq 0 ]
+    [[ "$(cat "$calls_file")" == "status" ]]
 
-    local docker_args
-    docker_args="$(cat "$called_file")"
-    [[ "$docker_args" == *"ai-coding-factory.worker"* ]]
-
-    rm -f "$called_file"
+    restore_runtime_symlink
+    rm -f "$calls_file"
 }
 
-@test "status: docker failure propagates non-zero exit" {
-    stub_exit docker 1 "Cannot connect to the Docker daemon"
+@test "status: runtime failure propagates non-zero exit" {
+    install_runtime_stub "exit 1"
+
     run "$FACTORY" status
     [ "$status" -ne 0 ]
+
+    restore_runtime_symlink
 }
 
 # ── add ───────────────────────────────────────────────────────────────────────
@@ -105,23 +116,25 @@ stub_script() {
 }
 
 @test "add: requires count" {
-    stub docker ""
+    install_runtime_stub "echo \"\$@\""
     run "$FACTORY" add --image myimage
     [ "$status" -eq 1 ]
     [[ "$output" == *"count is required"* ]]
+    restore_runtime_symlink
 }
 
 @test "add: count must be numeric" {
-    stub docker ""
+    install_runtime_stub "echo \"\$@\""
     run "$FACTORY" add --image myimage notanumber
     [ "$status" -eq 1 ]
     [[ "$output" == *"must be a positive integer"* ]]
+    restore_runtime_symlink
 }
 
-@test "add: launches N containers" {
+@test "add: calls runtime add N times" {
     local calls_file
     calls_file="$(mktemp)"
-    stub_script docker "echo \"\$@\" >> '$calls_file'"
+    install_runtime_stub "echo \"\$@\" >> '$calls_file'"
 
     run "$FACTORY" add --image myimage 3
     [ "$status" -eq 0 ]
@@ -130,65 +143,43 @@ stub_script() {
     call_count="$(wc -l < "$calls_file")"
     [ "$call_count" -eq 3 ]
 
+    restore_runtime_symlink
     rm -f "$calls_file"
 }
 
-@test "add: passes worker label to docker run" {
+@test "add: passes image name to runtime add" {
     local calls_file
     calls_file="$(mktemp)"
-    stub_script docker "echo \"\$@\" >> '$calls_file'"
-
-    run "$FACTORY" add --image myimage 1
-    [ "$status" -eq 0 ]
-
-    [[ "$(cat "$calls_file")" == *"ai-coding-factory.worker"* ]]
-
-    rm -f "$calls_file"
-}
-
-@test "add: passes image name to docker run" {
-    local calls_file
-    calls_file="$(mktemp)"
-    stub_script docker "echo \"\$@\" >> '$calls_file'"
+    install_runtime_stub "echo \"\$@\" >> '$calls_file'"
 
     run "$FACTORY" add --image my-worker-image 1
     [ "$status" -eq 0 ]
 
     [[ "$(cat "$calls_file")" == *"my-worker-image"* ]]
 
+    restore_runtime_symlink
     rm -f "$calls_file"
 }
 
-@test "add: passes --restart=on-failure to docker run" {
-    local calls_file
-    calls_file="$(mktemp)"
-    stub_script docker "echo \"\$@\" >> '$calls_file'"
-
-    run "$FACTORY" add --image myimage 1
-    [ "$status" -eq 0 ]
-
-    [[ "$(cat "$calls_file")" == *"--restart=on-failure"* ]]
-
-    rm -f "$calls_file"
-}
-
-@test "add: docker failure propagates non-zero exit" {
-    stub_exit docker 1 "Unable to find image"
+@test "add: runtime failure propagates non-zero exit" {
+    install_runtime_stub "exit 1"
     run "$FACTORY" add --image myimage 1
     [ "$status" -ne 0 ]
+    restore_runtime_symlink
 }
 
-@test "add: --env-file passes --env-file to docker run" {
+@test "add: --env-file passes --env-file to runtime add" {
     local calls_file env_file
     calls_file="$(mktemp)"
     env_file="$(mktemp)"
-    stub_script docker "echo \"\$@\" >> '$calls_file'"
+    install_runtime_stub "echo \"\$@\" >> '$calls_file'"
 
     run "$FACTORY" add --image myimage --env-file "$env_file" 1
     [ "$status" -eq 0 ]
     [[ "$(cat "$calls_file")" == *"--env-file"* ]]
     [[ "$(cat "$calls_file")" == *"$env_file"* ]]
 
+    restore_runtime_symlink
     rm -f "$calls_file" "$env_file"
 }
 
@@ -202,13 +193,14 @@ stub_script() {
     local calls_file env_file
     calls_file="$(mktemp)"
     env_file="$(mktemp)"
-    stub_script docker "echo \"\$@\" >> '$calls_file'"
+    install_runtime_stub "echo \"\$@\" >> '$calls_file'"
 
     FACTORY_ENV_FILE="$env_file" run "$FACTORY" add --image myimage 1
     [ "$status" -eq 0 ]
     [[ "$(cat "$calls_file")" == *"--env-file"* ]]
     [[ "$(cat "$calls_file")" == *"$env_file"* ]]
 
+    restore_runtime_symlink
     rm -f "$calls_file" "$env_file"
 }
 
@@ -217,7 +209,7 @@ stub_script() {
 @test "workers: defaults to 1 worker using worker-claude image" {
     local calls_file
     calls_file="$(mktemp)"
-    stub_script docker "echo \"\$@\" >> '$calls_file'"
+    install_runtime_stub "echo \"\$@\" >> '$calls_file'"
 
     run "$FACTORY" workers
     [ "$status" -eq 0 ]
@@ -227,13 +219,14 @@ stub_script() {
     [ "$call_count" -eq 1 ]
     [[ "$(cat "$calls_file")" == *"worker-claude"* ]]
 
+    restore_runtime_symlink
     rm -f "$calls_file"
 }
 
 @test "workers: starts N workers" {
     local calls_file
     calls_file="$(mktemp)"
-    stub_script docker "echo \"\$@\" >> '$calls_file'"
+    install_runtime_stub "echo \"\$@\" >> '$calls_file'"
 
     run "$FACTORY" workers 3
     [ "$status" -eq 0 ]
@@ -242,32 +235,35 @@ stub_script() {
     call_count="$(wc -l < "$calls_file")"
     [ "$call_count" -eq 3 ]
 
+    restore_runtime_symlink
     rm -f "$calls_file"
 }
 
 @test "workers: FACTORY_WORKER_IMAGE overrides default image" {
     local calls_file
     calls_file="$(mktemp)"
-    stub_script docker "echo \"\$@\" >> '$calls_file'"
+    install_runtime_stub "echo \"\$@\" >> '$calls_file'"
 
     FACTORY_WORKER_IMAGE=my-custom-worker run "$FACTORY" workers 1
     [ "$status" -eq 0 ]
     [[ "$(cat "$calls_file")" == *"my-custom-worker"* ]]
 
+    restore_runtime_symlink
     rm -f "$calls_file"
 }
 
-@test "workers: --env-file passes --env-file to docker run" {
+@test "workers: --env-file passes --env-file to runtime add" {
     local calls_file env_file
     calls_file="$(mktemp)"
     env_file="$(mktemp)"
-    stub_script docker "echo \"\$@\" >> '$calls_file'"
+    install_runtime_stub "echo \"\$@\" >> '$calls_file'"
 
     run "$FACTORY" workers --env-file "$env_file" 1
     [ "$status" -eq 0 ]
     [[ "$(cat "$calls_file")" == *"--env-file"* ]]
     [[ "$(cat "$calls_file")" == *"$env_file"* ]]
 
+    restore_runtime_symlink
     rm -f "$calls_file" "$env_file"
 }
 
@@ -276,7 +272,7 @@ stub_script() {
 @test "planners: defaults to 1 worker using planner-claude image" {
     local calls_file
     calls_file="$(mktemp)"
-    stub_script docker "echo \"\$@\" >> '$calls_file'"
+    install_runtime_stub "echo \"\$@\" >> '$calls_file'"
 
     run "$FACTORY" planners
     [ "$status" -eq 0 ]
@@ -286,13 +282,14 @@ stub_script() {
     [ "$call_count" -eq 1 ]
     [[ "$(cat "$calls_file")" == *"planner-claude"* ]]
 
+    restore_runtime_symlink
     rm -f "$calls_file"
 }
 
 @test "planners: starts N planners" {
     local calls_file
     calls_file="$(mktemp)"
-    stub_script docker "echo \"\$@\" >> '$calls_file'"
+    install_runtime_stub "echo \"\$@\" >> '$calls_file'"
 
     run "$FACTORY" planners 2
     [ "$status" -eq 0 ]
@@ -301,32 +298,35 @@ stub_script() {
     call_count="$(wc -l < "$calls_file")"
     [ "$call_count" -eq 2 ]
 
+    restore_runtime_symlink
     rm -f "$calls_file"
 }
 
 @test "planners: FACTORY_PLANNER_IMAGE overrides default image" {
     local calls_file
     calls_file="$(mktemp)"
-    stub_script docker "echo \"\$@\" >> '$calls_file'"
+    install_runtime_stub "echo \"\$@\" >> '$calls_file'"
 
     FACTORY_PLANNER_IMAGE=my-custom-planner run "$FACTORY" planners 1
     [ "$status" -eq 0 ]
     [[ "$(cat "$calls_file")" == *"my-custom-planner"* ]]
 
+    restore_runtime_symlink
     rm -f "$calls_file"
 }
 
-@test "planners: --env-file passes --env-file to docker run" {
+@test "planners: --env-file passes --env-file to runtime add" {
     local calls_file env_file
     calls_file="$(mktemp)"
     env_file="$(mktemp)"
-    stub_script docker "echo \"\$@\" >> '$calls_file'"
+    install_runtime_stub "echo \"\$@\" >> '$calls_file'"
 
     run "$FACTORY" planners --env-file "$env_file" 1
     [ "$status" -eq 0 ]
     [[ "$(cat "$calls_file")" == *"--env-file"* ]]
     [[ "$(cat "$calls_file")" == *"$env_file"* ]]
 
+    restore_runtime_symlink
     rm -f "$calls_file" "$env_file"
 }
 
@@ -338,27 +338,28 @@ stub_script() {
     [[ "$output" == *"worker-id is required"* ]]
 }
 
-@test "logs: calls docker logs -f with worker-id" {
+@test "logs: delegates to runtime logs with worker-id" {
     local calls_file
     calls_file="$(mktemp)"
-    stub_script docker "echo \"\$@\" > '$calls_file'"
+    install_runtime_stub "echo \"\$@\" > '$calls_file'"
 
     run "$FACTORY" logs abc123
     [ "$status" -eq 0 ]
 
-    local docker_args
-    docker_args="$(cat "$calls_file")"
-    [[ "$docker_args" == *"logs"* ]]
-    [[ "$docker_args" == *"-f"* ]]
-    [[ "$docker_args" == *"abc123"* ]]
+    local args
+    args="$(cat "$calls_file")"
+    [[ "$args" == *"logs"* ]]
+    [[ "$args" == *"abc123"* ]]
 
+    restore_runtime_symlink
     rm -f "$calls_file"
 }
 
-@test "logs: docker failure propagates non-zero exit" {
-    stub_exit docker 1 "No such container"
+@test "logs: runtime failure propagates non-zero exit" {
+    install_runtime_stub "exit 1"
     run "$FACTORY" logs nonexistent
     [ "$status" -ne 0 ]
+    restore_runtime_symlink
 }
 
 # ── stop ──────────────────────────────────────────────────────────────────────
@@ -369,61 +370,42 @@ stub_script() {
     [[ "$output" == *"worker-id or --all is required"* ]]
 }
 
-@test "stop: stops a specific worker" {
+@test "stop: delegates to runtime stop with worker-id" {
     local calls_file
     calls_file="$(mktemp)"
-    stub_script docker "echo \"\$@\" > '$calls_file'"
+    install_runtime_stub "echo \"\$@\" > '$calls_file'"
 
     run "$FACTORY" stop abc123
     [ "$status" -eq 0 ]
 
-    local docker_args
-    docker_args="$(cat "$calls_file")"
-    [[ "$docker_args" == *"stop"* ]]
-    [[ "$docker_args" == *"abc123"* ]]
+    local args
+    args="$(cat "$calls_file")"
+    [[ "$args" == *"stop"* ]]
+    [[ "$args" == *"abc123"* ]]
 
+    restore_runtime_symlink
     rm -f "$calls_file"
 }
 
-@test "stop --all: stops all running workers" {
+@test "stop --all: delegates to runtime stop-all" {
     local calls_file
     calls_file="$(mktemp)"
-    stub_script docker "
-        if [[ \"\$1\" == 'ps' ]]; then
-            echo 'abc123'
-            echo 'def456'
-        else
-            echo \"\$@\" >> '$calls_file'
-        fi
-    "
+    install_runtime_stub "echo \"\$@\" > '$calls_file'"
 
     run "$FACTORY" stop --all
     [ "$status" -eq 0 ]
 
-    local docker_args
-    docker_args="$(cat "$calls_file")"
-    [[ "$docker_args" == *"stop"* ]]
-    [[ "$docker_args" == *"abc123"* ]]
+    [[ "$(cat "$calls_file")" == "stop-all" ]]
 
+    restore_runtime_symlink
     rm -f "$calls_file"
 }
 
-@test "stop --all: prints message when no workers running" {
-    stub_script docker "
-        if [[ \"\$1\" == 'ps' ]]; then
-            echo ''
-        fi
-    "
-
-    run "$FACTORY" stop --all
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"No running workers"* ]]
-}
-
-@test "stop: docker failure propagates non-zero exit" {
-    stub_exit docker 1 "No such container"
+@test "stop: runtime failure propagates non-zero exit" {
+    install_runtime_stub "exit 1"
     run "$FACTORY" stop nonexistent
     [ "$status" -ne 0 ]
+    restore_runtime_symlink
 }
 
 # ── import-claude-credentials ─────────────────────────────────────────────────

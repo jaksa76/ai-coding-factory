@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# runtime-docker — Docker runtime for factory
+#
+# Usage:
+#   runtime-docker add <name> <image> [--env-file <file>]
+#   runtime-docker status
+#   runtime-docker logs <worker-id>
+#   runtime-docker stop <worker-id>
+#   runtime-docker stop-all
+
+WORKER_LABEL="ai-coding-factory.worker=true"
+
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+cmd_add() {
+    local name="${1:-}"
+    local image="${2:-}"
+    shift 2 || true
+
+    [[ -z "$name" ]]  && error_exit "name is required"
+    [[ -z "$image" ]] && error_exit "image is required"
+
+    local env_file=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --env-file)
+                [[ -z "${2:-}" ]] && error_exit "--env-file requires a value"
+                env_file="$2"
+                shift 2
+                ;;
+            *)
+                error_exit "Unknown option: $1"
+                ;;
+        esac
+    done
+
+    local run_args=(-d --restart=on-failure --label "$WORKER_LABEL" --name "$name")
+    [[ -n "$env_file" ]] && run_args+=(--env-file "$env_file")
+    run_args+=("$image")
+    docker run "${run_args[@]}"
+}
+
+cmd_status() {
+    docker ps --filter "label=$WORKER_LABEL" \
+        --format "table {{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Names}}"
+}
+
+cmd_logs() {
+    local worker_id="${1:-}"
+    [[ -z "$worker_id" ]] && error_exit "worker-id is required"
+    docker logs -f "$worker_id"
+}
+
+cmd_stop() {
+    local worker_id="${1:-}"
+    [[ -z "$worker_id" ]] && error_exit "worker-id is required"
+    docker stop "$worker_id"
+}
+
+cmd_stop_all() {
+    local ids
+    ids="$(docker ps --filter "label=$WORKER_LABEL" --quiet)"
+    if [[ -z "$ids" ]]; then
+        echo "No running workers to stop."
+        return 0
+    fi
+    # shellcheck disable=SC2086
+    docker stop $ids
+}
+
+[[ $# -eq 0 ]] && error_exit "subcommand is required"
+
+case "$1" in
+    add)      shift; cmd_add "$@" ;;
+    status)   shift; cmd_status ;;
+    logs)     shift; cmd_logs "$@" ;;
+    stop)     shift; cmd_stop "$@" ;;
+    stop-all) shift; cmd_stop_all ;;
+    *)        error_exit "Unknown subcommand: $1" ;;
+esac
