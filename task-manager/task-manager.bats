@@ -408,6 +408,22 @@ esac
     [[ "$output" != *'needs-plan'* ]]
 }
 
+@test "claim: JQL includes ORDER BY rank ASC" {
+    stub_script acli "
+case \"\$*\" in
+  'jira auth status')        echo 'Authenticated' ;;
+  'jira workitem search'*)   echo '[{\"key\":\"PROJ-1\"}]' ;;
+  'jira workitem assign'*)   ;;
+  'jira workitem view PROJ-1 --json')
+      echo '{\"key\":\"PROJ-1\",\"fields\":{\"assignee\":{\"accountId\":\"acc1\"},\"summary\":\"Task\",\"description\":null,\"status\":{\"name\":\"To Do\"}}}' ;;
+  'jira workitem transition'*) ;;
+esac
+"
+    run "$TASK_MANAGER" claim --project "PROJ" --account-id "acc1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'ORDER BY rank ASC'* ]]
+}
+
 @test "claim: transition failure is non-fatal: warning printed but exits 0" {
     stub_script acli '
 case "$*" in

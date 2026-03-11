@@ -16,18 +16,18 @@ tm_auth() {
 _build_search_jql_for_planning() {
     local project="$1"
     if [[ "${PLAN_BY_DEFAULT:-false}" == "true" ]]; then
-        echo "project = \"$project\" AND assignee is EMPTY AND status = \"To Do\" AND (labels NOT IN (\"skip-plan\") OR labels is EMPTY)"
+        echo "project = \"$project\" AND assignee is EMPTY AND status = \"To Do\" AND (labels NOT IN (\"skip-plan\") OR labels is EMPTY) ORDER BY rank ASC"
     else
-        echo "project = \"$project\" AND assignee is EMPTY AND status = \"To Do\" AND labels IN (\"needs-plan\")"
+        echo "project = \"$project\" AND assignee is EMPTY AND status = \"To Do\" AND labels IN (\"needs-plan\") ORDER BY rank ASC"
     fi
 }
 
 _build_search_jql_for_implementation() {
     local project="$1"
     if [[ "${PLAN_BY_DEFAULT:-false}" == "true" ]]; then
-        echo "project = \"$project\" AND assignee is EMPTY AND (status = \"Plan Approved\" OR (status = \"To Do\" AND labels IN (\"skip-plan\")))"
+        echo "project = \"$project\" AND assignee is EMPTY AND (status = \"Plan Approved\" OR (status = \"To Do\" AND labels IN (\"skip-plan\"))) ORDER BY rank ASC"
     else
-        echo "project = \"$project\" AND assignee is EMPTY AND status = \"To Do\" AND (labels NOT IN (\"needs-plan\") OR labels is EMPTY)"
+        echo "project = \"$project\" AND assignee is EMPTY AND status = \"To Do\" AND (labels NOT IN (\"needs-plan\") OR labels is EMPTY) ORDER BY rank ASC"
     fi
 }
 
