@@ -182,7 +182,7 @@ make_docker_env_file() {
         "$IMAGE_TAG" -c "
             agent init
             copilot -p 'Reply with the single word HELLO and nothing else.' \
-                --no-ask-user --yolo --model gpt-4.1 \
+                --no-ask-user --yolo --model gpt-4.1-nano \
                 > /tmp/reply.txt 2>&1
             cat /tmp/reply.txt
         ")
