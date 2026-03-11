@@ -557,7 +557,7 @@ case \"\$*\" in
   *) ;;
 esac
 "
-    run env TASK_MANAGER=github "$TASK_MANAGER" claim --project "owner/repo" --account-id "user1" --for-planning
+    run env TASK_MANAGER=github PLAN_BY_DEFAULT="" "$TASK_MANAGER" claim --project "owner/repo" --account-id "user1" --for-planning
     [ "$status" -eq 0 ]
     [[ "$output" == *"Successfully claimed #5"* ]]
     [[ "$(cat "$gh_log")" == *"in-planning"* ]]
@@ -669,7 +669,7 @@ _todo_tmpfile() {
 @test "todo: list: returns open items as JSON array" {
     local f
     f=$(_todo_tmpfile "- [ ] Task one" "- [>] In progress" "- [x] Done item")
-    run env TASK_MANAGER=todo TODO_FILE="$f" "$TASK_MANAGER" list --project "$f"
+    run env TASK_MANAGER=todo TODO_FILE="$f" PLAN_BY_DEFAULT="" "$TASK_MANAGER" list --project "$f"
     [ "$status" -eq 0 ]
     [[ "$(printf '%s' "$output" | jq -r '.[0].key')"     == "TODO-1" ]]
     [[ "$(printf '%s' "$output" | jq -r '.[0].summary')" == "Task one" ]]
@@ -680,7 +680,7 @@ _todo_tmpfile() {
 @test "todo: list: excludes in-progress and done items" {
     local f
     f=$(_todo_tmpfile "- [>] In progress" "- [x] Done" "- [ ] Open")
-    run env TASK_MANAGER=todo TODO_FILE="$f" "$TASK_MANAGER" list --project "$f"
+    run env TASK_MANAGER=todo TODO_FILE="$f" PLAN_BY_DEFAULT="" "$TASK_MANAGER" list --project "$f"
     [ "$status" -eq 0 ]
     [[ "$(printf '%s' "$output" | jq 'length')" == "1" ]]
     [[ "$(printf '%s' "$output" | jq -r '.[0].summary')" == "Open" ]]
@@ -711,7 +711,7 @@ _todo_tmpfile() {
 @test "todo: claim: marks first open item as [>] (in-progress)" {
     local f
     f=$(_todo_tmpfile "- [ ] Task one" "- [ ] Task two")
-    run env TASK_MANAGER=todo TODO_FILE="$f" "$TASK_MANAGER" claim --project "$f" --account-id "agent1"
+    run env TASK_MANAGER=todo TODO_FILE="$f" PLAN_BY_DEFAULT="" "$TASK_MANAGER" claim --project "$f" --account-id "agent1"
     [ "$status" -eq 0 ]
     [[ "$(head -1 "$f")" == "- [>] Task one" ]]
     rm -f "$f"
@@ -730,7 +730,7 @@ _todo_tmpfile() {
 @test "todo: claim: returns correct JSON with key, summary, description" {
     local f
     f=$(_todo_tmpfile "- [ ] Fix the bug")
-    run env TASK_MANAGER=todo TODO_FILE="$f" "$TASK_MANAGER" claim --project "$f" --account-id "agent1"
+    run env TASK_MANAGER=todo TODO_FILE="$f" PLAN_BY_DEFAULT="" "$TASK_MANAGER" claim --project "$f" --account-id "agent1"
     [ "$status" -eq 0 ]
     local json
     json=$(printf '%s\n' "$output" | grep '^{')

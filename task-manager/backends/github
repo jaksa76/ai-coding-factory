@@ -81,9 +81,9 @@ tm_claim() {
         echo "Searching for unassigned open issues in $repo..." >&2
         local issues
         if [[ "$for_planning" -eq 1 ]]; then
-            issues=$(_gh_list_issues_for_planning "$repo")
+            issues=$(_gh_list_issues_for_planning "$repo") || { echo "Error searching for issues" >&2; exit 1; }
         else
-            issues=$(_gh_list_issues_for_implementation "$repo")
+            issues=$(_gh_list_issues_for_implementation "$repo") || { echo "Error searching for issues" >&2; exit 1; }
         fi
 
         if [[ -z "$issues" || "$issues" == "[]" ]]; then

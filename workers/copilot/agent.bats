@@ -34,7 +34,7 @@ args=()
 for arg in \"\$@\"; do
     args+=(\"\${arg//\/root\/.copilot\/config.json/$FAKE_COPILOT_DIR\/.copilot\/config.json}\")
 done
-exec /usr/bin/sed \"\${args[@]}\"
+exec $(command -v sed || echo /usr/bin/sed) \"\${args[@]}\"
 "
 
     # Default env vars
@@ -119,7 +119,7 @@ stub_script() {
     # Point wrapper write to a writable temp dir
     export COPILOT_BIN_DIR="$(mktemp -d)"
 
-    run "$AGENT" init
+    run env PATH="$STUB_DIR:/usr/local/bin:/usr/bin:/bin" "$AGENT" init
 
     [ "$status" -eq 0 ]
     grep -q "install" "$npm_log"
