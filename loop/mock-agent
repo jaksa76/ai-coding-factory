@@ -4,18 +4,35 @@ set -euo pipefail
 # mock-agent — fake agent for testing loop without real AI calls
 #
 # Usage:
-#   mock-agent <prompt>
-#
-# Appends the prompt to work-log.md in the current directory,
-# then commits the change with git.
+#   mock-agent init           — no-op initialisation
+#   mock-agent run <prompt>   — appends prompt to work-log.md and commits
 
 usage() {
-    echo "Usage: mock-agent <prompt>"
+    echo "Usage: mock-agent <command> [args]"
+    echo ""
+    echo "Commands:"
+    echo "  init          No-op initialisation"
+    echo "  run <prompt>  Append prompt to work-log.md and commit"
     exit 1
 }
 
 [[ $# -eq 0 ]] && usage
 [[ "$1" == "--help" || "$1" == "-h" ]] && usage
+
+CMD="$1"; shift
+
+case "$CMD" in
+    init)
+        exit 0
+        ;;
+    run)
+        [[ $# -eq 0 ]] && { echo "Usage: mock-agent run <prompt>" >&2; exit 1; }
+        ;;
+    *)
+        echo "Unknown command: $CMD" >&2
+        usage
+        ;;
+esac
 
 PROMPT="$*"
 LOG_FILE="work-log.md"

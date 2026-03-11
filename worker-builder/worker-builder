@@ -173,24 +173,16 @@ DOCKERFILE="$WORK_DIR/Dockerfile"
     esac
 
     printf '\n'
-    printf '# Install loop and task-manager tools\n'
+    printf '# Install loop, task-manager, and agent tools\n'
     printf '# Build context: repository root (docker build -f <dockerfile> <repo-root>)\n'
     printf 'COPY loop/loop /usr/local/bin/loop\n'
+    printf 'COPY loop/implement /usr/local/bin/implement\n'
+    printf 'COPY loop/git-utils.sh /usr/local/bin/git-utils.sh\n'
     printf 'COPY task-manager/task-manager /usr/local/bin/task-manager\n'
-    printf 'RUN chmod +x /usr/local/bin/loop /usr/local/bin/task-manager\n'
+    printf 'COPY workers/%s/agent /usr/local/bin/agent\n' "$AGENT"
+    printf 'RUN chmod +x /usr/local/bin/loop /usr/local/bin/implement /usr/local/bin/task-manager /usr/local/bin/agent\n'
     printf '\n'
-
-    case "$AGENT" in
-        claude)
-            printf 'ENTRYPOINT ["bash", "-c", "loop --project \\\"$JIRA_PROJECT\\\" --agent '"'"'claude --dangerously-skip-permissions -p'"'"'"]\n'
-            ;;
-        copilot)
-            printf 'ENTRYPOINT ["bash", "-c", "loop --project \\\"$JIRA_PROJECT\\\" --agent copilot"]\n'
-            ;;
-        codex)
-            printf 'ENTRYPOINT ["bash", "-c", "loop --project \\\"$JIRA_PROJECT\\\" --agent '"'"'codex -q'"'"'"]\n'
-            ;;
-    esac
+    printf 'ENTRYPOINT ["bash", "-c", "loop --project \"$JIRA_PROJECT\""]\n'
 } > "$DOCKERFILE"
 
 echo "Generated Dockerfile:"

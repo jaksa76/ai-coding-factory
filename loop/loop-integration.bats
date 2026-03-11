@@ -202,6 +202,13 @@ STUB_EOF
     export GIT_COMMITTER_NAME="Test Agent"
     export GIT_COMMITTER_EMAIL="agent@test.example.com"
 
+    # Create an 'agent' stub in STUB_DIR that delegates to mock-agent
+    cat > "$STUB_DIR/agent" << 'AGENT_EOF'
+#!/usr/bin/env bash
+exec mock-agent "$@"
+AGENT_EOF
+    chmod +x "$STUB_DIR/agent"
+
     # PATH: stubs first, then loop dir (contains mock-agent), then original PATH
     export PATH="$STUB_DIR:$BATS_TEST_DIRNAME:$PATH"
 
@@ -233,7 +240,7 @@ teardown() {
     acli jira workitem transition --key "$TEST_ISSUE_KEY" --status "To Do" --yes 2>/dev/null || true
     acli jira workitem assign --key "$TEST_ISSUE_KEY" --remove-assignee --yes 2>/dev/null || true
 
-    run "$LOOP" --project "$PROJECT" --agent mock-agent
+    run "$LOOP" --project "$PROJECT"
 
     echo "# output: $output" >&3
     # Loop exits with status 1 when claim returns 1 on the second iteration
@@ -309,7 +316,7 @@ EOF
     _setup_planning_integration
     KEY=$(create_test_issue "needs-plan")
     export PLAN_BY_DEFAULT=false
-    run timeout 120 "$LOOP" --project "$PROJECT" --agent agent --for-planning
+    run timeout 120 "$LOOP" --project "$PROJECT" --for-planning
     [[ "$(issue_assignee "$KEY")" == "$JIRA_ASSIGNEE_ACCOUNT_ID" ]]
     plan_in_repo "$KEY"
     local s
@@ -321,7 +328,7 @@ EOF
     _setup_planning_integration
     KEY=$(create_test_issue)
     export PLAN_BY_DEFAULT=false
-    run timeout 20 "$LOOP" --project "$PROJECT" --agent agent --for-planning
+    run timeout 20 "$LOOP" --project "$PROJECT" --for-planning
     [[ "$(issue_assignee "$KEY")" != "$JIRA_ASSIGNEE_ACCOUNT_ID" ]]
 }
 
@@ -329,7 +336,7 @@ EOF
     _setup_planning_integration
     KEY=$(create_test_issue "skip-plan")
     export PLAN_BY_DEFAULT=false
-    run timeout 20 "$LOOP" --project "$PROJECT" --agent agent --for-planning
+    run timeout 20 "$LOOP" --project "$PROJECT" --for-planning
     [[ "$(issue_assignee "$KEY")" != "$JIRA_ASSIGNEE_ACCOUNT_ID" ]]
 }
 
@@ -337,7 +344,7 @@ EOF
     _setup_planning_integration
     KEY=$(create_test_issue)
     export PLAN_BY_DEFAULT=true
-    run timeout 120 "$LOOP" --project "$PROJECT" --agent agent --for-planning
+    run timeout 120 "$LOOP" --project "$PROJECT" --for-planning
     [[ "$(issue_assignee "$KEY")" == "$JIRA_ASSIGNEE_ACCOUNT_ID" ]]
     plan_in_repo "$KEY"
     local s
@@ -349,6 +356,6 @@ EOF
     _setup_planning_integration
     KEY=$(create_test_issue "skip-plan")
     export PLAN_BY_DEFAULT=true
-    run timeout 20 "$LOOP" --project "$PROJECT" --agent agent --for-planning
+    run timeout 20 "$LOOP" --project "$PROJECT" --for-planning
     [[ "$(issue_assignee "$KEY")" != "$JIRA_ASSIGNEE_ACCOUNT_ID" ]]
 }

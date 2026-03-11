@@ -56,9 +56,22 @@ stub_script() {
     [[ "$output" == *"Usage:"* ]]
 }
 
-# ── happy path ────────────────────────────────────────────────────────────────
+@test "unknown command prints usage" {
+    run "$AGENT" unknown
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Usage:"* ]]
+}
 
-@test "appends prompt to work-log.md and commits" {
+# ── init ─────────────────────────────────────────────────────────────────────
+
+@test "init exits 0" {
+    run "$AGENT" init
+    [ "$status" -eq 0 ]
+}
+
+# ── run subcommand ───────────────────────────────────────────────────────────
+
+@test "run: appends prompt to work-log.md and commits" {
     # Track git calls
     stub_script git '
 case "$*" in
@@ -68,33 +81,33 @@ case "$*" in
 esac
 '
     cd "$WORK_DIR"
-    run "$AGENT" "Fix the login bug"
+    run "$AGENT" run "Fix the login bug"
     [ "$status" -eq 0 ]
     [ -f work-log.md ]
     [[ "$(cat work-log.md)" == *"Fix the login bug"* ]]
 }
 
-@test "multi-word prompt is written in full" {
+@test "run: multi-word prompt is written in full" {
     stub git ""
     cd "$WORK_DIR"
-    run "$AGENT" "Implement dark mode for the dashboard"
+    run "$AGENT" run "Implement dark mode for the dashboard"
     [ "$status" -eq 0 ]
     [ -f work-log.md ]
     [[ "$(cat work-log.md)" == *"Implement dark mode for the dashboard"* ]]
 }
 
-@test "appends to existing work-log.md (does not overwrite)" {
+@test "run: appends to existing work-log.md (does not overwrite)" {
     stub git ""
     cd "$WORK_DIR"
     echo "previous entry" > work-log.md
 
-    run "$AGENT" "new entry"
+    run "$AGENT" run "new entry"
     [ "$status" -eq 0 ]
     [[ "$(cat work-log.md)" == *"previous entry"* ]]
     [[ "$(cat work-log.md)" == *"new entry"* ]]
 }
 
-@test "git add is called with work-log.md" {
+@test "run: git add is called with work-log.md" {
     local add_log
     add_log="$(mktemp)"
     stub_script git "
@@ -105,14 +118,14 @@ case \"\$*\" in
 esac
 "
     cd "$WORK_DIR"
-    run "$AGENT" "some prompt"
+    run "$AGENT" run "some prompt"
     [ "$status" -eq 0 ]
     [ -f "$add_log" ]
     [[ "$(cat "$add_log")" == *"add called"* ]]
     rm -f "$add_log"
 }
 
-@test "git commit is called with expected message" {
+@test "run: git commit is called with expected message" {
     local commit_log
     commit_log="$(mktemp)"
     stub_script git "
@@ -123,14 +136,14 @@ case \"\$*\" in
 esac
 "
     cd "$WORK_DIR"
-    run "$AGENT" "some prompt"
+    run "$AGENT" run "some prompt"
     [ "$status" -eq 0 ]
     [ -f "$commit_log" ]
     [[ "$(cat "$commit_log")" == *"commit called"* ]]
     rm -f "$commit_log"
 }
 
-@test "exits non-zero when git commit fails" {
+@test "run: exits non-zero when git commit fails" {
     stub_script git '
 case "$*" in
   "add work-log.md") ;;
@@ -138,6 +151,12 @@ case "$*" in
 esac
 '
     cd "$WORK_DIR"
-    run "$AGENT" "some prompt"
+    run "$AGENT" run "some prompt"
     [ "$status" -ne 0 ]
+}
+
+@test "run: no prompt argument prints error" {
+    cd "$WORK_DIR"
+    run "$AGENT" run
+    [ "$status" -eq 1 ]
 }
