@@ -133,11 +133,22 @@ setup_bin() {
     header "[3/5] Setting up bin/"
     mkdir -p "$BIN_DIR"
 
-    for tool in task-manager loop factory worker-builder; do
-        local src="$REPO_DIR/$tool/$tool"
-        local dst="$BIN_DIR/$tool"
+    local entries=(
+        "task-manager:$REPO_DIR/task-manager/task-manager"
+        "loop:$REPO_DIR/loop/loop"
+        "implement:$REPO_DIR/loop/implement"
+        "plan:$REPO_DIR/loop/plan"
+        "factory:$REPO_DIR/factory/factory"
+        "worker-builder:$REPO_DIR/worker-builder/worker-builder"
+    )
+
+    for entry in "${entries[@]}"; do
+        local tool src dst
+        tool="${entry%%:*}"
+        src="${entry#*:}"
+        dst="$BIN_DIR/$tool"
         if [[ ! -f "$src" ]]; then
-            warn "script not found: $tool/$tool — skipping"
+            warn "script not found: $src — skipping"
             continue
         fi
         make_symlink "$src" "$dst" "bin/$tool"

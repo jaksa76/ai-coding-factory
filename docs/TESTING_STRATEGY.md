@@ -36,7 +36,7 @@ Unit tests cover:
 
 ```bash
 # Unit tests for a tool
-bats claim/claim.bats
+bats factory/factory.bats
 
 # Integration tests (requires .env)
 bats factory/factory-integration.bats

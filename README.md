@@ -29,7 +29,7 @@ cd ai-coding-factory
 `setup.sh` will:
 1. Check prerequisites (`docker`, `git`)
 2. Ask which AI agent you want to use (claude, copilot, ...)
-3. Create symlinks in `bin/` for all tools (`loop`, `factory`, `task-manager`, `worker-builder`, `agent`)
+3. Create symlinks in `bin/` for all tools (`loop`, `implement`, `plan`, `factory`, `task-manager`, `worker-builder`, `agent`)
 4. Add `bin/` to your `PATH` in your shell config
 5. Collect your credentials and write them to an env file (e.g. `.env.factory`)
 
