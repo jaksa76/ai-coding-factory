@@ -109,9 +109,33 @@ fi
 
 # Build implementation prompt
 if [[ "$use_fb" == "true" ]]; then
-    prompt="Implement the issue described below. Make sure to run all necessary tests. Once the issue is implemented, commit all changes to the feature branch feature/$ISSUE_KEY and push the branch. You have the acli tool available for Jira interactions.\n\n"
+    prompt="Implement the issue described below. Work methodically:
+
+1. Explore the codebase to understand the relevant files and components.
+2. Implement the required changes following the existing code style and conventions.
+3. Make sure all tests pass. Write new tests if needed.
+4. Commit all changes to the feature branch feature/$ISSUE_KEY and push the branch.
+
+Definition of done:
+- All tests pass.
+- Changes are committed and pushed to feature branch feature/$ISSUE_KEY.
+
+You have the acli tool available for Jira interactions."
 else
-    prompt="Implement the issue described below. Make sure to run all necessary tests. Once the issue is implemented, commit the change with a brief description of the change and push the changes. After pushing, update the Jira issue by commenting what was performed and transition the issue to Done. You have the acli tool available for Jira interactions.\n\n"
+    prompt="Implement the issue described below. Work methodically:
+
+1. Explore the codebase to understand the relevant files and components.
+2. Implement the required changes following the existing code style and conventions.
+3. Make sure all tests pass. Write new tests if needed.
+4. Commit the changes with a brief, descriptive message and push.
+5. Update the Jira issue: comment what was performed, then transition the issue to Done.
+
+Definition of done:
+- All tests pass.
+- Changes are committed and pushed.
+- Jira issue has a comment describing what was done and is transitioned to Done.
+
+You have the acli tool available for Jira interactions."
 fi
 prompt="$prompt [$ISSUE_KEY] $ISSUE_SUMMARY"
 [[ -n "$ISSUE_DESCRIPTION" ]] && prompt="$prompt
