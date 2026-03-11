@@ -32,6 +32,19 @@ Unit tests cover:
 - Happy path through the full flow
 - Error/edge paths (no issues found, race condition, non-fatal failures)
 
+## Running tests
+
+```bash
+# Unit tests for a tool
+bats claim/claim.bats
+
+# Integration tests (requires .env)
+bats factory/factory-integration.bats
+
+# All unit tests
+bats **/*.bats --exclude '**/*-integration.bats'
+```
+
 ## Integration tests
 
 Require a `.env` file at the repo root with real credentials:
@@ -48,20 +61,7 @@ JIRA_TOKEN=...
 Run integration tests explicitly — they are not part of the default `bats` invocation:
 
 ```bash
-bats claim/claim-integration.bats
-```
-
-## Running tests
-
-```bash
-# Unit tests for a tool
-bats claim/claim.bats
-
-# Integration tests (requires .env)
-bats claim/claim-integration.bats
-
-# All unit tests
-bats **/*.bats --exclude '**/*-integration.bats'
+bats factory/factory-integration.bats
 ```
 
 ## Conventions

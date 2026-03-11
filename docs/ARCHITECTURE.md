@@ -2,188 +2,178 @@
 
 ## Overview
 
-Worker-based pull model where agents poll Jira directly for work. Jira is the single source of truth — no local task store.
+Worker-based pull model where agents poll a task-manager backend for work. By default, the backend is Jira, and Jira acts as the single source of truth (no local task store).
 
 ```
-[Jira] ← single source of truth
-   ↓  workers poll for unassigned/open issues
-[Worker pool: claude | copilot | codex | ...]
-   ↓  push to trunk, post comments, transition status
-[Jira + Git]
+[Task manager backend: jira | github | todo]
+   <- single source of truth for issue state
+   v  workers poll for unassigned/open work
+[Worker pool: implementers + planners]
+   v  run agent, push code/plan, comment, transition state
+[Task manager + Git]
 
-[manager CLI] ← start/stop/scale/logs via terminal
+[factory CLI] <- start/stop/monitor worker containers
 ```
 
 ## Repository layout
 
 ```
-claim/          CLI tool — claim Jira issues
-loop/           CLI tool — agent-agnostic claim/work loop (implementation and planning modes)
-worker-builder/ CLI tool — build worker Docker images from a project devcontainer
-factory/        CLI tool — start/stop/scale/monitor worker containers
+task-manager/   CLI tool - pluggable task management wrapper
+loop/           CLI tool - claim/work loop (implementation and planning modes)
+worker-builder/ CLI tool - build worker Docker images from a project devcontainer
+factory/        CLI tool - start/stop/monitor worker containers
 
 workers/
   claude/       Dockerfile: loop + Claude CLI
   copilot/      Dockerfile: loop + Copilot CLI
-  codex/        Dockerfile: loop + Codex CLI
 
 planner/        Dockerfile: loop --for-planning + Claude CLI
+plans/          Plan files generated in planning mode
 
 legacy/         Previous hub-based implementation (reference only)
 ```
 
-## `claim` — Tool for claiming Jira issues
+## task-manager
 
-A standalone CLI for interacting with Jira. Usable independently of the rest of the system.
+task-manager is a thin CLI wrapper over backends:
 
-```bash
-claim --project MYPROJ --account-id <id>  # claim an issue by assigning it to self
-```
+- jira (default, via acli)
+- github (via gh)
+- todo (local TODO.md for development/testing)
 
-Implemented as a bash script on top of `acli`, the Atlassian command line tool.
-Reads `JIRA_SITE`, `JIRA_EMAIL`, `JIRA_TOKEN` from environment.
+It exposes a common interface: auth, claim, list, view, assign, comment, transition, transitions.
 
-### Claim flow (optimistic locking via Jira)
+### Claim semantics
 
-```
-  1. list available issues and pick one
-  2. assign to self
-  3. wait 10 seconds
-  4. re-fetch issue, if assignee != self, goto 1
-  5. transition to "In Progress"
-  6. print issue details
-```
+Claiming uses optimistic locking:
 
-## `loop` — Agent-agnostic work loop
+1. Search for eligible unassigned work
+2. Assign to self
+3. Wait and verify assignment
+4. If assignment changed, retry from step 1
+5. Transition status (for example In Progress or Planning)
+6. Return normalized issue JSON for downstream tools
 
-A standalone CLI that implements the claim/work/report cycle. The agent to run is passed as an argument, making it work with any AI CLI tool. Pass `--for-planning` to run in planning mode instead of implementation mode.
+Planning eligibility is controlled by PLAN_BY_DEFAULT plus labels:
 
-```bash
-loop --project MYPROJ --agent "claude --dangerously-skip-permissions -p"
-loop --project MYPROJ --agent "copilot -p"
-loop --project MYPROJ --agent "claude --dangerously-skip-permissions -p" --for-planning
-```
+- needs-plan forces planning
+- skip-plan skips planning and takes precedence
 
-### Implementation loop flow (default)
+## loop
 
-```
-loop:
-  1. claim --project $PROJECT --account-id $JIRA_ASSIGNEE_ACCOUNT_ID
-  2. git pull / clone $GIT_REPO_URL
-  3. invoke $AGENT with issue title + description as prompt
-  4. git commit + push to trunk
-  5. jira comment <issueKey> with summary
-  6. jira transition <issueKey> "Done"
-  goto 1
-```
-
-### Planning loop flow (--for-planning)
-
-```
-loop --for-planning:
-  1. claim --for-planning --project $PROJECT --account-id $JIRA_ASSIGNEE_ACCOUNT_ID
-  2. git pull / clone $GIT_REPO_URL
-  3. invoke $AGENT: "Create a plan … save it in plans/<KEY>.md"
-  4. git add plans/<KEY>.md + commit + push
-  5. jira comment <issueKey> with GitHub blob URL for the plan file
-  6. jira transition <issueKey> "Awaiting Plan Review"
-  goto 1
-```
-
-`loop` shells out to `claim` for Jira operations and to `git` for repo operations.
-
-### Environment variables
-
-| Variable | Purpose |
-|---|---|
-| `TASK_MANAGER` | Backend: `jira` (default) or `github` |
-| `JIRA_SITE` | Jira host, e.g. `mycompany.atlassian.net` (jira backend) |
-| `JIRA_EMAIL` | Worker's Jira account email (jira backend) |
-| `JIRA_TOKEN` | Jira API token (jira backend) |
-| `JIRA_ASSIGNEE_ACCOUNT_ID` | Account ID used for self-assignment (jira backend) |
-| `GITHUB_ASSIGNEE` | GitHub username for self-assignment (github backend) |
-| `GH_TOKEN` | GitHub personal access token (github backend) |
-| `GIT_REPO_URL` | Repository to work on |
-| `GIT_USERNAME` | Push credentials |
-| `GIT_TOKEN` | Push credentials |
-
-### Git strategy
-
-- Push directly to main initially.
-- Feature branches and PRs to be introduced later.
-
-## `worker-builder` — Worker image builder
-
-A CLI tool that generates a project-specific worker Docker image by layering a chosen agent on top of the project's devcontainer. Workers run inside the same environment as the project's developers — same tools, same dependencies.
+loop is an agent-agnostic orchestrator. It shells out to task-manager for issue operations, agent for model execution, and git for repository operations.
 
 ```bash
-worker-builder --project <url> --agent claude
+loop --project MYPROJ
+loop --project MYPROJ --for-planning
 ```
 
-**Flow:**
-1. Retrieve the project's `devcontainer.json` (using `git archive`).
-2. Read `.devcontainer/devcontainer.json` to determine base image and setup commands
-3. Generate a Dockerfile that extends the devcontainer base with:
-   - The chosen agent CLI installed (`claude`, `gh copilot`, `codex`, …)
-   - The `loop` and `jira` tools installed
-4. Build (and optionally push) the image
+### Implementation loop
+
+1. Claim an implementation-eligible issue with task-manager
+2. Clone or pull GIT_REPO_URL
+3. Run agent with issue summary/description (and approved plan file when present)
+4. Push code changes
+5. Post issue comment and transition status
+6. Sleep and repeat
+
+Features currently supported:
+
+- Rate-limit retry when the agent returns 429/overload signals
+- Configurable polling/spacing intervals (NO_ISSUES_WAIT, INTER_ISSUE_WAIT)
+- Optional feature-branch flow:
+  - Enabled by FEATURE_BRANCHES=true or needs-branch label
+  - Disabled by skip-branch label (takes precedence)
+  - Creates branch feature/<ISSUE-KEY>, opens PR, comments with PR URL, and attempts transition to In Review
+
+### Planning loop (--for-planning)
+
+1. Claim a planning-eligible issue with task-manager claim --for-planning
+2. Clone or pull GIT_REPO_URL
+3. Run agent to create plans/<ISSUE-KEY>.md
+4. Commit and push plan file
+5. Comment with GitHub plan URL
+6. Transition to Awaiting Plan Review when available
+7. Sleep and repeat
+
+Planner and implementer loops are intentionally separate so workers do not block on human review.
+
+## worker-builder
+
+worker-builder generates project-specific worker images by extending a target repository's devcontainer setup.
+
+```bash
+worker-builder build --devcontainer <path> --type <agent> --tag <tag>
+```
+
+Flow:
+
+1. Read .devcontainer/devcontainer.json
+2. Resolve base image and setup metadata
+3. Generate a derived Dockerfile with selected agent tooling and factory scripts
+4. Build the image (and optionally push)
 
 ## factory
 
-A CLI for operating the worker pool. Talks directly to Docker, no server process.
+factory operates the worker pool directly through Docker (no long-running server).
 
 ```bash
-factory status                           # list workers
-factory add --image <img> -- count <n>   # start n workers with the given image
+factory status
+factory workers [count] [--env-file <file>]
+factory planners [count] [--env-file <file>]
+factory add --image <img> <count> [--env-file <file>]
 factory logs <worker-id>
-factory logs --all
 factory stop <worker-id>
 factory stop --all
+factory import-claude-credentials --env-file <file>
 ```
 
-Reads config (Jira credentials, git URL, image name, etc.) from a local config file or env vars.
+Key behavior:
 
-## Workers (`workers/`)
+- Worker containers are started with --restart=on-failure
+- Environment is injected via --env-file or FACTORY_ENV_FILE
+- workers and planners commands are convenience wrappers around add
 
-Predefined Dockerfiles for nodejs development. Each one installs a specific agent CLI on top of a base image, then sets `loop` as the entrypoint with the appropriate `--agent` flag. The heavy lifting is in `loop` and `jira`.
+## Worker images
 
-| Worker | Agent installed | Entrypoint |
+Predefined worker images are thin wrappers over loop plus an agent-specific adapter script.
+
+| Image | Agent | Mode |
 |---|---|---|
-| `workers/claude` | Anthropic Claude CLI | `loop --agent "claude ..."` |
-| `workers/copilot` | GitHub Copilot CLI | `loop --agent "gh copilot ..."` |
-| `workers/codex` | OpenAI Codex CLI | `loop --agent "codex ..."` |
+| workers/claude | Claude CLI | implementation |
+| workers/copilot | GitHub Copilot CLI | implementation |
+| planner/Dockerfile | Claude CLI | planning |
 
-For project-specific images, use `worker-builder` instead of these generic ones.
+Project-specific images should prefer worker-builder to mirror target devcontainer environments.
 
 ## Configuration
 
-At the root of the project there is a `.env` file (not checked in) that contains all necessary environment variables for Jira, Git and Copilot authentication.
+The system is configured through environment variables (typically in an env file passed to factory):
 
-```bash
-# credentials for Jira
-export JIRA_SITE=
-export JIRA_EMAIL=
-export JIRA_TOKEN=
+| Variable | Purpose |
+|---|---|
+| TASK_MANAGER | Backend: jira (default), github, or todo |
+| JIRA_SITE, JIRA_EMAIL, JIRA_TOKEN | Jira authentication |
+| JIRA_ASSIGNEE_ACCOUNT_ID | Jira self-assignment identity |
+| JIRA_PROJECT | Jira project key |
+| GH_TOKEN, GITHUB_ASSIGNEE | GitHub backend authentication/identity |
+| GIT_REPO_URL, GIT_USERNAME, GIT_TOKEN | Target repo and push credentials |
+| PLAN_BY_DEFAULT | Planning policy default |
+| FEATURE_BRANCHES | Enable feature-branch workflow by default |
+| NO_ISSUES_WAIT, INTER_ISSUE_WAIT | Polling and pacing controls |
 
-# credentials for the project repository
-export GIT_REPO_URL=
-export GIT_USERNAME=
-export GIT_TOKEN=
-
-# credentials for Github Copilot
-export GH_USERNAME=
-export GH_TOKEN=
-```
+Agent-specific variables are added per worker type (for example ANTHROPIC_API_KEY for Claude workers).
 
 ## What this drops vs. the legacy hub
 
-- No local task store (Jira is the store)
-- No pipeline stages written to disk (Jira comments serve as the log)
-- No Jira import step (workers read Jira directly)
-- No background sync loop reconciling Docker ↔ file state
+- No local task store in this repository
+- No background sync service reconciling Docker and file state
 - No web server or browser UI
+- No separate hub process coordinating workers
 
-## Other notes
-- All workers share the same Jira and Git credentials, read from environment variables. No per-worker authentication.
-- All tools implemented as bash scripts
+## Notes
+
+- All tools are bash scripts.
+- loop is the core orchestrator; workers are thin image/agent wrappers.
+- Task-manager keeps backend-specific logic isolated from loop and factory.
 

@@ -2,10 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+
 ## Status
 
 This project is being built fresh. The previous implementation is in `legacy/` for reference.
 See `docs/ARCHITECTURE.md` for the full design, `TODO.md` for the ordered task list, and `docs/TESTING_STRATEGY.md` for how tests are structured and run.
+
 
 ## Repository layout
 
@@ -23,12 +25,14 @@ workers/
 legacy/         Previous hub-based implementation (reference only)
 ```
 
+
 ## Conventions
 
 - All tools are bash scripts.
 - Task management uses `task-manager`, a pluggable wrapper (default backend: `jira` via `acli`). (See `docs/acli.md` whenever interacting with Jira.)
 - All tools read credentials from environment variables — no config files with secrets.
 - `loop` shells out to `task-manager` for task operations; workers are thin Dockerfiles over `loop`.
+
 
 ## Environment variables
 
@@ -54,7 +58,10 @@ Agent-specific vars (add on top of the above per worker type):
 | `GH_TOKEN` | `workers/copilot` |
 | `OPENAI_API_KEY` | `workers/codex` |
 
+
 ## Testing
+
+Make sure to have passing tests before pushing changes. Tests are in `.bats` files alongside the tools. See `docs/TESTING_STRATEGY.md` for details on how tests are structured and run. You can run an individual test with `bats <file>.bats -f <test name>`.
 
 All tools have corresponding `.bats` test files. Run with `bats <file>`. We have 2 types of tests:
 - Unit tests: test individual tools in isolation, using mocks for external dependencies (e.g. mock `acli` for Jira interactions).
@@ -66,11 +73,13 @@ All tools have corresponding `.bats` test files. Run with `bats <file>`. We have
 
 Always make sure to have passing tests.
 
+
 ## Code style
 
 Implement the simplest solution that could possibly work.
 Refactor agressively.
 Keep the codebase decouplbed with well defined responsibilities.
+
 
 ## Working efficiently
 
