@@ -249,11 +249,28 @@ collect_agent_credentials() {
             local method
             method="$(ask "Authentication method" "1")"
             if [[ "$method" == "2" ]]; then
-                info "Run 'claude login' first, then copy values from ~/.claude/.credentials.json"
-                CLAUDE_ACCESS_TOKEN="$(ask_secret "CLAUDE_ACCESS_TOKEN")"
-                CLAUDE_REFRESH_TOKEN="$(ask_secret "CLAUDE_REFRESH_TOKEN")"
-                CLAUDE_TOKEN_EXPIRES_AT="$(ask "CLAUDE_TOKEN_EXPIRES_AT (timestamp)")"
-                CLAUDE_SUBSCRIPTION_TYPE="$(ask "CLAUDE_SUBSCRIPTION_TYPE" "pro")"
+                local creds_file="$HOME/.claude/.credentials.json"
+                if [[ -f "$creds_file" ]] && command -v jq &>/dev/null; then
+                    info "Found credentials at $creds_file"
+                    if ask_yn "Import credentials from $creds_file?" "y"; then
+                        CLAUDE_ACCESS_TOKEN="$(jq -r '.claudeAiOauth.accessToken' "$creds_file")"
+                        CLAUDE_REFRESH_TOKEN="$(jq -r '.claudeAiOauth.refreshToken' "$creds_file")"
+                        CLAUDE_TOKEN_EXPIRES_AT="$(jq -r '.claudeAiOauth.expiresAt' "$creds_file")"
+                        CLAUDE_SUBSCRIPTION_TYPE="$(jq -r '.claudeAiOauth.subscriptionType' "$creds_file")"
+                        success "Credentials imported"
+                    else
+                        CLAUDE_ACCESS_TOKEN="$(ask_secret "CLAUDE_ACCESS_TOKEN")"
+                        CLAUDE_REFRESH_TOKEN="$(ask_secret "CLAUDE_REFRESH_TOKEN")"
+                        CLAUDE_TOKEN_EXPIRES_AT="$(ask "CLAUDE_TOKEN_EXPIRES_AT (timestamp)")"
+                        CLAUDE_SUBSCRIPTION_TYPE="$(ask "CLAUDE_SUBSCRIPTION_TYPE" "pro")"
+                    fi
+                else
+                    info "Run 'claude login' first, then copy values from ~/.claude/.credentials.json"
+                    CLAUDE_ACCESS_TOKEN="$(ask_secret "CLAUDE_ACCESS_TOKEN")"
+                    CLAUDE_REFRESH_TOKEN="$(ask_secret "CLAUDE_REFRESH_TOKEN")"
+                    CLAUDE_TOKEN_EXPIRES_AT="$(ask "CLAUDE_TOKEN_EXPIRES_AT (timestamp)")"
+                    CLAUDE_SUBSCRIPTION_TYPE="$(ask "CLAUDE_SUBSCRIPTION_TYPE" "pro")"
+                fi
                 ANTHROPIC_API_KEY=""
             else
                 info "Create an API key at: https://console.anthropic.com/settings/keys"
@@ -392,11 +409,13 @@ print_summary() {
 
 # ─── main ──────────────────────────────────────────────────────────────────
 
-echo "=== AI Coding Factory Setup ==="
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    echo "=== AI Coding Factory Setup ==="
 
-check_prerequisites
-select_agent
-setup_bin
-setup_path
-setup_project
-print_summary
+    check_prerequisites
+    select_agent
+    setup_bin
+    setup_path
+    setup_project
+    print_summary
+fi
