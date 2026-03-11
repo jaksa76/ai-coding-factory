@@ -239,7 +239,7 @@ stub_script() {
     rm -rf "$workspace_dir"
 }
 
-@test "generated Dockerfile copies loop and claim" {
+@test "generated Dockerfile copies loop and task-manager" {
     local workspace_dir
     workspace_dir="$(mktemp -d)"
 
@@ -247,8 +247,8 @@ stub_script() {
         --devcontainer "$workspace_dir" \
         --type claude
 
-    [[ "$output" == *"COPY claim/claim"* ]]
     [[ "$output" == *"COPY loop/loop"* ]]
+    [[ "$output" == *"COPY task-manager/task-manager"* ]]
 
     rm -rf "$workspace_dir"
 }

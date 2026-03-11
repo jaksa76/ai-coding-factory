@@ -33,6 +33,7 @@ make_docker_env_file() {
     echo "$tmp"
 }
 
+
 # ── tool availability ─────────────────────────────────────────────────────────
 # Use --entrypoint /bin/sh to bypass the default ENTRYPOINT for shell checks.
 
@@ -55,10 +56,10 @@ make_docker_env_file() {
     [[ "$output" == "ok" ]]
 }
 
-@test "init-copilot is installed" {
-    run docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c "which init-copilot"
+@test "agent is installed" {
+    run docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c "which agent"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"init-copilot"* ]]
+    [[ "$output" == *"agent"* ]]
 }
 
 @test "copilot config template is present with placeholders" {
@@ -75,10 +76,10 @@ make_docker_env_file() {
     [[ "$output" == *"loop"* ]]
 }
 
-@test "image has claim installed" {
-    run docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c "which claim"
+@test "image has task-manager installed" {
+    run docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c "which task-manager"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"claim"* ]]
+    [[ "$output" == *"task-manager"* ]]
 }
 
 @test "image has acli installed" {
@@ -105,10 +106,11 @@ make_docker_env_file() {
     [[ "$output" == *'"bash"'* ]]
 }
 
-@test "entrypoint invokes loop --agent copilot" {
+@test "entrypoint invokes agent init and loop" {
     run docker inspect --format '{{json .Config.Entrypoint}}' "$IMAGE_TAG"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"loop --agent copilot"* ]]
+    [[ "$output" == *"agent init"* ]]
+    [[ "$output" == *"loop --project"* ]]
 }
 
 # ── loop behaviour ────────────────────────────────────────────────────────────
@@ -120,21 +122,20 @@ make_docker_env_file() {
 }
 
 @test "loop requires --project flag" {
-    run docker run --rm --entrypoint loop "$IMAGE_TAG" --agent "copilot"
+    run docker run --rm --entrypoint loop "$IMAGE_TAG"
     [ "$status" -eq 1 ]
     [[ "$output" == *"--project"* ]]
 }
 
 @test "loop requires JIRA_SITE env var" {
-    run docker run --rm --entrypoint loop "$IMAGE_TAG" \
-        --project PROJ --agent "copilot"
+    run docker run --rm --entrypoint loop "$IMAGE_TAG" --project PROJ
     [ "$status" -eq 1 ]
     [[ "$output" == *"JIRA_SITE"* ]]
 }
 
 # ── end-to-end ────────────────────────────────────────────────────────────────
 
-@test "init-copilot injects credentials into config" {
+@test "agent init injects credentials into config" {
     if [[ ! -f "$ENV_FILE" ]]; then skip "No .env file found"; fi
     local env_file
     env_file="$(make_docker_env_file)"
@@ -142,7 +143,7 @@ make_docker_env_file() {
     run docker run --rm \
         --env-file "$env_file" \
         --entrypoint bash \
-        "$IMAGE_TAG" -c "init-copilot && cat /root/.copilot/config.json"
+        "$IMAGE_TAG" -c "agent init && cat /root/.copilot/config.json"
     rm -f "$env_file"
 
     [ "$status" -eq 0 ]
@@ -153,22 +154,45 @@ make_docker_env_file() {
     [[ "$output" == *"jaksa76"* ]]
 }
 
-@test "copilot responds to a prompt after init (exercises the agent)" {
+@test "agent run passes prompt to copilot and returns output" {
+    # Uses a mock copilot created inside the container to verify plumbing
+    # without hitting the real API.
+    run docker run --rm \
+        --entrypoint bash \
+        "$IMAGE_TAG" -c "
+            mkdir -p /tmp/mock-bin
+            printf '#!/bin/sh\necho HELLO\n' > /tmp/mock-bin/copilot
+            chmod +x /tmp/mock-bin/copilot
+            export PATH=/tmp/mock-bin:\$PATH
+            agent run 'any prompt'
+        "
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"HELLO"* ]]
+}
+
+@test "copilot responds to a real prompt (live API smoke test)" {
     if [[ ! -f "$ENV_FILE" ]]; then skip "No .env file found"; fi
-    local env_file
+    local env_file container exit_code reply
     env_file="$(make_docker_env_file)"
 
-    run docker run --rm \
+    container=$(docker run -d \
         --env-file "$env_file" \
         --entrypoint bash \
         "$IMAGE_TAG" -c "
-            init-copilot
+            agent init
             copilot -p 'Reply with the single word HELLO and nothing else.' \
-                --no-ask-user --yolo --model gpt-4.1
-        "
+                --no-ask-user --yolo --model gpt-4.1 \
+                > /tmp/reply.txt 2>&1
+            cat /tmp/reply.txt
+        ")
     rm -f "$env_file"
 
-    echo "# output: $output" >&3
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"HELLO"* ]]
+    exit_code=$(docker wait "$container")
+    reply=$(docker logs "$container" 2>&1)
+    docker rm "$container" >/dev/null 2>&1
+
+    echo "# reply: $reply" >&3
+    [ "$exit_code" -eq 0 ]
+    [[ "$reply" == *"HELLO"* ]]
 }

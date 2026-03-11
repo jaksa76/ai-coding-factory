@@ -29,14 +29,14 @@ teardown() {
     [[ "$output" == *"Done"* ]]
 
     # Verify loop is present and executable
-    run docker run --rm "$TEST_IMAGE" which loop
+    run docker run --rm --entrypoint which "$TEST_IMAGE" loop
     [ "$status" -eq 0 ]
 
     # Verify task-manager is present and executable
-    run docker run --rm "$TEST_IMAGE" which task-manager
+    run docker run --rm --entrypoint which "$TEST_IMAGE" task-manager
     [ "$status" -eq 0 ]
 
     # Verify claude CLI is present
-    run docker run --rm "$TEST_IMAGE" which claude
+    run docker run --rm --entrypoint which "$TEST_IMAGE" claude
     [ "$status" -eq 0 ]
 }

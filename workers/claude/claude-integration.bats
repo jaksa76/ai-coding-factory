@@ -33,6 +33,7 @@ make_docker_env_file() {
     echo "$tmp"
 }
 
+
 # ── tool availability ─────────────────────────────────────────────────────────
 # Use --entrypoint /bin/sh to bypass the default ENTRYPOINT for shell checks.
 
@@ -42,16 +43,10 @@ make_docker_env_file() {
     [[ "$output" == *"claude"* ]]
 }
 
-@test "init-claude is installed" {
-    run docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c "which init-claude"
+@test "agent is installed" {
+    run docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c "which agent"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"init-claude"* ]]
-}
-
-@test "run-claude is installed" {
-    run docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c "which run-claude"
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"run-claude"* ]]
+    [[ "$output" == *"agent"* ]]
 }
 
 @test "image has loop installed" {
@@ -60,10 +55,10 @@ make_docker_env_file() {
     [[ "$output" == *"loop"* ]]
 }
 
-@test "image has claim installed" {
-    run docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c "which claim"
+@test "image has task-manager installed" {
+    run docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c "which task-manager"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"claim"* ]]
+    [[ "$output" == *"task-manager"* ]]
 }
 
 @test "image has acli installed" {
@@ -99,12 +94,11 @@ make_docker_env_file() {
     [[ "$output" == *'"bash"'* ]]
 }
 
-@test "entrypoint invokes loop --agent run-claude" {
+@test "entrypoint invokes agent init and loop" {
     run docker inspect --format '{{json .Config.Entrypoint}}' "$IMAGE_TAG"
     [ "$status" -eq 0 ]
+    [[ "$output" == *"agent init"* ]]
     [[ "$output" == *"loop --project"* ]]
-    [[ "$output" == *"--agent"* ]]
-    [[ "$output" == *"run-claude"* ]]
 }
 
 # ── loop behaviour ────────────────────────────────────────────────────────────
@@ -116,57 +110,79 @@ make_docker_env_file() {
 }
 
 @test "loop requires --project flag" {
-    run docker run --rm --entrypoint loop "$IMAGE_TAG" --agent "claude"
+    run docker run --rm --entrypoint loop "$IMAGE_TAG"
     [ "$status" -eq 1 ]
     [[ "$output" == *"--project"* ]]
 }
 
 @test "loop requires JIRA_SITE env var" {
-    run docker run --rm --entrypoint loop "$IMAGE_TAG" \
-        --project PROJ --agent "claude"
+    run docker run --rm --entrypoint loop "$IMAGE_TAG" --project PROJ
     [ "$status" -eq 1 ]
     [[ "$output" == *"JIRA_SITE"* ]]
 }
 
 # ── end-to-end ────────────────────────────────────────────────────────────────
 
-@test "init-claude writes valid credentials JSON" {
+@test "agent init writes valid credentials JSON" {
     if [[ ! -f "$ENV_FILE" ]]; then skip "No .env file found"; fi
     local env_file
     env_file="$(make_docker_env_file)"
 
-    # Run init-claude then print the credentials file on its own line so we can
-    # parse just the JSON (init-claude also prints a human-readable status line).
     run docker run --rm \
         --env-file "$env_file" \
         --entrypoint bash \
-        "$IMAGE_TAG" -c "init-claude >/dev/null && cat /home/worker/.claude/.credentials.json"
+        "$IMAGE_TAG" -c "agent init >/dev/null && cat /home/worker/.claude/.credentials.json"
     rm -f "$env_file"
 
     [ "$status" -eq 0 ]
-    # Output must be valid JSON
     echo "$output" | jq . >/dev/null
-    # Must contain the expected structure
     [[ "$(echo "$output" | jq -r '.claudeAiOauth.accessToken')" != "null" ]]
     [[ "$(echo "$output" | jq -r '.claudeAiOauth.accessToken')" != "" ]]
 }
 
-@test "claude responds to a prompt after init (exercises the agent)" {
+@test "agent run passes prompt to claude and returns output" {
+    # Uses a mock claude created inside the container to verify plumbing
+    # without hitting the real API.
+    run docker run --rm \
+        --entrypoint bash \
+        "$IMAGE_TAG" -c "
+            mkdir -p /tmp/mock-bin
+            printf '#!/bin/sh\necho HELLO\n' > /tmp/mock-bin/claude
+            chmod +x /tmp/mock-bin/claude
+            export PATH=/tmp/mock-bin:\$PATH
+            agent run 'any prompt'
+        "
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"HELLO"* ]]
+}
+
+@test "claude responds to a real prompt (live API smoke test)" {
+    # This is the only test that calls the real Claude API.
+    # docker run foreground does not reliably forward stdout from the claude binary,
+    # so we use detached mode and read logs after the container exits.
     if [[ ! -f "$ENV_FILE" ]]; then skip "No .env file found"; fi
-    local env_file
+    local env_file container exit_code reply
     env_file="$(make_docker_env_file)"
 
-    run docker run --rm \
+    container=$(docker run -d \
         --env-file "$env_file" \
         --entrypoint bash \
         "$IMAGE_TAG" -c "
-            init-claude
+            agent init >/dev/null 2>&1
             claude --dangerously-skip-permissions \
-                -p 'Reply with the single word HELLO and nothing else.'
-        "
+                --model claude-haiku-4-5-20251001 \
+                -p 'Reply with the single word HELLO and nothing else.' \
+                > /tmp/reply.txt 2>&1
+            cat /tmp/reply.txt
+        ")
     rm -f "$env_file"
 
-    echo "# output: $output" >&3
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"HELLO"* ]]
+    exit_code=$(docker wait "$container")
+    reply=$(docker logs "$container" 2>&1)
+    docker rm "$container" >/dev/null 2>&1
+
+    echo "# reply: $reply" >&3
+    [ "$exit_code" -eq 0 ]
+    [[ "$reply" == *"HELLO"* ]]
 }

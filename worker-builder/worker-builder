@@ -147,7 +147,8 @@ DOCKERFILE="$WORK_DIR/Dockerfile"
     case "$AGENT" in
         claude)
             printf '# Install Claude Code CLI\n'
-            printf 'RUN curl -fsSL https://claude.ai/install.sh | sh\n'
+            printf 'RUN curl -fsSL https://claude.ai/install.sh | bash\n'
+            printf 'ENV PATH="/root/.local/bin:$PATH"\n'
             ;;
         copilot)
             printf '# Install gh CLI\n'
@@ -172,22 +173,22 @@ DOCKERFILE="$WORK_DIR/Dockerfile"
     esac
 
     printf '\n'
-    printf '# Install loop and claim tools\n'
+    printf '# Install loop and task-manager tools\n'
     printf '# Build context: repository root (docker build -f <dockerfile> <repo-root>)\n'
-    printf 'COPY claim/claim /usr/local/bin/claim\n'
     printf 'COPY loop/loop /usr/local/bin/loop\n'
-    printf 'RUN chmod +x /usr/local/bin/claim /usr/local/bin/loop\n'
+    printf 'COPY task-manager/task-manager /usr/local/bin/task-manager\n'
+    printf 'RUN chmod +x /usr/local/bin/loop /usr/local/bin/task-manager\n'
     printf '\n'
 
     case "$AGENT" in
         claude)
-            printf 'ENTRYPOINT ["bash", "-c", "loop --project \"$JIRA_PROJECT\" --agent '"'"'claude --dangerously-skip-permissions -p'"'"'"]\n'
+            printf 'ENTRYPOINT ["bash", "-c", "loop --project \\\"$JIRA_PROJECT\\\" --agent '"'"'claude --dangerously-skip-permissions -p'"'"'"]\n'
             ;;
         copilot)
-            printf 'ENTRYPOINT ["bash", "-c", "loop --project \"$JIRA_PROJECT\" --agent copilot"]\n'
+            printf 'ENTRYPOINT ["bash", "-c", "loop --project \\\"$JIRA_PROJECT\\\" --agent copilot"]\n'
             ;;
         codex)
-            printf 'ENTRYPOINT ["bash", "-c", "loop --project \"$JIRA_PROJECT\" --agent '"'"'codex -q'"'"'"]\n'
+            printf 'ENTRYPOINT ["bash", "-c", "loop --project \\\"$JIRA_PROJECT\\\" --agent '"'"'codex -q'"'"'"]\n'
             ;;
     esac
 } > "$DOCKERFILE"

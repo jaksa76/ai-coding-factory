@@ -31,12 +31,12 @@ RUN mkdir -p -m 755 /etc/apt/keyrings \
     && apt-get install -y acli \
     && rm -rf /var/lib/apt/lists/*
 
-# Install loop, claim, and agent tools
+# Install loop, task-manager, and agent tools
 # Build context must be the repository root: docker build -f workers/copilot/Dockerfile .
-COPY claim/claim /usr/local/bin/claim
 COPY loop/loop /usr/local/bin/loop
+COPY task-manager/task-manager /usr/local/bin/task-manager
 COPY workers/copilot/agent /usr/local/bin/agent
-RUN chmod +x /usr/local/bin/claim /usr/local/bin/loop /usr/local/bin/agent
+RUN chmod +x /usr/local/bin/loop /usr/local/bin/task-manager /usr/local/bin/agent
 
 # Bake in the copilot config template (credentials injected at runtime by agent init)
 RUN mkdir -p /root/.copilot

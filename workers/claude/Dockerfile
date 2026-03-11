@@ -38,12 +38,12 @@ USER worker
 RUN curl -fsSL https://claude.ai/install.sh | bash
 USER root
 
-# Install loop, claim, and agent tools
+# Install loop, task-manager, and agent tools
 # Build context must be the repository root: docker build -f workers/claude/Dockerfile .
-COPY claim/claim /usr/local/bin/claim
 COPY loop/loop /usr/local/bin/loop
+COPY task-manager/task-manager /usr/local/bin/task-manager
 COPY workers/claude/agent /usr/local/bin/agent
-RUN chmod +x /usr/local/bin/claim /usr/local/bin/loop /usr/local/bin/agent
+RUN chmod +x /usr/local/bin/loop /usr/local/bin/task-manager /usr/local/bin/agent
 
 # Ensure ~/.claude directory exists so agent init can write credentials at runtime
 RUN mkdir -p /home/worker/.claude && chown worker:worker /home/worker/.claude
