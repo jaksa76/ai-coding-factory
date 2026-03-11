@@ -472,3 +472,100 @@ make_creds() {
     [ "$status" -eq 1 ]
     [[ "$output" == *"Unknown option"* ]]
 }
+
+# ── image auto-build ──────────────────────────────────────────────────────────
+
+# Installs a docker stub that tracks build calls.
+# $1 = docker_calls_file path
+# $2 = inspect exit code (0=exists, 1=not found)
+# $3 = created timestamp returned by inspect --format (default: future date)
+install_docker_stub() {
+    local docker_calls_file="$1"
+    local inspect_exit="${2:-0}"
+    local created="${3:-2099-01-01T00:00:00.000000000Z}"
+    stub_script "docker" "
+        case \"\$1\" in
+            image)
+                if [[ \"\$*\" == *'--format'* ]]; then
+                    echo '$created'
+                    exit $inspect_exit
+                fi
+                exit $inspect_exit
+                ;;
+            build)
+                echo \"\$@\" >> '$docker_calls_file'
+                exit 0
+                ;;
+        esac
+    "
+}
+
+@test "add: auto-builds missing image when using docker runtime (worker-claude)" {
+    local calls_file docker_calls_file
+    calls_file="$(mktemp)"
+    docker_calls_file="$(mktemp)"
+
+    install_docker_stub "$docker_calls_file" 1
+    install_runtime_stub "echo \"\$@\" >> '$calls_file'"
+
+    run "$FACTORY" add --image worker-claude 1
+    [ "$status" -eq 0 ]
+    grep -q 'build' "$docker_calls_file"
+    grep -q 'worker-claude' "$docker_calls_file"
+
+    restore_runtime_symlink
+    rm -f "$calls_file" "$docker_calls_file"
+}
+
+@test "add: rebuilds outdated image when using docker runtime" {
+    local calls_file docker_calls_file
+    calls_file="$(mktemp)"
+    docker_calls_file="$(mktemp)"
+
+    # Inspect succeeds but returns epoch 0 (very old) — source files will be newer
+    install_docker_stub "$docker_calls_file" 0 "1970-01-01T00:00:00.000000000Z"
+    install_runtime_stub "echo \"\$@\" >> '$calls_file'"
+
+    run "$FACTORY" add --image worker-claude 1
+    [ "$status" -eq 0 ]
+    grep -q 'build' "$docker_calls_file"
+
+    restore_runtime_symlink
+    rm -f "$calls_file" "$docker_calls_file"
+}
+
+@test "add: skips rebuild when image is up to date" {
+    local calls_file docker_calls_file
+    calls_file="$(mktemp)"
+    docker_calls_file="$(mktemp)"
+
+    # Inspect succeeds with a far-future date — no source file will be newer
+    install_docker_stub "$docker_calls_file" 0 "2099-01-01T00:00:00.000000000Z"
+    install_runtime_stub "echo \"\$@\" >> '$calls_file'"
+
+    run "$FACTORY" add --image worker-claude 1
+    [ "$status" -eq 0 ]
+    # docker_calls_file should be empty (no build call)
+    [ ! -s "$docker_calls_file" ]
+
+    restore_runtime_symlink
+    rm -f "$calls_file" "$docker_calls_file"
+}
+
+@test "add: skips auto-build for unknown image" {
+    local calls_file docker_calls_file
+    calls_file="$(mktemp)"
+    docker_calls_file="$(mktemp)"
+
+    install_docker_stub "$docker_calls_file" 1
+    install_runtime_stub "echo \"\$@\" >> '$calls_file'"
+
+    run "$FACTORY" add --image custom-unknown-image 1
+    [ "$status" -eq 0 ]
+    # docker build should NOT have been called
+    [ ! -s "$docker_calls_file" ]
+
+    restore_runtime_symlink
+    rm -f "$calls_file" "$docker_calls_file"
+}
+

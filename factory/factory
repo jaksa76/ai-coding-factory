@@ -19,7 +19,59 @@ set -euo pipefail
 #     runtime-docker  (local Docker; default)
 #     runtime-aws     (AWS ECS Fargate)
 
-RUNTIME="$(dirname "$0")/runtime"
+FACTORY_DIR="$(cd "$(dirname "$0")" && pwd)"
+RUNTIME="$FACTORY_DIR/runtime"
+REPO_ROOT="$(cd "$FACTORY_DIR/.." && pwd)"
+
+# ── image auto-build ──────────────────────────────────────────────────────────
+
+_image_source_dir() {
+    case "${1%%:*}" in
+        worker-claude)  echo "workers/claude" ;;
+        worker-copilot) echo "workers/copilot" ;;
+        worker-codex)   echo "workers/codex" ;;
+        *)              echo "" ;;
+    esac
+}
+
+_image_outdated() {
+    local image="$1"
+    local source_dir
+    source_dir="$(_image_source_dir "$image")"
+    [[ -z "$source_dir" ]] && return 1
+
+    local image_epoch
+    image_epoch="$(docker image inspect "$image" --format '{{.Created}}' \
+        | xargs -I{} date -d {} +%s 2>/dev/null)" || return 1
+
+    local newest_epoch
+    newest_epoch="$(find "$REPO_ROOT/$source_dir" "$REPO_ROOT/loop" "$REPO_ROOT/task-manager" \
+        -type f -printf '%T@\n' 2>/dev/null | sort -n | tail -1 | cut -d. -f1)"
+
+    [[ -n "$newest_epoch" && "$newest_epoch" -gt "$image_epoch" ]]
+}
+
+_build_image() {
+    local image="$1"
+    local source_dir
+    source_dir="$(_image_source_dir "$image")"
+    [[ -z "$source_dir" ]] && return 0
+    echo "Building image $image..."
+    docker build -t "$image" -f "$REPO_ROOT/$source_dir/Dockerfile" "$REPO_ROOT"
+}
+
+_ensure_image() {
+    local image="$1"
+    [[ -z "$(_image_source_dir "$image")" ]] && return 0
+
+    if ! docker image inspect "$image" >/dev/null 2>&1; then
+        echo "Image $image not found — building..."
+        _build_image "$image"
+    elif _image_outdated "$image"; then
+        echo "Image $image is outdated — rebuilding..."
+        _build_image "$image"
+    fi
+}
 
 usage() {
     echo "Usage: factory <command> [options]"
@@ -142,6 +194,8 @@ cmd_add() {
 
     local env_file_arg=()
     [[ -n "$env_file" ]] && env_file_arg=(--env-file "$env_file")
+
+    _ensure_image "$image"
 
     local ts
     ts="$(date +%s)"
