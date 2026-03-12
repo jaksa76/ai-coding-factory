@@ -74,3 +74,6 @@ acli jira workitem transition --key "KEY-123" --status "Done" --yes
 acli jira workitem comment create --key "KEY-123" --body "Pull request opened: https://..."
 ```
 
+## Tips
+
+There is no built in command for listing available transitions. Just try transitioning to the desired status.
