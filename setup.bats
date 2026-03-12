@@ -139,3 +139,83 @@ run_collect_credentials() {
 
     rm -rf "$tmp_home"
 }
+
+@test "collect_todo_task_config sets TODO_ASSIGNEE and JIRA_PROJECT" {
+    output="$(bash -c "
+        source '$SETUP'
+        CHOSEN_AGENT=claude
+        collect_todo_task_config
+        echo \"ASSIGNEE=\$TODO_ASSIGNEE\"
+        echo \"PROJECT=\$JIRA_PROJECT\"
+    " <<< $'myuser\n/path/to/TODO.md' 2>/dev/null)"
+
+    echo "$output" | grep -q "ASSIGNEE=myuser"
+    echo "$output" | grep -q "PROJECT=/path/to/TODO.md"
+}
+
+@test "write_env_file includes TODO_ASSIGNEE for todo backend" {
+    local tmp_env
+    tmp_env="$(mktemp)"
+
+    bash -c "
+        source '$SETUP'
+        CHOSEN_BACKEND=todo
+        CHOSEN_AGENT=claude
+        CHOSEN_RUNTIME=docker
+        TODO_ASSIGNEE=myuser
+        JIRA_PROJECT=/path/to/TODO.md
+        GIT_REPO_URL=https://github.com/org/repo.git
+        GIT_USERNAME=user
+        GIT_TOKEN=token
+        USE_FEATURE_BRANCHES=false
+        PLAN_BY_DEFAULT=false
+        write_env_file '$tmp_env'
+    " < /dev/null 2>/dev/null
+
+    grep -q "TASK_MANAGER=todo" "$tmp_env"
+    grep -q "TODO_ASSIGNEE=myuser" "$tmp_env"
+    grep -q "JIRA_PROJECT=/path/to/TODO.md" "$tmp_env"
+    ! grep -q "JIRA_SITE" "$tmp_env"
+
+    rm -f "$tmp_env"
+}
+
+@test "select_runtime_backend discovers runtimes dynamically" {
+    local tmp_repo tmp_bin
+    tmp_repo="$(mktemp -d)"
+    tmp_bin="$(mktemp -d)"
+    mkdir -p "$tmp_repo/factory"
+    touch "$tmp_repo/factory/runtime-docker"
+    touch "$tmp_repo/factory/runtime-custom"
+
+    output="$(bash -c "
+        source '$SETUP'
+        REPO_DIR='$tmp_repo'
+        BIN_DIR='$tmp_bin'
+        select_runtime_backend
+        echo \"RUNTIME=\$CHOSEN_RUNTIME\"
+    " <<< $'custom' 2>/dev/null)"
+
+    echo "$output" | grep -q "RUNTIME=custom"
+
+    rm -rf "$tmp_repo" "$tmp_bin"
+}
+
+@test "select_runtime_backend rejects unknown runtime" {
+    local tmp_repo tmp_bin
+    tmp_repo="$(mktemp -d)"
+    tmp_bin="$(mktemp -d)"
+    mkdir -p "$tmp_repo/factory"
+    touch "$tmp_repo/factory/runtime-docker"
+
+    run bash -c "
+        source '$SETUP'
+        REPO_DIR='$tmp_repo'
+        BIN_DIR='$tmp_bin'
+        select_runtime_backend
+    " <<< $'unknown-runtime' 2>/dev/null
+
+    [[ "$status" -ne 0 ]]
+
+    rm -rf "$tmp_repo" "$tmp_bin"
+}

@@ -133,19 +133,26 @@ select_agent() {
 select_runtime_backend() {
     header "[3/6] Runtime backend"
 
+    local runtimes=()
+    for runtime_script in "$REPO_DIR"/factory/runtime-*; do
+        [[ -f "$runtime_script" ]] || continue
+        runtimes+=("${runtime_script##*runtime-}")
+    done
+
+    if [[ ${#runtimes[@]} -eq 0 ]]; then
+        echo "Error: no runtime scripts found under factory/runtime-*" >&2
+        exit 1
+    fi
+
     local runtime_link="$BIN_DIR/runtime"
     [[ -L "$runtime_link" ]] || runtime_link="$REPO_DIR/factory/runtime"
-    local current="docker"
+    local current="${runtimes[0]}"
 
     if [[ -L "$runtime_link" ]]; then
         local target target_name
         target="$(readlink "$runtime_link")"
         target_name="$(basename "$target")"
-        case "$target_name" in
-            runtime-aws) current="aws" ;;
-            runtime-docker) current="docker" ;;
-            *) current="docker" ;;
-        esac
+        current="${target_name#runtime-}"
         info "Currently configured runtime: $current"
         if ! ask_yn "Change runtime backend?" "n"; then
             CHOSEN_RUNTIME="$current"
@@ -153,14 +160,17 @@ select_runtime_backend() {
         fi
     fi
 
-    CHOSEN_RUNTIME="$(ask "Runtime backend (docker/aws)" "$current")"
-    case "$CHOSEN_RUNTIME" in
-        docker|aws) ;;
-        *)
-            echo "Error: unknown runtime '$CHOSEN_RUNTIME'. Choose 'docker' or 'aws'." >&2
-            exit 1
-            ;;
-    esac
+    info "Available runtimes: ${runtimes[*]}"
+    CHOSEN_RUNTIME="$(ask "Runtime backend (${runtimes[*]})" "$current")"
+
+    local valid=false
+    for r in "${runtimes[@]}"; do
+        [[ "$r" == "$CHOSEN_RUNTIME" ]] && valid=true && break
+    done
+    if [[ "$valid" == "false" ]]; then
+        echo "Error: unknown runtime '$CHOSEN_RUNTIME'. Choose one of: ${runtimes[*]}" >&2
+        exit 1
+    fi
 }
 
 setup_factory_runtime() {
@@ -269,13 +279,22 @@ collect_github_task_config() {
     fi
 }
 
+collect_todo_task_config() {
+    echo ""
+    info "--- TODO.md ---"
+    info "The TODO backend uses a local TODO.md file as a task list."
+    TODO_ASSIGNEE="$(ask "Your username (used for claiming tasks)" "${USER:-worker}")"
+    JIRA_PROJECT="$(ask "Path to TODO.md file (used as --project)" "TODO.md")"
+}
+
 collect_task_manager_config() {
-    CHOSEN_BACKEND="$(ask "Task manager backend (jira/github)" "jira")"
+    CHOSEN_BACKEND="$(ask "Task manager backend (jira/github/todo)" "jira")"
     case "$CHOSEN_BACKEND" in
         jira)   collect_jira_config ;;
         github) collect_github_task_config ;;
+        todo)   collect_todo_task_config ;;
         *)
-            echo "Error: unknown backend '$CHOSEN_BACKEND'. Choose 'jira' or 'github'." >&2
+            echo "Error: unknown backend '$CHOSEN_BACKEND'. Choose 'jira', 'github', or 'todo'." >&2
             exit 1
             ;;
     esac
@@ -364,21 +383,29 @@ write_env_file() {
         echo "# Task manager"
         echo "TASK_MANAGER=${CHOSEN_BACKEND:-jira}"
         echo ""
-        if [[ "${CHOSEN_BACKEND:-jira}" == "github" ]]; then
-            echo "# GitHub Issues"
-            echo "GITHUB_ASSIGNEE=${GITHUB_ASSIGNEE:-}"
-            # Write GH_TOKEN here only for non-copilot agents; copilot section writes it below
-            if [[ "$CHOSEN_AGENT" != "copilot" ]]; then
-                echo "GH_TOKEN=${GH_TOKEN:-}"
-            fi
-        else
-            echo "# Jira"
-            echo "JIRA_SITE=${JIRA_SITE:-}"
-            echo "JIRA_EMAIL=${JIRA_EMAIL:-}"
-            echo "JIRA_TOKEN=${JIRA_TOKEN:-}"
-            echo "JIRA_PROJECT=${JIRA_PROJECT:-}"
-            echo "JIRA_ASSIGNEE_ACCOUNT_ID=${JIRA_ASSIGNEE_ACCOUNT_ID:-}"
-        fi
+        case "${CHOSEN_BACKEND:-jira}" in
+            github)
+                echo "# GitHub Issues"
+                echo "GITHUB_ASSIGNEE=${GITHUB_ASSIGNEE:-}"
+                # Write GH_TOKEN here only for non-copilot agents; copilot section writes it below
+                if [[ "$CHOSEN_AGENT" != "copilot" ]]; then
+                    echo "GH_TOKEN=${GH_TOKEN:-}"
+                fi
+                ;;
+            todo)
+                echo "# TODO.md"
+                echo "TODO_ASSIGNEE=${TODO_ASSIGNEE:-}"
+                echo "JIRA_PROJECT=${JIRA_PROJECT:-}"
+                ;;
+            *)
+                echo "# Jira"
+                echo "JIRA_SITE=${JIRA_SITE:-}"
+                echo "JIRA_EMAIL=${JIRA_EMAIL:-}"
+                echo "JIRA_TOKEN=${JIRA_TOKEN:-}"
+                echo "JIRA_PROJECT=${JIRA_PROJECT:-}"
+                echo "JIRA_ASSIGNEE_ACCOUNT_ID=${JIRA_ASSIGNEE_ACCOUNT_ID:-}"
+                ;;
+        esac
         echo ""
         echo "# Git"
         echo "GIT_REPO_URL=${GIT_REPO_URL:-}"
