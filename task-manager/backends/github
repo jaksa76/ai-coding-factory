@@ -87,9 +87,8 @@ tm_claim() {
         fi
 
         if [[ -z "$issues" || "$issues" == "[]" ]]; then
-            echo "No eligible issues found. Retrying in 30s..." >&2
-            sleep 30
-            continue
+            echo "No eligible issues found." >&2
+            exit 2
         fi
 
         local number title

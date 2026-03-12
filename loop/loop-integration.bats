@@ -6,7 +6,7 @@
 #     GIT_REPO_URL, GIT_USERNAME, GIT_TOKEN
 #   - acli is authenticated
 #
-# Creates and deletes real Jira issues in the SCRUM project.
+# Creates and deletes real Jira issues in the ACFTEST project.
 
 LOOP="$BATS_TEST_DIRNAME/loop"
 REAL_TASK_MANAGER="$(cd "$BATS_TEST_DIRNAME/.." && pwd)/task-manager/task-manager"
@@ -14,7 +14,7 @@ ENV_FILE="$(cd "$BATS_TEST_DIRNAME/.." && pwd)/.env"
 
 # Account ID for jaksa76@gmail.com on jaksa.atlassian.net
 ACCOUNT_ID="712020:2b77122e-3452-4f6b-8fb5-776644a6197c"
-PROJECT="SCRUM"
+PROJECT="ACFTEST"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

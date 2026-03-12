@@ -78,9 +78,8 @@ tm_claim() {
         }
 
         if [[ -z "$search_output" || "$search_output" == "[]" ]]; then
-            echo "No unassigned open issues found. Retrying in 30s..." >&2
-            sleep 30
-            continue
+            echo "No unassigned open issues found." >&2
+            exit 2
         fi
 
         local issue_key

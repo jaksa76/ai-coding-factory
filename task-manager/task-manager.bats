@@ -263,6 +263,18 @@ esac
     rm -f "$counter_file"
 }
 
+@test "claim: no issues exits 2" {
+    stub_script acli '
+case "$*" in
+  "jira auth status")       echo "Authenticated" ;;
+  "jira workitem search"*)  echo "[]" ;;
+esac
+'
+    run "$TASK_MANAGER" claim --project "PROJ" --account-id "acc1"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"No unassigned open issues found"* ]]
+}
+
 @test "claim: transitions issue to In Progress" {
     local transition_args_file
     transition_args_file="$(mktemp)"
@@ -508,30 +520,17 @@ esac
     rm -f "$counter_file"
 }
 
-@test "github: claim: no issues exits non-zero on list empty (waits and retries once)" {
-    local counter_file
-    counter_file="$(mktemp)"
-    echo "0" > "$counter_file"
+@test "github: claim: no issues exits 2" {
     stub_script gh "
 case \"\$*\" in
   'auth status') exit 0 ;;
-  'issue list'*'--json'*)
-      count=\$(cat '$counter_file')
-      echo \$((count + 1)) > '$counter_file'
-      if [ \"\$count\" -eq 0 ]; then
-          echo '[]'
-      else
-          exit 99
-      fi
-      ;;
+  'issue list'*'--json'*) echo '[]' ;;
   *) ;;
 esac
 "
-    # Stub sleep to avoid actual waiting, but make second gh call exit non-zero to stop loop
     run env TASK_MANAGER=github "$TASK_MANAGER" claim --project "owner/repo" --account-id "user1"
-    [ "$status" -ne 0 ]
+    [ "$status" -eq 2 ]
     [[ "$output" == *"No eligible issues found"* ]]
-    rm -f "$counter_file"
 }
 
 @test "github: claim: --for-planning: adds in-planning label, removes in-progress" {
