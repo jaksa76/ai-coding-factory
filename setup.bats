@@ -35,6 +35,26 @@ run_collect_credentials() {
 
 # ── tests ─────────────────────────────────────────────────────────────────────
 
+@test "setup_bin creates symlinks for all scripts" {
+    local tmp_bin
+    tmp_bin="$(mktemp -d)"
+
+    bash -c "
+        source '$SETUP'
+        BIN_DIR='$tmp_bin'
+        REPO_DIR='$BATS_TEST_DIRNAME'
+        CHOSEN_AGENT=claude
+        setup_bin
+    " < /dev/null 2>/dev/null
+
+    local expected=(task-manager loop implement plan factory worker-builder agent)
+    for name in "${expected[@]}"; do
+        [[ -L "$tmp_bin/$name" ]] || { echo "missing symlink: $name"; exit 1; }
+    done
+
+    rm -rf "$tmp_bin"
+}
+
 @test "imports credentials from file when it exists and user accepts" {
     local tmp_home
     tmp_home="$(mktemp -d)"
