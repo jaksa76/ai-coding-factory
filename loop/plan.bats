@@ -216,12 +216,7 @@ esac
     acli_log="$(mktemp)"
 
     stub_script agent "mkdir -p plans && echo '# Plan' > plans/PROJ-1.md"
-    stub_script acli "
-echo \"\$*\" >> '$acli_log'
-case \"\$*\" in
-  *transitions*) echo '[{\"name\":\"Awaiting Plan Review\"}]' ;;
-esac
-"
+    stub_script acli "echo \"\$*\" >> '$acli_log'"
 
     run "$PLAN" "PROJ-1"
     [ "$status" -eq 0 ]
@@ -231,38 +226,18 @@ esac
     rm -f "$acli_log"
 }
 
-@test "transitions issue to Awaiting Plan Review when status is available" {
+@test "transitions issue to Awaiting Plan Review" {
     local acli_log
     acli_log="$(mktemp)"
 
     stub_script agent "mkdir -p plans && echo '# Plan' > plans/PROJ-1.md"
-    stub_script acli "
-echo \"\$*\" >> '$acli_log'
-case \"\$*\" in
-  *transitions*) echo '[{\"name\":\"In Progress\"},{\"name\":\"Awaiting Plan Review\"},{\"name\":\"Done\"}]' ;;
-esac
-"
+    stub_script acli "echo \"\$*\" >> '$acli_log'"
 
     run "$PLAN" "PROJ-1"
     [ "$status" -eq 0 ]
     [[ "$(cat "$acli_log")" == *"Awaiting Plan Review"* ]]
 
     rm -f "$acli_log"
-}
-
-@test "falls back gracefully when Awaiting Plan Review is not in transitions" {
-    stub_script agent "mkdir -p plans && echo '# Plan' > plans/PROJ-1.md"
-    stub_script acli '
-case "$*" in
-  *transitions*) echo '"'"'[{"name":"In Progress"},{"name":"Done"}]'"'"' ;;
-  *) ;;
-esac
-'
-
-    run "$PLAN" "PROJ-1"
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Warning: Awaiting Plan Review status is absent from the workflow"* ]]
-    [[ "$output" == *"Planning phase complete for PROJ-1"* ]]
 }
 
 @test "comment failure is non-fatal: warning printed, plan continues" {
@@ -282,12 +257,12 @@ esac
 
 @test "transition failure is non-fatal: warning printed, plan continues" {
     stub_script agent "mkdir -p plans && echo '# Plan' > plans/PROJ-1.md"
-    stub_script acli "
-case \"\$*\" in
-  *transitions*) echo '[{\"name\":\"Awaiting Plan Review\"}]' ;;
+    stub_script acli '
+case "$*" in
   *transition*) exit 1 ;;
+  *) ;;
 esac
-"
+'
 
     run "$PLAN" "PROJ-1"
     [ "$status" -eq 0 ]

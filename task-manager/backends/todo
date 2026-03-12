@@ -191,6 +191,3 @@ tm_transition() {
     esac
 }
 
-tm_transitions() {
-    echo '["In Progress","In Review","Planning","Awaiting Plan Review","Plan Approved","Done"]'
-}

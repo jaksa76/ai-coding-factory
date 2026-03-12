@@ -237,8 +237,3 @@ tm_transition() {
     esac
 }
 
-tm_transitions() {
-    local number="$1"
-    [[ -z "$number" ]] && { echo "Error: issue number required" >&2; exit 1; }
-    echo '["In Progress","In Review","Planning","Awaiting Plan Review","Done"]'
-}

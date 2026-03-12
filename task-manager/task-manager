@@ -33,7 +33,6 @@ usage() {
     echo "  assign <issue-key> --account-id <id>      Assign an issue"
     echo "  comment <issue-key> --comment <text>      Add a comment"
     echo "  transition <issue-key> --status <status>  Transition to a new status"
-    echo "  transitions <issue-key>                   List available transitions"
     echo ""
     echo "Environment variables:"
     echo "  TASK_MANAGER  Backend to use (default: jira)"
@@ -53,7 +52,6 @@ case "$SUBCOMMAND" in
     assign)      tm_assign      "$@" ;;
     comment)     tm_comment     "$@" ;;
     transition)  tm_transition  "$@" ;;
-    transitions) tm_transitions "$@" ;;
     --help|-h)   usage ;;
     *)
         echo "Error: unknown subcommand: '$SUBCOMMAND'" >&2

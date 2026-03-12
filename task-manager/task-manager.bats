@@ -131,26 +131,6 @@ stub_script() {
     rm -f "$acli_log"
 }
 
-@test "dispatcher: 'transitions' routes to tm_transitions (calls acli workitem transitions)" {
-    local acli_log
-    acli_log="$(mktemp)"
-    stub_script acli "echo \"\$*\" >> '$acli_log'; echo '[{\"name\":\"Done\"}]'"
-    run "$TASK_MANAGER" transitions "PROJ-1"
-    [ "$status" -eq 0 ]
-    [[ "$(cat "$acli_log")" == *"workitem transitions"* ]]
-    rm -f "$acli_log"
-}
-
-# ── transitions: output format ────────────────────────────────────────────────
-
-@test "transitions: returns JSON array of status name strings" {
-    stub_script acli "echo '[{\"name\":\"In Progress\"},{\"name\":\"Done\"},{\"name\":\"Planning\"}]'"
-    run "$TASK_MANAGER" transitions "PROJ-1"
-    [ "$status" -eq 0 ]
-    result=$(printf '%s' "$output" | jq -r '.[0]')
-    [[ "$result" == "In Progress" ]]
-}
-
 # ── view: output format ───────────────────────────────────────────────────────
 
 @test "view: returns normalized JSON with key, summary, description, labels, assignee" {
@@ -648,14 +628,6 @@ esac
     rm -f "$gh_log"
 }
 
-@test "github: transitions: returns JSON array of status names" {
-    stub_script gh ""
-    run env TASK_MANAGER=github GITHUB_REPO="owner/repo" "$TASK_MANAGER" transitions "42"
-    [ "$status" -eq 0 ]
-    [[ "$(printf '%s' "$output" | jq -r '.[0]')" == "In Progress" ]]
-    [[ "$(printf '%s' "$output" | jq -r '.[-1]')" == "Done" ]]
-}
-
 @test "github: comment: posts body via gh issue comment" {
     local gh_log
     gh_log="$(mktemp)"
@@ -820,9 +792,3 @@ _todo_tmpfile() {
     rm -f "$f"
 }
 
-@test "todo: transitions: returns JSON array including Plan Approved" {
-    run env TASK_MANAGER=todo "$TASK_MANAGER" transitions "TODO-1"
-    [ "$status" -eq 0 ]
-    [[ "$(printf '%s' "$output" | jq -r '.[]' | grep -c 'Plan Approved')" == "1" ]]
-    [[ "$(printf '%s' "$output" | jq -r '.[0]')" == "In Progress" ]]
-}

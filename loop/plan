@@ -113,14 +113,9 @@ echo "Posting plan comment on $ISSUE_KEY..."
 try_task_manager "could not post plan comment on $ISSUE_KEY" \
     task-manager comment "$ISSUE_KEY" --comment "Created plan: $plan_url"
 
-# Transition to Awaiting Plan Review (graceful fallback if status absent)
+# Transition to Awaiting Plan Review (non-fatal if unavailable)
 echo "Transitioning $ISSUE_KEY to Awaiting Plan Review..."
-transitions_json="$(task-manager transitions "$ISSUE_KEY" 2>/dev/null || echo '[]')"
-if printf '%s' "$transitions_json" | jq -e '.[] | select(. == "Awaiting Plan Review")' >/dev/null 2>&1; then
-    try_task_manager "could not transition $ISSUE_KEY to Awaiting Plan Review" \
-        task-manager transition "$ISSUE_KEY" --status "Awaiting Plan Review"
-else
-    echo "Warning: Awaiting Plan Review status is absent from the workflow"
-fi
+try_task_manager "could not transition $ISSUE_KEY to Awaiting Plan Review" \
+    task-manager transition "$ISSUE_KEY" --status "Awaiting Plan Review"
 
 echo "Planning phase complete for $ISSUE_KEY."

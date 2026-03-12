@@ -180,8 +180,3 @@ tm_transition() {
     acli jira workitem transition --key "$key" --status "$status" --yes
 }
 
-tm_transitions() {
-    local key="$1"
-    [[ -z "$key" ]] && { echo "Error: issue key required" >&2; exit 1; }
-    acli jira workitem transitions --key "$key" --json | jq '[.[].name]'
-}
