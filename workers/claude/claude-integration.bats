@@ -92,6 +92,12 @@ make_docker_env_file() {
     [[ "$output" == *"acli"* ]]
 }
 
+@test "image has gh installed" {
+    run docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c "which gh"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"gh"* ]]
+}
+
 @test "image has jq installed" {
     run docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c "which jq"
     [ "$status" -eq 0 ]

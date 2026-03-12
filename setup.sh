@@ -13,6 +13,7 @@ BIN_DIR="$REPO_DIR/bin"
 CHOSEN_AGENT=""
 CHOSEN_BACKEND=""
 CHOSEN_RUNTIME=""
+GITHUB_REPO=""
 GITHUB_ASSIGNEE=""
 RC_FILE=""
 
@@ -271,6 +272,7 @@ collect_jira_config() {
 collect_github_task_config() {
     echo ""
     info "--- GitHub Issues ---"
+    GITHUB_REPO="$(ask "GitHub repo to pull issues from (e.g. owner/repo)")"
     GITHUB_ASSIGNEE="$(ask "GitHub username (for self-assignment)")"
     if [[ "$CHOSEN_AGENT" != "copilot" ]]; then
         info "Create a personal access token with 'repo' and 'read:org' scopes:"
@@ -386,6 +388,7 @@ write_env_file() {
         case "${CHOSEN_BACKEND:-jira}" in
             github)
                 echo "# GitHub Issues"
+                echo "PROJECT=${GITHUB_REPO:-}"
                 echo "GITHUB_ASSIGNEE=${GITHUB_ASSIGNEE:-}"
                 # Write GH_TOKEN here only for non-copilot agents; copilot section writes it below
                 if [[ "$CHOSEN_AGENT" != "copilot" ]]; then
@@ -394,11 +397,12 @@ write_env_file() {
                 ;;
             todo)
                 echo "# TODO.md"
+                echo "PROJECT=${JIRA_PROJECT:-}"
                 echo "TODO_ASSIGNEE=${TODO_ASSIGNEE:-}"
-                echo "JIRA_PROJECT=${JIRA_PROJECT:-}"
                 ;;
             *)
                 echo "# Jira"
+                echo "PROJECT=${JIRA_PROJECT:-}"
                 echo "JIRA_SITE=${JIRA_SITE:-}"
                 echo "JIRA_EMAIL=${JIRA_EMAIL:-}"
                 echo "JIRA_TOKEN=${JIRA_TOKEN:-}"
