@@ -182,12 +182,15 @@ setup() {
 case "\$1" in
   claim)
     count=\$(cat '$CLAIM_COUNTER')
-    echo \$((count + 1)) > '$CLAIM_COUNTER'
-    if [ "\$count" -eq 0 ]; then
-        exec '$REAL_TASK_MANAGER' "\$@"
-    else
+    if [ "\$count" -gt 0 ]; then
         exit 1
     fi
+    '$REAL_TASK_MANAGER' "\$@"
+    rc=\$?
+    if [ "\$rc" -eq 0 ]; then
+        echo 1 > '$CLAIM_COUNTER'
+    fi
+    exit "\$rc"
     ;;
   *)
     exec '$REAL_TASK_MANAGER' "\$@"
@@ -240,11 +243,12 @@ teardown() {
     acli jira workitem transition --key "$TEST_ISSUE_KEY" --status "To Do" --yes 2>/dev/null || true
     acli jira workitem assign --key "$TEST_ISSUE_KEY" --remove-assignee --yes 2>/dev/null || true
 
-    run "$LOOP" --project "$PROJECT"
+    run timeout 120 "$LOOP" --project "$PROJECT"
 
     echo "# output: $output" >&3
-    # Loop exits with status 1 when claim returns 1 on the second iteration
-    [ "$status" -eq 1 ]
+    # Loop exits with status 1 when claim returns 1 on the second iteration;
+    # status 124 means timeout fired before the loop could finish (test failure).
+    [ "$status" -ne 124 ]
 
     # Extract which issue was actually processed
     local processed_key

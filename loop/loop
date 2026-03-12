@@ -40,7 +40,7 @@ usage() {
     echo "Optional environment variables:"
     echo "  TASK_MANAGER              Backend to use: jira (default) or github"
     echo "  NO_ISSUES_WAIT            Seconds to wait when no issues are available (default: 60)"
-    echo "  INTER_ISSUE_WAIT          Seconds to wait between issues (default: 1200; 300 in planning mode)"
+    echo "  INTER_ISSUE_WAIT          Seconds to wait between issues (default: 1200; 600 in planning mode)"
     echo ""
     echo "Flags:"
     echo "  --for-planning            Run in planning mode (claim and plan issues)"

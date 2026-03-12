@@ -12,6 +12,10 @@ set -euo pipefail
 
 ISSUE_KEY="$1"
 
+[[ -z "${GIT_REPO_URL:-}" ]]  && { echo "Error: GIT_REPO_URL is not set" >&2; exit 1; }
+[[ -z "${GIT_USERNAME:-}" ]]  && { echo "Error: GIT_USERNAME is not set" >&2; exit 1; }
+[[ -z "${GIT_TOKEN:-}" ]]     && { echo "Error: GIT_TOKEN is not set" >&2; exit 1; }
+
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 # shellcheck source=git-utils.sh
 source "$SCRIPT_DIR/git-utils.sh"

@@ -54,7 +54,7 @@ legacy/         Previous hub-based implementation (reference only)
 | `PLAN_BY_DEFAULT` | Set to `true` to require a planning step for all issues |
 | `FEATURE_BRANCHES` | Set to `true` to use feature branches for all issues |
 | `NO_ISSUES_WAIT` | Seconds to wait when no issues are available (default: 60) |
-| `INTER_ISSUE_WAIT` | Seconds to wait between issues (default: 1200; 300 in planning mode) |
+| `INTER_ISSUE_WAIT` | Seconds to wait between issues (default: 1200; 600 in planning mode) |
 | `IMPLEMENTATION_PROMPT` | Override the default implementation prompt sent to the agent |
 | `PLANNING_PROMPT` | Override the default planning prompt sent to the agent |
 

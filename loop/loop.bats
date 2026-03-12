@@ -328,14 +328,14 @@ esac
     rm -f "$sleep_log"
 }
 
-@test "inter-issue sleep: default wait is 300 seconds in planning mode" {
+@test "inter-issue sleep: default wait is 600 seconds in planning mode" {
     local sleep_log
     sleep_log="$(mktemp)"
 
     stub_script sleep "echo \"\$*\" >> '$sleep_log'"
 
     run "$LOOP" --project PROJ --for-planning
-    [[ "$(cat "$sleep_log")" == *"300"* ]]
+    [[ "$(cat "$sleep_log")" == *"600"* ]]
 
     rm -f "$sleep_log"
 }
@@ -534,4 +534,58 @@ esac
         "$LOOP" --project "$todo_file"
     [[ "$(cat "$impl_log")" == *"TODO-1"* ]]
     rm -f "$todo_file" "$counter_file" "$impl_log"
+}
+
+# ── task-manager claim invocation ─────────────────────────────────────────────
+
+@test "task-manager claim is called with --project and --account-id" {
+    local tm_log counter_file
+    tm_log="$(mktemp)"
+    counter_file="$(mktemp)"
+    echo "0" > "$counter_file"
+    stub_script task-manager "
+echo \"\$*\" >> '$tm_log'
+case \"\$1\" in
+  claim)
+    count=\$(cat '$counter_file')
+    echo \$((count + 1)) > '$counter_file'
+    if [ \"\$count\" -eq 0 ]; then
+        printf '{\"key\":\"PROJ-1\",\"summary\":\"Fix the bug\"}\n'
+    else
+        exit 1
+    fi
+    ;;
+  *) ;;
+esac
+"
+    run "$LOOP" --project PROJ
+    [[ "$(cat "$tm_log")" == *"claim --project PROJ --account-id acc123"* ]]
+    rm -f "$tm_log" "$counter_file"
+}
+
+@test "github backend: task-manager claim is called with owner/repo as --project and github username as --account-id" {
+    unset JIRA_SITE JIRA_EMAIL JIRA_TOKEN JIRA_ASSIGNEE_ACCOUNT_ID
+    local tm_log counter_file
+    tm_log="$(mktemp)"
+    counter_file="$(mktemp)"
+    echo "0" > "$counter_file"
+    stub_script task-manager "
+echo \"\$*\" >> '$tm_log'
+case \"\$1\" in
+  claim)
+    count=\$(cat '$counter_file')
+    echo \$((count + 1)) > '$counter_file'
+    if [ \"\$count\" -eq 0 ]; then
+        printf '{\"key\":\"42\",\"summary\":\"Fix widget\"}\n'
+    else
+        exit 1
+    fi
+    ;;
+  *) ;;
+esac
+"
+    run env TASK_MANAGER=github GH_TOKEN=tok GITHUB_ASSIGNEE=myuser \
+        "$LOOP" --project "owner/myrepo"
+    [[ "$(cat "$tm_log")" == *"claim --project owner/myrepo --account-id myuser"* ]]
+    rm -f "$tm_log" "$counter_file"
 }

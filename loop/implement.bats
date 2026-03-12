@@ -484,3 +484,57 @@ fi
     [ "$status" -ne 0 ]
     [[ "$output" != *"Completed PROJ-1"* ]]
 }
+
+# ── environment variable validation ──────────────────────────────────────────
+
+@test "error: GIT_REPO_URL not set" {
+    unset GIT_REPO_URL
+    run "$IMPLEMENT" "PROJ-1"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"GIT_REPO_URL"* ]]
+}
+
+@test "error: GIT_USERNAME not set" {
+    unset GIT_USERNAME
+    run "$IMPLEMENT" "PROJ-1"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"GIT_USERNAME"* ]]
+}
+
+@test "error: GIT_TOKEN not set" {
+    unset GIT_TOKEN
+    run "$IMPLEMENT" "PROJ-1"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"GIT_TOKEN"* ]]
+}
+
+# ── invocation correctness ────────────────────────────────────────────────────
+
+@test "task-manager view is called with the issue key" {
+    local acli_log
+    acli_log="$(mktemp)"
+    stub_script acli "echo \"\$*\" >> '$acli_log'
+case \"\$*\" in
+  *\"workitem view\"*) echo '{\"key\":\"PROJ-1\",\"fields\":{\"summary\":\"Fix bug\",\"description\":\"\",\"labels\":[],\"assignee\":null,\"status\":{\"name\":\"To Do\"}}}' ;;
+  *) ;;
+esac
+"
+    run "$IMPLEMENT" "PROJ-1"
+    [[ "$(cat "$acli_log")" == *"PROJ-1"* ]]
+    rm -f "$acli_log"
+}
+
+@test "git push is called with GIT_REPO_URL" {
+    local git_log
+    git_log="$(mktemp)"
+    stub_script git "
+echo \"\$*\" >> '$git_log'
+case \"\$1\" in
+  clone) mkdir -p \"\${@: -1}/.git\" ;;
+  *) ;;
+esac
+"
+    run "$IMPLEMENT" "PROJ-1"
+    [[ "$(cat "$git_log")" == *"push https://github.com/org/repo.git"* ]]
+    rm -f "$git_log"
+}
