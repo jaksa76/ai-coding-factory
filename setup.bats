@@ -55,6 +55,34 @@ run_collect_credentials() {
     rm -rf "$tmp_bin"
 }
 
+@test "setup_factory_runtime points runtime symlink to selected backend" {
+    local tmp_repo
+    tmp_repo="$(mktemp -d)"
+    local tmp_bin
+    tmp_bin="$(mktemp -d)"
+    mkdir -p "$tmp_repo/factory"
+    touch "$tmp_repo/factory/runtime-docker"
+    touch "$tmp_repo/factory/runtime-aws"
+
+    bash -c "
+        source '$SETUP'
+        REPO_DIR='$tmp_repo'
+        BIN_DIR='$tmp_bin'
+        CHOSEN_RUNTIME=aws
+        setup_factory_runtime
+    " < /dev/null 2>/dev/null
+
+    [[ -L "$tmp_bin/runtime" ]] || { echo "missing bin/runtime symlink"; rm -rf "$tmp_repo" "$tmp_bin"; exit 1; }
+    [[ "$(readlink "$tmp_bin/runtime")" == "$tmp_repo/factory/runtime-aws" ]] \
+        || { echo "bin/runtime should point to runtime-aws"; rm -rf "$tmp_repo" "$tmp_bin"; exit 1; }
+
+    [[ -L "$tmp_repo/factory/runtime" ]] || { echo "missing runtime symlink"; rm -rf "$tmp_repo"; exit 1; }
+    [[ "$(readlink "$tmp_repo/factory/runtime")" == "$tmp_repo/factory/runtime-aws" ]] \
+        || { echo "factory/runtime should point to runtime-aws"; rm -rf "$tmp_repo" "$tmp_bin"; exit 1; }
+
+    rm -rf "$tmp_repo" "$tmp_bin"
+}
+
 @test "imports credentials from file when it exists and user accepts" {
     local tmp_home
     tmp_home="$(mktemp -d)"

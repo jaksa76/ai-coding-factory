@@ -12,6 +12,7 @@ BIN_DIR="$REPO_DIR/bin"
 # Global state set across steps
 CHOSEN_AGENT=""
 CHOSEN_BACKEND=""
+CHOSEN_RUNTIME=""
 GITHUB_ASSIGNEE=""
 RC_FILE=""
 
@@ -69,7 +70,7 @@ make_symlink() {
 # ─── step 1: prerequisites ─────────────────────────────────────────────────
 
 check_prerequisites() {
-    header "[1/5] Prerequisites"
+    header "[1/6] Prerequisites"
     local all_ok=true
     for cmd in docker git; do
         if command -v "$cmd" &>/dev/null; then
@@ -89,7 +90,7 @@ check_prerequisites() {
 # ─── step 2: agent selection ───────────────────────────────────────────────
 
 select_agent() {
-    header "[2/5] Agent selection"
+    header "[2/6] Agent selection"
 
     local agents=()
     for agent_script in "$REPO_DIR"/workers/*/agent; do
@@ -127,10 +128,60 @@ select_agent() {
     fi
 }
 
-# ─── step 3: bin/ symlinks ─────────────────────────────────────────────────
+# ─── step 3: runtime backend selection ─────────────────────────────────────
+
+select_runtime_backend() {
+    header "[3/6] Runtime backend"
+
+    local runtime_link="$BIN_DIR/runtime"
+    [[ -L "$runtime_link" ]] || runtime_link="$REPO_DIR/factory/runtime"
+    local current="docker"
+
+    if [[ -L "$runtime_link" ]]; then
+        local target target_name
+        target="$(readlink "$runtime_link")"
+        target_name="$(basename "$target")"
+        case "$target_name" in
+            runtime-aws) current="aws" ;;
+            runtime-docker) current="docker" ;;
+            *) current="docker" ;;
+        esac
+        info "Currently configured runtime: $current"
+        if ! ask_yn "Change runtime backend?" "n"; then
+            CHOSEN_RUNTIME="$current"
+            return
+        fi
+    fi
+
+    CHOSEN_RUNTIME="$(ask "Runtime backend (docker/aws)" "$current")"
+    case "$CHOSEN_RUNTIME" in
+        docker|aws) ;;
+        *)
+            echo "Error: unknown runtime '$CHOSEN_RUNTIME'. Choose 'docker' or 'aws'." >&2
+            exit 1
+            ;;
+    esac
+}
+
+setup_factory_runtime() {
+    local runtime_src="$REPO_DIR/factory/runtime-$CHOSEN_RUNTIME"
+    local runtime_dst_factory="$REPO_DIR/factory/runtime"
+    local runtime_dst_bin="$BIN_DIR/runtime"
+
+    if [[ ! -f "$runtime_src" ]]; then
+        echo "Error: runtime backend script not found: $runtime_src" >&2
+        exit 1
+    fi
+
+    mkdir -p "$BIN_DIR"
+    make_symlink "$runtime_src" "$runtime_dst_bin" "bin/runtime"
+    make_symlink "$runtime_src" "$runtime_dst_factory" "factory/runtime"
+}
+
+# ─── step 4: bin/ symlinks ─────────────────────────────────────────────────
 
 setup_bin() {
-    header "[3/5] Setting up bin/"
+    header "[4/6] Setting up bin/"
     mkdir -p "$BIN_DIR"
 
     local entries=(
@@ -161,10 +212,10 @@ setup_bin() {
     success "bin/agent → workers/$CHOSEN_AGENT/agent"
 }
 
-# ─── step 4: PATH setup ────────────────────────────────────────────────────
+# ─── step 5: PATH setup ────────────────────────────────────────────────────
 
 setup_path() {
-    header "[4/5] PATH setup"
+    header "[5/6] PATH setup"
 
     local export_line="export PATH=\"\$PATH:$BIN_DIR\""
     RC_FILE="$HOME/.bashrc"
@@ -193,7 +244,7 @@ setup_path() {
     fi
 }
 
-# ─── step 5: project configuration ────────────────────────────────────────
+# ─── step 6: project configuration ────────────────────────────────────────
 
 collect_jira_config() {
     echo ""
@@ -363,7 +414,7 @@ write_env_file() {
 }
 
 setup_project() {
-    header "[5/5] Project configuration"
+    header "[6/6] Project configuration"
 
     local project_name env_file
     project_name="$(ask "Project name (creates .env.<name>)")"
@@ -394,6 +445,8 @@ print_summary() {
     echo ""
     echo "Next steps:"
     echo ""
+    echo "  Runtime backend configured: $CHOSEN_RUNTIME"
+    echo ""
     if [[ -n "$RC_FILE" ]]; then
         echo "  1. Reload your shell:"
         echo "       source $RC_FILE"
@@ -414,6 +467,8 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
     check_prerequisites
     select_agent
+    select_runtime_backend
+    setup_factory_runtime
     setup_bin
     setup_path
     setup_project
