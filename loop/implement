@@ -72,10 +72,10 @@ use_feature_branch() {
 }
 
 # Read issue details (single call to get summary, description, and labels)
-issue_json="$(task-manager view "$ISSUE_KEY" 2>/dev/null || echo '{}')"
-ISSUE_SUMMARY="$(printf '%s\n' "$issue_json" | jq -r '.summary // ""' 2>/dev/null || true)"
+issue_json="$(task-manager view "$ISSUE_KEY")"
+ISSUE_SUMMARY="$(printf '%s\n' "$issue_json" | jq -r '.summary // ""')"
 ISSUE_DESCRIPTION="$(printf '%s\n' "$issue_json" | jq -r '.description // ""' 2>/dev/null || true)"
-labels_json="$(printf '%s\n' "$issue_json" | jq -c '.labels // []' 2>/dev/null || echo '[]')"
+labels_json="$(printf '%s\n' "$issue_json" | jq -c '.labels // []')"
 
 derive_work_dir
 setup_git_credentials

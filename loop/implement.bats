@@ -25,8 +25,11 @@ setup() {
     stub agent ""
     stub gh ""
 
-    # Default acli stub: basic issue view
-    stub_script acli "echo \"\$*\""
+    # Default acli stub: returns minimal valid JSON for workitem view; echoes other calls
+    stub_script acli 'case "$*" in
+  *"workitem view"*) echo '"'"'{"key":"PROJ-1","fields":{"summary":"Fix bug","description":"","labels":[],"assignee":null,"status":{"name":"To Do"}}}'"'"' ;;
+  *) echo "$*" ;;
+esac'
 
     # Default git stub: create WORK_DIR/.git on clone; no-op for other subcommands
     stub_script git '
@@ -253,6 +256,15 @@ esac'
     rm -f "$git_log"
 }
 
+# ── task-manager view failure ─────────────────────────────────────────────────
+
+@test "fails if task-manager view fails (ensures needs-branch label is not silently ignored)" {
+    stub_script acli 'exit 1'
+
+    run "$IMPLEMENT" "PROJ-1"
+    [ "$status" -ne 0 ]
+}
+
 # ── happy path (no feature branch) ───────────────────────────────────────────
 
 @test "happy path: clones repo, runs agent, pushes, comments, transitions to Done" {
@@ -267,7 +279,10 @@ case \"\$1\" in
   *) ;;
 esac
 "
-    stub_script acli "echo \"\$*\" >> '$acli_log'"
+    stub_script acli 'case "$*" in
+  *"workitem view"*) echo '"'"'{"key":"PROJ-1","fields":{"summary":"Fix bug","description":"","labels":[],"assignee":null,"status":{"name":"To Do"}}}'"'"' ;;
+  *) echo "$*" >> '"'$acli_log'"' ;;
+esac'
 
     run "$IMPLEMENT" "PROJ-1"
     [ "$status" -eq 0 ]
@@ -283,6 +298,7 @@ esac
 @test "comment failure is non-fatal: warning printed, implement continues" {
     stub_script acli '
 case "$*" in
+  *"workitem view"*) echo '"'"'{"key":"PROJ-1","fields":{"summary":"Fix bug","description":"","labels":[],"assignee":null,"status":{"name":"To Do"}}}'"'"' ;;
   *comment*) exit 1 ;;
   *) ;;
 esac
@@ -297,6 +313,7 @@ esac
 @test "transition failure is non-fatal: warning printed, implement continues" {
     stub_script acli '
 case "$*" in
+  *"workitem view"*) echo '"'"'{"key":"PROJ-1","fields":{"summary":"Fix bug","description":"","labels":[],"assignee":null,"status":{"name":"To Do"}}}'"'"' ;;
   *transition*) exit 1 ;;
   *) ;;
 esac
