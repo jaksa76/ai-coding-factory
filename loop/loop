@@ -134,7 +134,7 @@ run_planning_loop() {
     while true; do
         claim_issue --for-planning || continue
         plan "$ISSUE_KEY"
-        sleep "${INTER_ISSUE_WAIT:-300}"
+        sleep "${INTER_ISSUE_WAIT:-600}"
     done
 }
 
