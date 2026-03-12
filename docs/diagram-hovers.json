@@ -1,0 +1,17 @@
+{
+  "worker builder": "Builds worker images based on a project's devcontainer configuration. This allows for easy setup of worker environments that match the project's requirements.",
+  "factory": "Main tool that launches and manages worker containers. Provides commands to start, stop, and monitor workers.",
+  "runtime": "Abstracts away the execution environment for tasks, allowing them to run in different contexts (e.g., local, Docker, Kubernetes) without changing the task logic.",
+  "runtime docker": "A runtime implementation that uses Docker containers to execute tasks. It handles container lifecycle, resource management, and environment setup.",
+  "runtime aws": "A runtime implementation that uses AWS ECS to execute tasks.",
+  "docker": "the docker command-line tool, used by the runtime docker to manage containers for task execution.",
+  "loop": "Agent-agnostic work loop that can be used for both planning and implementation. It fetches tasks, executes them, and updates their status. It can be extended with custom prompts and logic for different worker types.",
+  "plan": "a script that creates a plan for a single issue, outputting a markdown file with the plan details. This is used in the planning workflow to generate structured plans that can be reviewed and implemented.",
+  "implement": "a script that implements a single issue based on a provided plan. It executes the implementation steps and updates the issue status accordingly. This is used in the implementation workflow to carry out the tasks defined in a plan.",
+  "task manager": "Handles task management, including claiming issues for implementation or planning, and updating issue status. It can integrate with various backends like Jira or GitHub.",
+  "acli": "a CLI tool for interacting with Jira, used by the task manager to claim issues and update their status during the planning and implementation workflows.",
+  "claude/agent": "a wrapper for claude code",
+  "claude": "the claude code agent",
+  "copilot/agent": "a wrapper for copilot code",
+  "copilot": "the copilot code agent"
+}

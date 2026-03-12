@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Architecture Diagram</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #ffffff;
+      --panel: #ffffff;
+      --ink: #161616;
+      --muted: #767676;
+      --line: rgba(22, 22, 22, 0.08);
+      --accent: #2f2f2f;
+      --shadow: none;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      color: var(--ink);
+      background: var(--page);
+    }
+
+    body::before {
+      content: none;
+    }
+
+    main {
+      position: relative;
+      z-index: 1;
+      width: min(1600px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 16px 0 24px;
+    }
+
+    .canvas {
+      overflow: auto;
+      border: 0;
+      border-radius: 0;
+      background: #ffffff;
+      box-shadow: var(--shadow);
+    }
+
+    svg {
+      display: block;
+      width: 100%;
+      min-width: 1000px;
+      height: auto;
+    }
+
+    .diagram-shape {
+      vector-effect: non-scaling-stroke;
+      filter: none;
+    }
+
+    .diagram-node[data-tooltip] {
+      outline: none;
+    }
+
+    .diagram-node[data-tooltip]:focus-visible .diagram-shape,
+    .diagram-node[data-tooltip]:hover .diagram-shape {
+      stroke: var(--accent);
+      stroke-width: 1.5;
+    }
+
+    .diagram-line {
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      vector-effect: non-scaling-stroke;
+      opacity: 0.9;
+    }
+
+    .diagram-text {
+      fill: var(--ink);
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-weight: 500;
+      pointer-events: none;
+    }
+
+    .status {
+      margin-top: 12px;
+      min-height: 1.5em;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .status.error {
+      color: #9f2d17;
+    }
+
+    .tooltip {
+      position: fixed;
+      z-index: 20;
+      max-width: min(34ch, calc(100vw - 24px));
+      padding: 12px 14px;
+      border: 1px solid rgba(22, 22, 22, 0.12);
+      border-radius: 10px;
+      background: #ffffff;
+      color: var(--ink);
+      box-shadow: 0 10px 28px rgba(22, 22, 22, 0.08);
+      pointer-events: none;
+      opacity: 0;
+      transform: translate3d(0, 6px, 0);
+      transition: opacity 120ms ease, transform 120ms ease;
+    }
+
+    .tooltip.is-visible {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+
+    .tooltip strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 0.96rem;
+      color: var(--ink);
+    }
+
+    .tooltip span {
+      display: block;
+      font-size: 0.92rem;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+
+    @media (max-width: 900px) {
+      main {
+        width: min(100vw - 20px, 1600px);
+        padding-top: 12px;
+      }
+
+      svg {
+        min-width: 780px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="canvas">
+      <svg id="diagram" role="img" aria-label="Architecture diagram"></svg>
+    </section>
+
+    <p id="status" class="status">Loading diagram...</p>
+  </main>
+
+  <div id="tooltip" class="tooltip" role="tooltip" aria-hidden="true"></div>
+
+  <script>
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    const SOURCE_PATH = './architecture.excalidraw';
+    const HOVERS_PATH = './diagram-hovers.json';
+    const PADDING = 72;
+    const TOOLTIP_OFFSET = 18;
+
+    const diagram = document.getElementById('diagram');
+    const status = document.getElementById('status');
+    const tooltip = document.getElementById('tooltip');
+
+    let hoverDefinitions = {};
+
+    function setStatus(message, isError = false) {
+      status.textContent = message;
+      status.classList.toggle('error', isError);
+    }
+
+    function createSvgElement(name, attributes = {}) {
+      const node = document.createElementNS(SVG_NS, name);
+      Object.entries(attributes).forEach(([key, value]) => {
+        node.setAttribute(key, value);
+      });
+      return node;
+    }
+
+    function normalizeLabel(label) {
+      return String(label || '')
+        .toLowerCase()
+        .replace(/\s+/g, '');
+    }
+
+    function prettifyLabel(label) {
+      return String(label || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function buildHoverLookup(definitions) {
+      return new Map(
+        Object.entries(definitions || {}).map(([label, description]) => [normalizeLabel(label), { label, description }])
+      );
+    }
+
+    function attachTooltip(node, label, description) {
+      node.classList.add('diagram-node');
+      node.dataset.tooltipLabel = prettifyLabel(label);
+      node.dataset.tooltip = description;
+      node.setAttribute('tabindex', '0');
+
+      const title = createSvgElement('title');
+      title.textContent = `${prettifyLabel(label)}: ${description}`;
+      node.appendChild(title);
+    }
+
+    function hideTooltip() {
+      tooltip.classList.remove('is-visible');
+      tooltip.setAttribute('aria-hidden', 'true');
+    }
+
+    function positionTooltip(clientX, clientY) {
+      const tooltipWidth = tooltip.offsetWidth;
+      const tooltipHeight = tooltip.offsetHeight;
+      let left = clientX + TOOLTIP_OFFSET;
+      let top = clientY + TOOLTIP_OFFSET;
+
+      if (left + tooltipWidth > window.innerWidth - 12) {
+        left = clientX - tooltipWidth - TOOLTIP_OFFSET;
+      }
+      if (top + tooltipHeight > window.innerHeight - 12) {
+        top = clientY - tooltipHeight - TOOLTIP_OFFSET;
+      }
+
+      tooltip.style.left = `${Math.max(12, left)}px`;
+      tooltip.style.top = `${Math.max(12, top)}px`;
+    }
+
+    function showTooltip(target, clientX, clientY) {
+      const label = target.dataset.tooltipLabel;
+      const description = target.dataset.tooltip;
+      if (!label || !description) {
+        hideTooltip();
+        return;
+      }
+
+      tooltip.innerHTML = `<strong>${label}</strong><span>${description}</span>`;
+      tooltip.classList.add('is-visible');
+      tooltip.setAttribute('aria-hidden', 'false');
+      positionTooltip(clientX, clientY);
+    }
+
+    function findTooltipTarget(node) {
+      return node instanceof Element ? node.closest('[data-tooltip]') : null;
+    }
+
+    function computeBounds(elements) {
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+
+      elements.forEach((element) => {
+        if (typeof element.x !== 'number' || typeof element.y !== 'number') {
+          return;
+        }
+
+        if (element.type === 'arrow' || element.type === 'line') {
+          const points = element.points || [];
+          points.forEach(([px, py]) => {
+            minX = Math.min(minX, element.x + px);
+            minY = Math.min(minY, element.y + py);
+            maxX = Math.max(maxX, element.x + px);
+            maxY = Math.max(maxY, element.y + py);
+          });
+          return;
+        }
+
+        minX = Math.min(minX, element.x);
+        minY = Math.min(minY, element.y);
+        maxX = Math.max(maxX, element.x + (element.width || 0));
+        maxY = Math.max(maxY, element.y + (element.height || 0));
+      });
+
+      return { minX, minY, maxX, maxY };
+    }
+
+    function normalizeColor(color) {
+      if (!color || color === 'transparent') {
+        return 'none';
+      }
+      return color;
+    }
+
+    function drawRectangle(element, offsetX, offsetY) {
+      return createSvgElement('rect', {
+        x: element.x - offsetX,
+        y: element.y - offsetY,
+        width: element.width,
+        height: element.height,
+        rx: 18,
+        ry: 18,
+        fill: normalizeColor(element.backgroundColor),
+        stroke: element.strokeColor || '#1e1e1e',
+        'stroke-width': Math.max(1, (element.strokeWidth || 2) * 0.5),
+        class: 'diagram-shape'
+      });
+    }
+
+    function drawDiamond(element, offsetX, offsetY) {
+      const x = element.x - offsetX;
+      const y = element.y - offsetY;
+      const width = element.width;
+      const height = element.height;
+      const points = [
+        [x + width / 2, y],
+        [x + width, y + height / 2],
+        [x + width / 2, y + height],
+        [x, y + height / 2]
+      ].map(([px, py]) => `${px},${py}`).join(' ');
+
+      return createSvgElement('polygon', {
+        points,
+        fill: normalizeColor(element.backgroundColor),
+        stroke: element.strokeColor || '#1e1e1e',
+        'stroke-width': Math.max(1, (element.strokeWidth || 2) * 0.5),
+        class: 'diagram-shape'
+      });
+    }
+
+    function drawEllipse(element, offsetX, offsetY) {
+      return createSvgElement('ellipse', {
+        cx: element.x - offsetX + element.width / 2,
+        cy: element.y - offsetY + element.height / 2,
+        rx: element.width / 2,
+        ry: element.height / 2,
+        fill: normalizeColor(element.backgroundColor),
+        stroke: element.strokeColor || '#1e1e1e',
+        'stroke-width': Math.max(1, (element.strokeWidth || 2) * 0.5),
+        class: 'diagram-shape'
+      });
+    }
+
+    function drawPathLike(element, offsetX, offsetY) {
+      const points = (element.points || []).map(([px, py]) => `${element.x - offsetX + px},${element.y - offsetY + py}`);
+      const attributes = {
+        points: points.join(' '),
+        stroke: element.strokeColor || '#1e1e1e',
+        'stroke-width': Math.max(1, (element.strokeWidth || 2) * 0.65),
+        class: 'diagram-line'
+      };
+
+      if (element.type === 'arrow' && element.endArrowhead === 'arrow') {
+        attributes['marker-end'] = 'url(#arrowhead)';
+      }
+
+      return createSvgElement('polyline', attributes);
+    }
+
+    function appendTextLayer(group, element, elementsById, offsetX, offsetY) {
+      const container = element.containerId ? elementsById.get(element.containerId) : null;
+      const lines = String(element.text || '').split('\n');
+      let x = element.x - offsetX;
+      let y = element.y - offsetY;
+      let anchor = 'start';
+
+      if (container) {
+        x = container.x - offsetX + container.width / 2;
+        y = container.y - offsetY + container.height / 2;
+        anchor = 'middle';
+      }
+
+      const fontSize = element.fontSize || 20;
+      const textNode = createSvgElement('text', {
+        x,
+        y,
+        'font-size': fontSize,
+        'text-anchor': anchor,
+        'dominant-baseline': 'middle',
+        class: 'diagram-text'
+      });
+
+      const lineHeight = fontSize * 1.25;
+      const startOffset = ((lines.length - 1) * lineHeight) / -2;
+
+      lines.forEach((line, index) => {
+        const tspan = createSvgElement('tspan', {
+          x,
+          dy: index === 0 ? startOffset : lineHeight
+        });
+        tspan.textContent = line;
+        textNode.appendChild(tspan);
+      });
+
+      group.appendChild(textNode);
+    }
+
+    function render(data, definitions = {}) {
+      const elements = (data.elements || []).filter((element) => element.isDeleted === false);
+      const hoverLookup = buildHoverLookup(definitions);
+      const bounds = computeBounds(elements);
+      const width = bounds.maxX - bounds.minX + PADDING * 2;
+      const height = bounds.maxY - bounds.minY + PADDING * 2;
+      const offsetX = bounds.minX - PADDING;
+      const offsetY = bounds.minY - PADDING;
+      const elementsById = new Map(elements.map((element) => [element.id, element]));
+      const labelsByContainer = new Map();
+
+      elements.forEach((element) => {
+        if (element.type === 'text' && element.containerId) {
+          labelsByContainer.set(element.containerId, prettifyLabel(element.text));
+        }
+      });
+
+      diagram.innerHTML = '';
+      diagram.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+      const defs = createSvgElement('defs');
+      const marker = createSvgElement('marker', {
+        id: 'arrowhead',
+          markerWidth: 6,
+          markerHeight: 6,
+          refX: 5,
+          refY: 3,
+        orient: 'auto-start-reverse',
+        markerUnits: 'strokeWidth'
+      });
+      marker.appendChild(createSvgElement('path', {
+          d: 'M 0 0 L 6 3 L 0 6 z',
+        fill: '#1e1e1e'
+      }));
+      defs.appendChild(marker);
+      diagram.appendChild(defs);
+
+      const shapesLayer = createSvgElement('g');
+      const linesLayer = createSvgElement('g');
+      const textLayer = createSvgElement('g');
+
+      elements.forEach((element) => {
+        const label = labelsByContainer.get(element.id);
+        const hoverEntry = label ? hoverLookup.get(normalizeLabel(label)) : null;
+        let node = null;
+
+        if (element.type === 'rectangle') {
+          node = drawRectangle(element, offsetX, offsetY);
+        }
+        if (element.type === 'diamond') {
+          node = drawDiamond(element, offsetX, offsetY);
+        }
+        if (element.type === 'ellipse') {
+          node = drawEllipse(element, offsetX, offsetY);
+        }
+        if (element.type === 'arrow' || element.type === 'line') {
+          linesLayer.appendChild(drawPathLike(element, offsetX, offsetY));
+        }
+
+        if (node) {
+          if (hoverEntry) {
+            attachTooltip(node, hoverEntry.label, hoverEntry.description);
+          }
+          shapesLayer.appendChild(node);
+        }
+      });
+
+      elements.forEach((element) => {
+        if (element.type === 'text') {
+          appendTextLayer(textLayer, element, elementsById, offsetX, offsetY);
+        }
+      });
+
+      diagram.appendChild(shapesLayer);
+      diagram.appendChild(linesLayer);
+      diagram.appendChild(textLayer);
+      setStatus(`Rendered ${elements.length} elements from ${SOURCE_PATH} with ${Object.keys(definitions || {}).length} hover descriptions.`);
+    }
+
+    async function loadJson(path) {
+      const response = await fetch(path, { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error(`Unable to load ${path} (${response.status}).`);
+      }
+      return response.json();
+    }
+
+    diagram.addEventListener('pointermove', (event) => {
+      const target = findTooltipTarget(event.target);
+      if (!target) {
+        hideTooltip();
+        return;
+      }
+      showTooltip(target, event.clientX, event.clientY);
+    });
+
+    diagram.addEventListener('pointerleave', () => {
+      hideTooltip();
+    });
+
+    diagram.addEventListener('focusin', (event) => {
+      const target = findTooltipTarget(event.target);
+      if (!target) {
+        return;
+      }
+      const rect = target.getBoundingClientRect();
+      showTooltip(target, rect.right, rect.top + rect.height / 2);
+    });
+
+    diagram.addEventListener('focusout', () => {
+      hideTooltip();
+    });
+
+    Promise.all([loadJson(HOVERS_PATH), loadJson(SOURCE_PATH)])
+      .then(([definitions, payload]) => {
+        hoverDefinitions = definitions;
+        render(payload, hoverDefinitions);
+      })
+      .catch((error) => {
+      setStatus(`${error.message} Use the file picker to open the Excalidraw file directly if this page is loaded from file://.`, true);
+      });
+  </script>
+</body>
+</html>
