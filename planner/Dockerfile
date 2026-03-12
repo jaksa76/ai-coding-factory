@@ -39,14 +39,20 @@ USER worker
 RUN curl -fsSL https://claude.ai/install.sh | bash
 USER root
 
-# Install loop, claim, and Claude helper tools
+# Install loop, task-manager, and agent tools
 # Build context must be the repository root: docker build -f planner/Dockerfile .
-COPY claim/claim /usr/local/bin/claim
 COPY loop/loop /usr/local/bin/loop
-COPY workers/claude/init-claude.sh /usr/local/bin/init-claude
-RUN chmod +x /usr/local/bin/claim /usr/local/bin/loop /usr/local/bin/init-claude
+COPY loop/plan /usr/local/bin/plan
+COPY loop/git-utils.sh /usr/local/bin/git-utils.sh
+COPY task-manager/task-manager /usr/local/bin/task-manager
+COPY task-manager/backends /usr/local/bin/backends
+COPY workers/claude/agent /usr/local/bin/agent
+RUN chmod +x /usr/local/bin/loop /usr/local/bin/plan \
+        /usr/local/bin/task-manager /usr/local/bin/backends/jira \
+        /usr/local/bin/backends/github /usr/local/bin/backends/todo \
+        /usr/local/bin/agent
 
-# Ensure ~/.claude directory exists so init-claude can write credentials at runtime
+# Ensure ~/.claude directory exists so agent init can write credentials at runtime
 RUN mkdir -p /home/worker/.claude && chown worker:worker /home/worker/.claude
 
 USER worker
@@ -54,4 +60,4 @@ WORKDIR /home/worker
 ENV HOME=/home/worker
 ENV PATH="/home/worker/.local/bin:$PATH"
 
-ENTRYPOINT ["bash", "-c", "init-claude && exec loop --for-planning --project \"$JIRA_PROJECT\" --agent 'claude --dangerously-skip-permissions -p'"]
+ENTRYPOINT ["bash", "-c", "agent init && exec loop --for-planning --project \"$JIRA_PROJECT\""]

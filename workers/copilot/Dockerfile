@@ -34,9 +34,16 @@ RUN mkdir -p -m 755 /etc/apt/keyrings \
 # Install loop, task-manager, and agent tools
 # Build context must be the repository root: docker build -f workers/copilot/Dockerfile .
 COPY loop/loop /usr/local/bin/loop
+COPY loop/implement /usr/local/bin/implement
+COPY loop/plan /usr/local/bin/plan
+COPY loop/git-utils.sh /usr/local/bin/git-utils.sh
 COPY task-manager/task-manager /usr/local/bin/task-manager
+COPY task-manager/backends /usr/local/bin/backends
 COPY workers/copilot/agent /usr/local/bin/agent
-RUN chmod +x /usr/local/bin/loop /usr/local/bin/task-manager /usr/local/bin/agent
+RUN chmod +x /usr/local/bin/loop /usr/local/bin/implement /usr/local/bin/plan \
+        /usr/local/bin/task-manager /usr/local/bin/backends/jira \
+        /usr/local/bin/backends/github /usr/local/bin/backends/todo \
+        /usr/local/bin/agent
 
 # Bake in the copilot config template (credentials injected at runtime by agent init)
 RUN mkdir -p /root/.copilot

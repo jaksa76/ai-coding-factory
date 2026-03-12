@@ -82,6 +82,31 @@ make_docker_env_file() {
     [[ "$output" == *"task-manager"* ]]
 }
 
+@test "image has implement installed" {
+    run docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c "which implement"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"implement"* ]]
+}
+
+@test "image has plan installed" {
+    run docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c "which plan"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"plan"* ]]
+}
+
+@test "image has git-utils.sh installed" {
+    run docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c "[ -f /usr/local/bin/git-utils.sh ] && echo ok"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "ok" ]]
+}
+
+@test "image has task-manager backends installed" {
+    run docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" \
+        -c "[ -x /usr/local/bin/backends/jira ] && [ -x /usr/local/bin/backends/github ] && [ -x /usr/local/bin/backends/todo ] && echo ok"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "ok" ]]
+}
+
 @test "image has acli installed" {
     run docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c "which acli"
     [ "$status" -eq 0 ]
