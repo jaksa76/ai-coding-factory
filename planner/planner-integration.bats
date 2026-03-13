@@ -8,7 +8,7 @@
 
 IMAGE_TAG="ai-coding-factory/planner:test"
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
-ENV_FILE="$REPO_ROOT/.env"
+ENV_FILE="${ENV_FILE:-$REPO_ROOT/.env.test}"
 
 setup_file() {
     echo "Building Docker image $IMAGE_TAG …" >&3

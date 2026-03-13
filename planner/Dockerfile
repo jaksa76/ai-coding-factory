@@ -10,8 +10,14 @@ FROM node:24-slim
 #   CLAUDE_TOKEN_EXPIRES_AT   — Token expiry timestamp (epoch ms, numeric)
 #   CLAUDE_SUBSCRIPTION_TYPE  — Subscription type (e.g. "pro")
 #
-#   JIRA_SITE / JIRA_EMAIL / JIRA_TOKEN / JIRA_ASSIGNEE_ACCOUNT_ID
-#   JIRA_PROJECT              — Jira project key to pull issues from (e.g. MYPROJ)
+#   PROJECT                   — project selector for loop --project:
+#                               Jira: project key (e.g. MYPROJ)
+#                               GitHub: owner/repo (e.g. org/repo)
+#                               TODO: path to TODO file
+#   TASK_MANAGER              — backend: jira (default), github, or todo
+#   JIRA_SITE / JIRA_EMAIL / JIRA_TOKEN / JIRA_ASSIGNEE_ACCOUNT_ID (jira backend)
+#   GH_ASSIGNEE / GH_TOKEN (github backend)
+#   TODO_ASSIGNEE (todo backend)
 #   GIT_REPO_URL / GIT_USERNAME / GIT_TOKEN
 #   PLAN_BY_DEFAULT           — Optional: "true" to require planning for all issues
 
@@ -60,4 +66,4 @@ WORKDIR /home/worker
 ENV HOME=/home/worker
 ENV PATH="/home/worker/.local/bin:$PATH"
 
-ENTRYPOINT ["bash", "-c", "agent init && exec loop --for-planning --project \"$JIRA_PROJECT\""]
+ENTRYPOINT ["bash", "-c", "agent init && exec loop --for-planning --project \"$PROJECT\""]

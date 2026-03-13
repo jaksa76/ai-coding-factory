@@ -178,7 +178,7 @@ The system is configured through environment variables (typically in an env file
 | JIRA_SITE, JIRA_EMAIL, JIRA_TOKEN | Jira authentication |
 | JIRA_ASSIGNEE_ACCOUNT_ID | Jira self-assignment identity |
 | JIRA_PROJECT | Jira project key |
-| GH_TOKEN, GITHUB_ASSIGNEE | GitHub backend authentication/identity |
+| GH_TOKEN, GH_ASSIGNEE | GitHub backend authentication/identity |
 | GIT_REPO_URL, GIT_USERNAME, GIT_TOKEN | Target repo and push credentials |
 | PLAN_BY_DEFAULT | Planning policy default |
 | FEATURE_BRANCHES | Enable feature-branch workflow by default |

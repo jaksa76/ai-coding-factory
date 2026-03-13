@@ -15,7 +15,7 @@ FROM node:24-slim
 #                               GitHub: owner/repo (e.g. org/myrepo)
 #   TASK_MANAGER              — Backend: jira (default), github, or todo
 #   JIRA_SITE / JIRA_EMAIL / JIRA_TOKEN / JIRA_ASSIGNEE_ACCOUNT_ID (jira backend)
-#   GH_TOKEN / GITHUB_ASSIGNEE (github backend)
+#   GH_TOKEN / GH_ASSIGNEE (github backend)
 #   GIT_REPO_URL / GIT_USERNAME / GIT_TOKEN
 
 # Install system dependencies

@@ -54,7 +54,7 @@ Project-specific settings. Safe to commit (contains no secrets).
 # Task management backend
 TASK_MANAGER=jira          # jira | github | todo
 JIRA_PROJECT=MYPROJ        # jira backend
-# GITHUB_ASSIGNEE=myuser   # github backend
+# GH_ASSIGNEE=myuser   # github backend
 
 # Repository
 GIT_REPO_URL=https://github.com/myorg/myrepo
@@ -91,7 +91,7 @@ FEATURE_BRANCHES=true
 | `CLAUDE_*` (OAuth) | ✓ | | ✓ |
 | `TASK_MANAGER` | | ✓ | ✓ |
 | `JIRA_PROJECT` | | ✓ | ✓ |
-| `GITHUB_ASSIGNEE` | | ✓ | ✓ |
+| `GH_ASSIGNEE` | | ✓ | ✓ |
 | `GIT_REPO_URL` | | ✓ | ✓ |
 | `PLAN_BY_DEFAULT` | | ✓ | ✓ |
 | `FEATURE_BRANCHES` | | ✓ | ✓ |

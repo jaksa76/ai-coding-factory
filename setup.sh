@@ -13,8 +13,8 @@ BIN_DIR="$REPO_DIR/bin"
 CHOSEN_AGENT=""
 CHOSEN_BACKEND=""
 CHOSEN_RUNTIME=""
-GITHUB_REPO=""
-GITHUB_ASSIGNEE=""
+PROJECT=""
+GH_ASSIGNEE=""
 RC_FILE=""
 
 # ─── helpers ───────────────────────────────────────────────────────────────
@@ -264,7 +264,7 @@ collect_jira_config() {
     JIRA_SITE="$(ask "Jira hostname (e.g. mycompany.atlassian.net)")"
     JIRA_EMAIL="$(ask "Jira account email")"
     JIRA_TOKEN="$(ask_secret "Jira API token")"
-    JIRA_PROJECT="$(ask "Jira project key (e.g. MYPROJ)")"
+    PROJECT="$(ask "Project key (e.g. MYPROJ)")"
     info "Find your account ID at: https://$JIRA_SITE/rest/api/3/myself (sign in first)"
     JIRA_ASSIGNEE_ACCOUNT_ID="$(ask "Your Jira account ID")"
 }
@@ -272,8 +272,8 @@ collect_jira_config() {
 collect_github_task_config() {
     echo ""
     info "--- GitHub Issues ---"
-    GITHUB_REPO="$(ask "GitHub repo to pull issues from (e.g. owner/repo)")"
-    GITHUB_ASSIGNEE="$(ask "GitHub username (for self-assignment)")"
+    PROJECT="$(ask "GitHub repo to pull issues from (e.g. owner/repo)")"
+    GH_ASSIGNEE="$(ask "GitHub username (for self-assignment)")"
     if [[ "$CHOSEN_AGENT" != "copilot" ]]; then
         info "Create a personal access token with 'repo' and 'read:org' scopes:"
         info "  https://github.com/settings/tokens"
@@ -286,7 +286,7 @@ collect_todo_task_config() {
     info "--- TODO.md ---"
     info "The TODO backend uses a local TODO.md file as a task list."
     TODO_ASSIGNEE="$(ask "Your username (used for claiming tasks)" "${USER:-worker}")"
-    JIRA_PROJECT="$(ask "Path to TODO.md file (used as --project)" "TODO.md")"
+    PROJECT="$(ask "Path to TODO.md file (used as --project)" "TODO.md")"
 }
 
 collect_task_manager_config() {
@@ -366,10 +366,10 @@ collect_agent_credentials() {
 collect_optional_settings() {
     echo ""
     info "--- Optional settings ---"
-    USE_FEATURE_BRANCHES="false"
+    FEATURE_BRANCHES="false"
     PLAN_BY_DEFAULT="false"
     if ask_yn "Create feature branches and PRs for each issue?" "n"; then
-        USE_FEATURE_BRANCHES="true"
+        FEATURE_BRANCHES="true"
     fi
     if ask_yn "Require a planning step for all issues by default?" "n"; then
         PLAN_BY_DEFAULT="true"
@@ -388,8 +388,8 @@ write_env_file() {
         case "${CHOSEN_BACKEND:-jira}" in
             github)
                 echo "# GitHub Issues"
-                echo "PROJECT=${GITHUB_REPO:-}"
-                echo "GITHUB_ASSIGNEE=${GITHUB_ASSIGNEE:-}"
+                echo "PROJECT=${PROJECT:-}"
+                echo "GH_ASSIGNEE=${GH_ASSIGNEE:-}"
                 # Write GH_TOKEN here only for non-copilot agents; copilot section writes it below
                 if [[ "$CHOSEN_AGENT" != "copilot" ]]; then
                     echo "GH_TOKEN=${GH_TOKEN:-}"
@@ -397,16 +397,15 @@ write_env_file() {
                 ;;
             todo)
                 echo "# TODO.md"
-                echo "PROJECT=${JIRA_PROJECT:-}"
+                echo "PROJECT=${PROJECT:-}"
                 echo "TODO_ASSIGNEE=${TODO_ASSIGNEE:-}"
                 ;;
             *)
                 echo "# Jira"
-                echo "PROJECT=${JIRA_PROJECT:-}"
+                echo "PROJECT=${PROJECT:-}"
                 echo "JIRA_SITE=${JIRA_SITE:-}"
                 echo "JIRA_EMAIL=${JIRA_EMAIL:-}"
                 echo "JIRA_TOKEN=${JIRA_TOKEN:-}"
-                echo "JIRA_PROJECT=${JIRA_PROJECT:-}"
                 echo "JIRA_ASSIGNEE_ACCOUNT_ID=${JIRA_ASSIGNEE_ACCOUNT_ID:-}"
                 ;;
         esac
@@ -439,7 +438,8 @@ write_env_file() {
         esac
         echo ""
         echo "# Options"
-        echo "USE_FEATURE_BRANCHES=${USE_FEATURE_BRANCHES:-false}"
+        # Canonical name used by loop/implement.
+        echo "FEATURE_BRANCHES=${FEATURE_BRANCHES:-false}"
         echo "PLAN_BY_DEFAULT=${PLAN_BY_DEFAULT:-false}"
     } > "$env_file"
 }

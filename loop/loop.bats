@@ -441,11 +441,11 @@ esac
     [[ "$output" == *"GH_TOKEN"* ]]
 }
 
-@test "github backend: error: GITHUB_ASSIGNEE not set" {
+@test "github backend: error: GH_ASSIGNEE not set" {
     unset JIRA_SITE JIRA_EMAIL JIRA_TOKEN JIRA_ASSIGNEE_ACCOUNT_ID
     run env TASK_MANAGER=github GH_TOKEN=tok "$LOOP" --project "owner/repo"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"GITHUB_ASSIGNEE"* ]]
+    [[ "$output" == *"GH_ASSIGNEE"* ]]
 }
 
 @test "github backend: Jira vars not required" {
@@ -467,7 +467,7 @@ case \"\$1\" in
   *) ;;
 esac
 "
-    run env TASK_MANAGER=github GH_TOKEN=tok GITHUB_ASSIGNEE=myuser \
+    run env TASK_MANAGER=github GH_TOKEN=tok GH_ASSIGNEE=myuser \
         "$LOOP" --project "owner/repo"
     [[ "$output" != *"JIRA_SITE"* ]]
     [[ "$output" != *"JIRA_EMAIL"* ]]
@@ -496,7 +496,7 @@ case \"\$1\" in
   *) ;;
 esac
 "
-    run env TASK_MANAGER=github GH_TOKEN=tok GITHUB_ASSIGNEE=myuser \
+    run env TASK_MANAGER=github GH_TOKEN=tok GH_ASSIGNEE=myuser \
         "$LOOP" --project "owner/myrepo"
     [[ "$(cat "$tm_log")" == *"GITHUB_REPO=owner/myrepo"* ]]
     rm -f "$tm_log" "$counter_file"
@@ -584,7 +584,7 @@ case \"\$1\" in
   *) ;;
 esac
 "
-    run env TASK_MANAGER=github GH_TOKEN=tok GITHUB_ASSIGNEE=myuser \
+    run env TASK_MANAGER=github GH_TOKEN=tok GH_ASSIGNEE=myuser \
         "$LOOP" --project "owner/myrepo"
     [[ "$(cat "$tm_log")" == *"claim --project owner/myrepo --account-id myuser"* ]]
     rm -f "$tm_log" "$counter_file"

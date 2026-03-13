@@ -20,7 +20,7 @@ configure_git_identity() {
     # Configure git user identity for commits
     git config --global user.name "$GIT_USERNAME"
     if [[ "${TASK_MANAGER:-jira}" == "github" ]]; then
-        git config --global user.email "$GITHUB_ASSIGNEE@users.noreply.github.com"
+        git config --global user.email "$GH_ASSIGNEE@users.noreply.github.com"
     elif [[ "${TASK_MANAGER:-jira}" == "todo" ]]; then
         git config --global user.email "${TODO_ASSIGNEE:-agent}@localhost"
     else

@@ -41,12 +41,12 @@ legacy/         Previous hub-based implementation (reference only)
 | Variable | Purpose |
 |---|---|
 | `TASK_MANAGER` | Task manager backend to use (default: `jira`) |
+| `PROJECT` | Canonical `loop --project` target: Jira project key, GitHub `owner/repo`, or TODO file path |
 | `JIRA_SITE` | Jira host, e.g. `mycompany.atlassian.net` (jira backend) |
 | `JIRA_EMAIL` | Jira account email (jira backend) |
 | `JIRA_TOKEN` | Jira API token (jira backend) |
 | `JIRA_ASSIGNEE_ACCOUNT_ID` | Jira account ID used for self-assignment (jira backend) |
-| `JIRA_PROJECT` | Jira project key to pull issues from, e.g. `MYPROJ` (jira backend) |
-| `GITHUB_ASSIGNEE` | GitHub username used for self-assignment (github backend) |
+| `GH_ASSIGNEE` | GitHub username used for self-assignment (github backend) |
 | `GH_TOKEN` | GitHub personal access token (github backend; also used by `workers/copilot`) |
 | `GIT_REPO_URL` | Repository to work on |
 | `GIT_USERNAME` | Git push credentials |
@@ -64,6 +64,7 @@ Agent-specific vars (add on top of the above per worker type):
 |---|---|
 | `ANTHROPIC_API_KEY` | `workers/claude` |
 | `GH_TOKEN` | `workers/copilot` |
+| `GH_USERNAME` | `workers/copilot` |
 
 
 ## Testing
@@ -74,7 +75,7 @@ All tools have corresponding `.bats` test files. Run with `bats <file>`. We have
 - Unit tests: test individual tools in isolation, using mocks for external dependencies (e.g. mock `acli` for Jira interactions).
 - Integration tests: test the full flow of `loop` + worker, using real Jira interactions (against a test Jira instance) and real agent CLI calls.
 
-**Mock external agent CLIs** (claude, copilot, etc.) in all integration tests except one final live smoke test. Create the mock binary inside the container at runtime (bind-mounting host files into Docker does not work from inside the devcontainer). Only the last test calls the real API, and it skips if `.env` is absent.
+Prefer real backend/API coverage in loop integration tests. Image-level integration tests may still mock the agent CLI for focused plumbing checks, with a final live smoke test kept for end-to-end verification.
 
 **Capture docker subprocess output** using detached mode: `docker run -d` → `docker wait` → `docker logs`. Foreground `docker run` does not reliably forward stdout from some binaries (e.g. the claude CLI) when they write after bash completes.
 

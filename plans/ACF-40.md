@@ -29,7 +29,7 @@ on most GitHub-connected machines.
 
 | Variable | Purpose |
 |---|---|
-| `GITHUB_ASSIGNEE` | GitHub username used for self-assignment |
+| `GH_ASSIGNEE` | GitHub username used for self-assignment |
 
 `GH_TOKEN` already exists and is reused for GitHub API auth.
 `TASK_MANAGER` is the selector introduced in ACF-49.
@@ -130,14 +130,14 @@ No structural changes. The only required update is validation:
   ```bash
   if [[ "${TASK_MANAGER:-jira}" == "github" ]]; then
       [[ -z "${GH_TOKEN:-}" ]]        && error_exit "GH_TOKEN is not set"
-      [[ -z "${GITHUB_ASSIGNEE:-}}" ]] && error_exit "GITHUB_ASSIGNEE is not set"
+      [[ -z "${GH_ASSIGNEE:-}}" ]] && error_exit "GH_ASSIGNEE is not set"
   else
       # existing Jira checks
   fi
   ```
 - `git config user.email`: fall back to
-  `$GITHUB_ASSIGNEE@users.noreply.github.com` when `TASK_MANAGER=github`.
-- Update `usage` to document `TASK_MANAGER` and `GITHUB_ASSIGNEE`.
+  `$GH_ASSIGNEE@users.noreply.github.com` when `TASK_MANAGER=github`.
+- Update `usage` to document `TASK_MANAGER` and `GH_ASSIGNEE`.
 
 All actual task operations (`claim`, `view`, `comment`, `transition`) are
 already routed through `task-manager` after ACF-49 — no further changes needed.
@@ -150,18 +150,18 @@ Same validation-only changes as `loop/loop` above.
 
 Add test cases for `TASK_MANAGER=github`:
 
-- Validation rejects missing `GH_TOKEN` / `GITHUB_ASSIGNEE`.
+- Validation rejects missing `GH_TOKEN` / `GH_ASSIGNEE`.
 - With a stubbed `task-manager` (or real dispatcher + stubbed `gh`), the loop
   runs end-to-end for a GitHub issue.
 
 ### `ARCHITECTURE.md`
 
 Update env-var table and loop-flow description to mention `TASK_MANAGER=github`
-and `GITHUB_ASSIGNEE`.
+and `GH_ASSIGNEE`.
 
 ### `CLAUDE.md`
 
-Add `GH_TOKEN`, `GITHUB_ASSIGNEE` to the environment variable table and note
+Add `GH_TOKEN`, `GH_ASSIGNEE` to the environment variable table and note
 that `TASK_MANAGER` selects the backend.
 
 ## Implementation steps

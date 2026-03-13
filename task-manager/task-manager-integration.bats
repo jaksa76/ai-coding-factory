@@ -2,7 +2,7 @@
 # Integration tests for task-manager — uses the real Jira API.
 #
 # Prerequisites:
-#   - .env exists at the repo root with JIRA_SITE, JIRA_EMAIL, JIRA_TOKEN
+#   - .env.test exists at the repo root with JIRA_SITE, JIRA_EMAIL, JIRA_TOKEN
 #   - acli is authenticated (tests will authenticate if needed)
 #   - JIRA_SITE may include https:// prefix; tests strip it automatically
 #
@@ -10,7 +10,7 @@
 # They assume the project has no other matching unassigned issues between runs.
 
 TASK_MANAGER="$BATS_TEST_DIRNAME/task-manager"
-ENV_FILE="$(cd "$BATS_TEST_DIRNAME/.." && pwd)/.env"
+ENV_FILE="${ENV_FILE:-$(cd "$BATS_TEST_DIRNAME/.." && pwd)/.env.test}"
 
 # Account ID for jaksa76@gmail.com on jaksa.atlassian.net
 ACCOUNT_ID="712020:2b77122e-3452-4f6b-8fb5-776644a6197c"
@@ -49,7 +49,7 @@ issue_status() {
 setup_file() {
     if [[ ! -f "$ENV_FILE" ]]; then
         echo "SKIP: $ENV_FILE not found" >&3
-        skip "No .env file found"
+        skip "No env file found"
     fi
 
     set -a
@@ -84,7 +84,7 @@ teardown_file() {
 # ── per-test setup ─────────────────────────────────────────────────────────────
 
 setup() {
-    if [[ ! -f "$ENV_FILE" ]]; then skip "No .env file found"; fi
+    if [[ ! -f "$ENV_FILE" ]]; then skip "No env file found"; fi
 
     set -a
     # shellcheck source=/dev/null

@@ -8,7 +8,7 @@
 
 IMAGE_TAG="ai-coding-factory/copilot-worker:test"
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-ENV_FILE="$REPO_ROOT/.env"
+ENV_FILE="${ENV_FILE:-$REPO_ROOT/.env.test}"
 
 setup_file() {
     # Build the image once for the whole test suite; output goes to stderr so
@@ -24,7 +24,7 @@ teardown_file() {
     docker rmi --force "$IMAGE_TAG" >/dev/null 2>&1 || true
 }
 
-# Strip 'export' prefix from .env so docker --env-file can consume it.
+# Strip 'export' prefix from env file so docker --env-file can consume it.
 # Prints the path to a temp file; caller is responsible for deleting it.
 make_docker_env_file() {
     local tmp
@@ -161,7 +161,7 @@ make_docker_env_file() {
 # ── end-to-end ────────────────────────────────────────────────────────────────
 
 @test "agent init injects credentials into config" {
-    if [[ ! -f "$ENV_FILE" ]]; then skip "No .env file found"; fi
+    if [[ ! -f "$ENV_FILE" ]]; then skip "No env file found"; fi
     local env_file
     env_file="$(make_docker_env_file)"
 
@@ -197,7 +197,7 @@ make_docker_env_file() {
 }
 
 @test "copilot responds to a real prompt (live API smoke test)" {
-    if [[ ! -f "$ENV_FILE" ]]; then skip "No .env file found"; fi
+    if [[ ! -f "$ENV_FILE" ]]; then skip "No env file found"; fi
     local env_file container exit_code reply
     env_file="$(make_docker_env_file)"
 

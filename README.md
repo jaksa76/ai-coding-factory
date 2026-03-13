@@ -45,20 +45,34 @@ The default backend is `jira`. Provide your Jira credentials:
 
 ```bash
 export TASK_MANAGER=jira   # optional, jira is the default
+export PROJECT=MYPROJ
 export JIRA_SITE=mycompany.atlassian.net
 export JIRA_EMAIL=worker@mycompany.com
 export JIRA_TOKEN=<jira-api-token>
 export JIRA_ASSIGNEE_ACCOUNT_ID=<jira-account-id>
-export JIRA_PROJECT=MYPROJ
 ```
 
 For GitHub Issues, use:
 
 ```bash
 export TASK_MANAGER=github
-export GITHUB_ASSIGNEE=myuser
+export PROJECT=owner/repo
+export GH_ASSIGNEE=myuser
 export GH_TOKEN=<github-pat>
 ```
+
+For the TODO backend, use:
+
+```bash
+export TASK_MANAGER=todo
+export PROJECT=TODO.md
+export TODO_ASSIGNEE=myuser
+```
+
+`PROJECT` is the canonical target passed to `loop --project`:
+- Jira: project key, for example `MYPROJ`
+- GitHub: repository in `owner/repo` form
+- TODO: path to the todo file
 
 ### Git
 
@@ -229,7 +243,7 @@ This uses the `planner-claude` image by default. Override with `FACTORY_PLANNER_
 
 ### Opt-in / opt-out
 
-By default, planning is **opt-in**. Add a `needs-plan` label to a Jira issue to require a planning step for that specific issue.
+By default, planning is **opt-in**. Add a `needs-plan` label to an issue to require a planning step for that specific issue.
 
 To require planning for all issues by default, set:
 
