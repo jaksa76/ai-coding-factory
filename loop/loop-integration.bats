@@ -3,7 +3,7 @@
 
 LOOP="$BATS_TEST_DIRNAME/loop"
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
-ENV_FILE="${ENV_FILE:-$REPO_ROOT/.env.test}"
+ENV_FILE="$REPO_ROOT/.env.test"
 BIN_DIR="$REPO_ROOT/bin"
 ORIGINAL_PATH="$PATH"
 
@@ -103,10 +103,14 @@ setup() {
     export NO_ISSUES_WAIT=3600
     export INTER_ISSUE_WAIT=3600
     export PATH="$BIN_DIR:$ORIGINAL_PATH"
+
+    LOOP_WORK_DIR="$(mktemp -d)"
+    export LOOP_WORK_DIR
 }
 
 teardown() {
     rm -rf "${AGENT_ADAPTER_DIR:-}"
+    rm -rf "${LOOP_WORK_DIR:-}"
 }
 
 use_claude_agent_adapter() {
@@ -121,6 +125,7 @@ case "$cmd" in
         ;;
     run)
         prompt="${2:-}"
+        unset CLAUDECODE
         exec claude --dangerously-skip-permissions -p "$prompt"
         ;;
     *)
@@ -134,6 +139,10 @@ EOF
 }
 
 use_copilot_agent_adapter() {
+    if timeout 5 copilot --allow-all --no-ask-user -p "" </dev/null 2>&1 | grep -q "Cannot find"; then
+        fail "Copilot not installed"
+    fi
+
     AGENT_ADAPTER_DIR="$(mktemp -d)"
     cat > "$AGENT_ADAPTER_DIR/agent" << 'EOF'
 #!/usr/bin/env bash
@@ -161,7 +170,7 @@ create_jira_issue() {
     local label="${1:-}"
     local summary="[itest][loop][jira] $(date +%s%N)"
     local json key
-    json=$(acli jira workitem create --summary "$summary" --project "$TEST_JIRA_PROJECT" --type "Task" --json 2>&1)
+    json=$(acli jira workitem create --summary "$summary" --project "$TEST_JIRA_PROJECT" --type "Task" --description "Write a new file containing a short joke. Pick a unique filename." --json 2>&1)
     key=$(printf '%s' "$json" | jq -r '.key // empty')
     [[ -z "$key" ]] && { echo "create failed: $json" >&3; return 1; }
 
@@ -182,7 +191,7 @@ create_gh_issue() {
     local label="${1:-}"
     local title="[itest][loop][github] $(date +%s%N)"
     local url number
-    url=$(gh issue create --repo "$TEST_GITHUB_REPO" --title "$title" --body "integration test issue")
+    url=$(gh issue create --repo "$TEST_GITHUB_REPO" --title "$title" --body "Write a new file containing a short joke. Pick a unique filename.")
     number=$(basename "$url")
     [[ -z "$number" || ! "$number" =~ ^[0-9]+$ ]] && return 1
 
@@ -222,7 +231,9 @@ plan_exists_in_repo() {
     number=$(create_gh_issue)
 
     export PLAN_BY_DEFAULT=true
-    run timeout 420 "$LOOP" --project "$TEST_GITHUB_REPO" --for-planning
+    local start=$SECONDS
+    run timeout 300 "$LOOP" --project "$TEST_GITHUB_REPO" --for-planning --max-tasks 1
+    echo "# elapsed: $((SECONDS - start))s" >&3
 
     echo "# output: $output" >&3
     [[ "$output" == *"Planning phase complete for $number"* ]]
@@ -242,7 +253,9 @@ plan_exists_in_repo() {
     number=$(create_gh_issue)
 
     export FEATURE_BRANCHES=false
-    run timeout 420 "$LOOP" --project "$TEST_GITHUB_REPO"
+    local start=$SECONDS
+    run timeout 300 "$LOOP" --project "$TEST_GITHUB_REPO" --max-tasks 1
+    echo "# elapsed: $((SECONDS - start))s" >&3
 
     echo "# output: $output" >&3
     [[ "$output" == *"Completed $number"* ]]
@@ -259,7 +272,9 @@ plan_exists_in_repo() {
     acli jira workitem assign --key "$key" --remove-assignee --yes >/dev/null 2>&1 || true
     export PLAN_BY_DEFAULT=false
 
-    run timeout 420 "$LOOP" --project "$TEST_JIRA_PROJECT" --for-planning
+    local start=$SECONDS
+    run timeout 300 "$LOOP" --project "$TEST_JIRA_PROJECT" --for-planning --max-tasks 1
+    echo "# elapsed: $((SECONDS - start))s" >&3
 
     echo "# output: $output" >&3
     [[ "$output" == *"Planning phase complete for $key"* ]]
@@ -281,7 +296,9 @@ plan_exists_in_repo() {
     acli jira workitem assign --key "$key" --remove-assignee --yes >/dev/null 2>&1 || true
     export FEATURE_BRANCHES=true
 
-    run timeout 420 "$LOOP" --project "$TEST_JIRA_PROJECT"
+    local start=$SECONDS
+    run timeout 300 "$LOOP" --project "$TEST_JIRA_PROJECT" --max-tasks 1
+    echo "# elapsed: $((SECONDS - start))s" >&3
 
     echo "# output: $output" >&3
     [[ "$output" == *"Completed $key"* ]]

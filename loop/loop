@@ -44,6 +44,7 @@ usage() {
     echo ""
     echo "Flags:"
     echo "  --for-planning            Run in planning mode (claim and plan issues)"
+    echo "  --max-tasks N             Stop after processing N tasks (default: run forever)"
     exit 1
 }
 
@@ -55,12 +56,15 @@ error_exit() {
 # Parse arguments
 PROJECT=""
 FOR_PLANNING=false
+MAX_TASKS=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --project)
             PROJECT="$2"; shift 2;;
         --for-planning)
             FOR_PLANNING=true; shift;;
+        --max-tasks)
+            MAX_TASKS="$2"; shift 2;;
         --help|-h)
             usage;;
         *)
@@ -131,17 +135,23 @@ claim_issue() {
 }
 
 run_planning_loop() {
+    local count=0
     while true; do
         claim_issue --for-planning || continue
         plan "$ISSUE_KEY"
+        count=$((count + 1))
+        [[ -n "$MAX_TASKS" && "$count" -ge "$MAX_TASKS" ]] && break
         sleep "${INTER_ISSUE_WAIT:-600}"
     done
 }
 
 run_implementation_loop() {
+    local count=0
     while true; do
         claim_issue || continue
         implement "$ISSUE_KEY"
+        count=$((count + 1))
+        [[ -n "$MAX_TASKS" && "$count" -ge "$MAX_TASKS" ]] && break
         sleep "${INTER_ISSUE_WAIT:-1200}"
     done
 }

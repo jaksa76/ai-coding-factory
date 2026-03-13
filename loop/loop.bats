@@ -589,3 +589,61 @@ esac
     [[ "$(cat "$tm_log")" == *"claim --project owner/myrepo --account-id myuser"* ]]
     rm -f "$tm_log" "$counter_file"
 }
+
+# ── --max-tasks ───────────────────────────────────────────────────────────────
+
+@test "--max-tasks: stops after N tasks" {
+    local impl_log counter_file real_tm
+    impl_log="$(mktemp)"
+    counter_file="$(mktemp)"
+    real_tm="$BATS_TEST_DIRNAME/../task-manager/task-manager"
+    echo "0" > "$counter_file"
+
+    stub_script implement "echo \"\$*\" >> '$impl_log'"
+
+    stub_script task-manager "
+case \"\$1\" in
+  claim)
+    count=\$(cat '$counter_file')
+    echo \$((count + 1)) > '$counter_file'
+    printf '{\"key\":\"PROJ-%s\",\"summary\":\"Task %s\"}\n' \"\$count\" \"\$count\"
+    ;;
+  *)
+    exec '$real_tm' \"\$@\"
+    ;;
+esac
+"
+    run "$LOOP" --project PROJ --max-tasks 2
+    local lines
+    lines=$(wc -l < "$impl_log")
+    [[ "$lines" -eq 2 ]]
+    rm -f "$impl_log" "$counter_file"
+}
+
+@test "--max-tasks: stops after N tasks in planning mode" {
+    local plan_log counter_file real_tm
+    plan_log="$(mktemp)"
+    counter_file="$(mktemp)"
+    real_tm="$BATS_TEST_DIRNAME/../task-manager/task-manager"
+    echo "0" > "$counter_file"
+
+    stub_script plan "echo \"\$*\" >> '$plan_log'"
+
+    stub_script task-manager "
+case \"\$1\" in
+  claim)
+    count=\$(cat '$counter_file')
+    echo \$((count + 1)) > '$counter_file'
+    printf '{\"key\":\"PROJ-%s\",\"summary\":\"Task %s\"}\n' \"\$count\" \"\$count\"
+    ;;
+  *)
+    exec '$real_tm' \"\$@\"
+    ;;
+esac
+"
+    run "$LOOP" --project PROJ --for-planning --max-tasks 2
+    local lines
+    lines=$(wc -l < "$plan_log")
+    [[ "$lines" -eq 2 ]]
+    rm -f "$plan_log" "$counter_file"
+}
