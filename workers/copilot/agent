@@ -46,7 +46,11 @@ case "$cmd" in
 
     run)
         prompt="${2:-}"
-        exec copilot --allow-all --no-ask-user -p "$prompt"
+        model_args=()
+        if [[ -n "${COPILOT_MODEL:-}" ]]; then
+            model_args=(--model "$COPILOT_MODEL")
+        fi
+        exec copilot --allow-all --no-ask-user "${model_args[@]}" -p "$prompt"
         ;;
 
     *)

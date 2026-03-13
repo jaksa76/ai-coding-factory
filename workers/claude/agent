@@ -69,7 +69,11 @@ case "$cmd" in
 
     run)
         prompt="${2:-}"
-        exec claude --dangerously-skip-permissions -p "$prompt"
+        model_args=()
+        if [[ -n "${CLAUDE_MODEL:-}" ]]; then
+            model_args=(--model "$CLAUDE_MODEL")
+        fi
+        exec claude --dangerously-skip-permissions "${model_args[@]}" -p "$prompt"
         ;;
 
     *)

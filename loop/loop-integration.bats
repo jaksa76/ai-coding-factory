@@ -126,7 +126,7 @@ case "$cmd" in
     run)
         prompt="${2:-}"
         unset CLAUDECODE
-        exec claude --dangerously-skip-permissions -p "$prompt"
+        exec claude --dangerously-skip-permissions --model claude-haiku-4-5-20251001 -p "$prompt"
         ;;
     *)
         echo "Usage: agent <init|run>" >&2
@@ -154,7 +154,7 @@ case "$cmd" in
         ;;
     run)
         prompt="${2:-}"
-        exec copilot --allow-all --no-ask-user -p "$prompt"
+        exec copilot --allow-all --no-ask-user --model gpt-5-mini -p "$prompt"
         ;;
     *)
         echo "Usage: agent <init|run>" >&2
