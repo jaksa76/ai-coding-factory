@@ -84,6 +84,11 @@ teardown_file() {
     [ "$status" -eq 0 ]
 }
 
+@test "image has gh installed" {
+    run docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c "which gh"
+    [ "$status" -eq 0 ]
+}
+
 # ── credentials directory ─────────────────────────────────────────────────────
 
 @test "~/.claude directory exists and is writable" {
@@ -106,6 +111,7 @@ teardown_file() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"agent init"* ]]
     [[ "$output" == *"loop --for-planning"* ]]
+    [[ "$output" == *'$PROJECT'* ]]
 }
 
 # ── loop behaviour ────────────────────────────────────────────────────────────

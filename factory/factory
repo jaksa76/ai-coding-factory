@@ -30,6 +30,7 @@ _image_source_dir() {
         worker-claude)  echo "workers/claude" ;;
         worker-copilot) echo "workers/copilot" ;;
         worker-codex)   echo "workers/codex" ;;
+        planner-claude) echo "planner" ;;
         *)              echo "" ;;
     esac
 }

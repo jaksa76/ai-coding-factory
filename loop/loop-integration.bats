@@ -32,16 +32,16 @@ setup_file() {
     export TEST_GITHUB_REPO="$(github_repo_from_git_url "$GIT_REPO_URL")"
 
     if ! command -v acli >/dev/null 2>&1; then
-        skip "acli not found"
+        fail "acli not found"
     fi
     if ! command -v gh >/dev/null 2>&1; then
-        skip "gh not found"
+        fail "gh not found"
     fi
     if ! command -v claude >/dev/null 2>&1; then
-        skip "claude not found"
+        fail "claude not found"
     fi
     if ! command -v copilot >/dev/null 2>&1; then
-        skip "copilot not found"
+        fail "copilot not found"
     fi
 
     if ! acli jira auth status 2>/dev/null | grep -q "Authenticated"; then
@@ -49,16 +49,16 @@ setup_file() {
             | acli jira auth login --site "$JIRA_SITE" --email "$JIRA_EMAIL" --token >/dev/null
     fi
     if ! gh auth status >/dev/null 2>&1; then
-        skip "gh auth not ready"
+        fail "gh auth not ready"
     fi
     if [[ -z "$TEST_JIRA_PROJECT" ]]; then
-        skip "PROJECT is required in $ENV_FILE for Jira tests"
+        fail "PROJECT is required in $ENV_FILE for Jira tests"
     fi
     if [[ -z "$TEST_GITHUB_REPO" ]]; then
-        skip "GIT_REPO_URL must point at a GitHub repository for GitHub tests"
+        fail "GIT_REPO_URL must point at a GitHub repository for GitHub tests"
     fi
     if [[ -z "${GH_ASSIGNEE:-}" ]]; then
-        skip "GH_ASSIGNEE is required in $ENV_FILE"
+        fail "GH_ASSIGNEE is required in $ENV_FILE"
     fi
 
     for label in needs-plan skip-plan plan-approved in-progress in-planning in-review awaiting-plan-review; do
