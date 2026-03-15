@@ -222,7 +222,8 @@ tm_transition() {
         "Awaiting Plan Review")
             gh issue edit "$number" --repo "$GITHUB_REPO" \
                 --add-label "awaiting-plan-review" \
-                --remove-label "in-planning" 2>/dev/null || true
+                --remove-label "in-planning" \
+                --remove-assignee "@me" 2>/dev/null || true
             ;;
         "Done")
             gh issue edit "$number" --repo "$GITHUB_REPO" \
