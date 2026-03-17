@@ -187,6 +187,10 @@ jira_issue_status() {
     acli jira workitem view "$1" --json 2>/dev/null | jq -r '.fields.status.name // empty'
 }
 
+jira_issue_assignee() {
+    acli jira workitem view "$1" --json 2>/dev/null | jq -r '.fields.assignee.displayName // empty'
+}
+
 create_gh_issue() {
     local label="${1:-}"
     local title="[itest][loop][github] $(date +%s%N)"
@@ -205,6 +209,10 @@ create_gh_issue() {
 
 gh_issue_state() {
     gh issue view "$1" --repo "$TEST_GITHUB_REPO" --json state | jq -r '.state | ascii_downcase'
+}
+
+gh_issue_assignees() {
+    gh issue view "$1" --repo "$TEST_GITHUB_REPO" --json assignees | jq -r '.assignees | length'
 }
 
 gh_issue_labels() {
@@ -242,6 +250,7 @@ plan_exists_in_repo() {
     local labels
     labels=$(gh_issue_labels "$number")
     [[ "$labels" == *"awaiting-plan-review"* || "$labels" == *"in-planning"* ]]
+    [[ "$(gh_issue_assignees "$number")" == "0" ]]
 }
 
 @test "implementation loop with gh task management using claude (no feature branches)" {
@@ -283,6 +292,7 @@ plan_exists_in_repo() {
     local s
     s=$(jira_issue_status "$key")
     [[ "$s" == "Awaiting Plan Review" || "$s" == "Planning" ]]
+    [[ -z "$(jira_issue_assignee "$key")" ]]
 }
 
 @test "implementation loop with jira task management using copilot (feature branches)" {
