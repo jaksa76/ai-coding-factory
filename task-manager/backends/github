@@ -14,43 +14,42 @@ tm_auth() {
 _gh_list_issues_for_planning() {
     local repo="$1"
     if [[ "${PLAN_BY_DEFAULT:-false}" == "true" ]]; then
-        # All unassigned open issues that don't have skip-plan
+        # All unassigned open issues that don't have skip-plan, oldest first
         gh issue list --repo "$repo" \
             --state open \
-            --order asc \
             --json number,title,body,labels,assignees \
             --jq '[.[] | select((.assignees | length) == 0)
-                       | select([.labels[].name] | index("skip-plan") == null)]'
+                       | select([.labels[].name] | index("skip-plan") == null)]
+                 | sort_by(.number)'
     else
-        # Only unassigned issues with needs-plan label
+        # Only unassigned issues with needs-plan label, oldest first
         gh issue list --repo "$repo" \
             --label "needs-plan" \
             --state open \
-            --order asc \
             --json number,title,body,labels,assignees \
-            --jq '[.[] | select((.assignees | length) == 0)]'
+            --jq '[.[] | select((.assignees | length) == 0)] | sort_by(.number)'
     fi
 }
 
 _gh_list_issues_for_implementation() {
     local repo="$1"
     if [[ "${PLAN_BY_DEFAULT:-false}" == "true" ]]; then
-        # Unassigned issues with plan-approved OR skip-plan label
+        # Unassigned issues with plan-approved OR skip-plan label, oldest first
         gh issue list --repo "$repo" \
             --state open \
-            --order asc \
             --json number,title,body,labels,assignees \
             --jq '[.[] | select((.assignees | length) == 0)
                        | select([.labels[].name]
-                           | (index("plan-approved") != null or index("skip-plan") != null))]'
+                           | (index("plan-approved") != null or index("skip-plan") != null))]
+                 | sort_by(.number)'
     else
-        # Unassigned open issues without needs-plan
+        # Unassigned open issues without needs-plan, oldest first
         gh issue list --repo "$repo" \
             --state open \
-            --order asc \
             --json number,title,body,labels,assignees \
             --jq '[.[] | select((.assignees | length) == 0)
-                       | select([.labels[].name] | index("needs-plan") == null)]'
+                       | select([.labels[].name] | index("needs-plan") == null)]
+                 | sort_by(.number)'
     fi
 }
 

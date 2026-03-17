@@ -9,7 +9,7 @@
 # These tests create and delete real GitHub issues in the configured repo.
 # They assume the repo has no other matching unassigned open issues between runs.
 
-TASK_MANAGER="$BATS_TEST_DIRNAME/task-manager"
+TM_SCRIPT="$BATS_TEST_DIRNAME/task-manager"
 ENV_FILE="${ENV_FILE:-$(cd "$BATS_TEST_DIRNAME/.." && pwd)/.env.test}"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -116,7 +116,7 @@ teardown() {
 # ── auth ──────────────────────────────────────────────────────────────────────
 
 @test "auth: gh reports authenticated with provided credentials" {
-    run env TASK_MANAGER=github "$TASK_MANAGER" auth
+    run env TASK_MANAGER=github "$TM_SCRIPT" auth
     [ "$status" -eq 0 ]
 }
 
@@ -125,7 +125,7 @@ teardown() {
 @test "P1: --for-planning, PLAN_BY_DEFAULT=false, no label — issue NOT claimed" {
     NUMBER=$(create_test_issue)
     export PLAN_BY_DEFAULT=false
-    run timeout 15 env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TASK_MANAGER" claim --for-planning --project "$REPO" --account-id "$ASSIGNEE"
+    run timeout 15 env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TM_SCRIPT" claim --for-planning --project "$REPO" --account-id "$ASSIGNEE"
     assignee=$(issue_assignee "$NUMBER")
     [[ "$assignee" != "$ASSIGNEE" ]]
 }
@@ -133,7 +133,7 @@ teardown() {
 @test "P2: --for-planning, PLAN_BY_DEFAULT=false, needs-plan label — claimed + in-planning" {
     NUMBER=$(create_test_issue "needs-plan")
     export PLAN_BY_DEFAULT=false
-    run env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TASK_MANAGER" claim --for-planning --project "$REPO" --account-id "$ASSIGNEE"
+    run env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TM_SCRIPT" claim --for-planning --project "$REPO" --account-id "$ASSIGNEE"
     [ "$status" -eq 0 ]
     [[ "$(issue_assignee "$NUMBER")" == "$ASSIGNEE" ]]
     [[ "$(issue_has_label "$NUMBER" "in-planning")" == "true" ]]
@@ -142,7 +142,7 @@ teardown() {
 @test "P3: --for-planning, PLAN_BY_DEFAULT=false, skip-plan label — issue NOT claimed" {
     NUMBER=$(create_test_issue "skip-plan")
     export PLAN_BY_DEFAULT=false
-    run timeout 15 env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TASK_MANAGER" claim --for-planning --project "$REPO" --account-id "$ASSIGNEE"
+    run timeout 15 env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TM_SCRIPT" claim --for-planning --project "$REPO" --account-id "$ASSIGNEE"
     assignee=$(issue_assignee "$NUMBER")
     [[ "$assignee" != "$ASSIGNEE" ]]
 }
@@ -150,7 +150,7 @@ teardown() {
 @test "P4: --for-planning, PLAN_BY_DEFAULT=true, no label — claimed + in-planning" {
     NUMBER=$(create_test_issue)
     export PLAN_BY_DEFAULT=true
-    run env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TASK_MANAGER" claim --for-planning --project "$REPO" --account-id "$ASSIGNEE"
+    run env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TM_SCRIPT" claim --for-planning --project "$REPO" --account-id "$ASSIGNEE"
     [ "$status" -eq 0 ]
     [[ "$(issue_assignee "$NUMBER")" == "$ASSIGNEE" ]]
     [[ "$(issue_has_label "$NUMBER" "in-planning")" == "true" ]]
@@ -159,7 +159,7 @@ teardown() {
 @test "P5: --for-planning, PLAN_BY_DEFAULT=true, skip-plan label — issue NOT claimed" {
     NUMBER=$(create_test_issue "skip-plan")
     export PLAN_BY_DEFAULT=true
-    run timeout 15 env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TASK_MANAGER" claim --for-planning --project "$REPO" --account-id "$ASSIGNEE"
+    run timeout 15 env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TM_SCRIPT" claim --for-planning --project "$REPO" --account-id "$ASSIGNEE"
     assignee=$(issue_assignee "$NUMBER")
     [[ "$assignee" != "$ASSIGNEE" ]]
 }
@@ -169,7 +169,7 @@ teardown() {
 @test "I1: no --for-planning, PLAN_BY_DEFAULT=false, no label — claimed + in-progress" {
     NUMBER=$(create_test_issue)
     export PLAN_BY_DEFAULT=false
-    run env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TASK_MANAGER" claim --project "$REPO" --account-id "$ASSIGNEE"
+    run env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TM_SCRIPT" claim --project "$REPO" --account-id "$ASSIGNEE"
     [ "$status" -eq 0 ]
     [[ "$(issue_assignee "$NUMBER")" == "$ASSIGNEE" ]]
     [[ "$(issue_has_label "$NUMBER" "in-progress")" == "true" ]]
@@ -178,7 +178,7 @@ teardown() {
 @test "I2: no --for-planning, PLAN_BY_DEFAULT=false, needs-plan label — issue NOT claimed" {
     NUMBER=$(create_test_issue "needs-plan")
     export PLAN_BY_DEFAULT=false
-    run timeout 15 env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TASK_MANAGER" claim --project "$REPO" --account-id "$ASSIGNEE"
+    run timeout 15 env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TM_SCRIPT" claim --project "$REPO" --account-id "$ASSIGNEE"
     assignee=$(issue_assignee "$NUMBER")
     [[ "$assignee" != "$ASSIGNEE" ]]
 }
@@ -186,7 +186,7 @@ teardown() {
 @test "I3: no --for-planning, PLAN_BY_DEFAULT=false, skip-plan label — claimed + in-progress" {
     NUMBER=$(create_test_issue "skip-plan")
     export PLAN_BY_DEFAULT=false
-    run env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TASK_MANAGER" claim --project "$REPO" --account-id "$ASSIGNEE"
+    run env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TM_SCRIPT" claim --project "$REPO" --account-id "$ASSIGNEE"
     [ "$status" -eq 0 ]
     [[ "$(issue_assignee "$NUMBER")" == "$ASSIGNEE" ]]
     [[ "$(issue_has_label "$NUMBER" "in-progress")" == "true" ]]
@@ -195,7 +195,7 @@ teardown() {
 @test "I4: no --for-planning, PLAN_BY_DEFAULT=true, no label — issue NOT claimed" {
     NUMBER=$(create_test_issue)
     export PLAN_BY_DEFAULT=true
-    run timeout 15 env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TASK_MANAGER" claim --project "$REPO" --account-id "$ASSIGNEE"
+    run timeout 15 env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TM_SCRIPT" claim --project "$REPO" --account-id "$ASSIGNEE"
     assignee=$(issue_assignee "$NUMBER")
     [[ "$assignee" != "$ASSIGNEE" ]]
 }
@@ -203,7 +203,7 @@ teardown() {
 @test "I5: no --for-planning, PLAN_BY_DEFAULT=true, skip-plan label — claimed + in-progress" {
     NUMBER=$(create_test_issue "skip-plan")
     export PLAN_BY_DEFAULT=true
-    run env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TASK_MANAGER" claim --project "$REPO" --account-id "$ASSIGNEE"
+    run env TASK_MANAGER=github GH_TOKEN="$GH_TOKEN" "$TM_SCRIPT" claim --project "$REPO" --account-id "$ASSIGNEE"
     [ "$status" -eq 0 ]
     [[ "$(issue_assignee "$NUMBER")" == "$ASSIGNEE" ]]
     [[ "$(issue_has_label "$NUMBER" "in-progress")" == "true" ]]

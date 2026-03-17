@@ -79,7 +79,7 @@ Prefer real backend/API coverage in loop integration tests. Image-level integrat
 
 **Capture docker subprocess output** using detached mode: `docker run -d` → `docker wait` → `docker logs`. Foreground `docker run` does not reliably forward stdout from some binaries (e.g. the claude CLI) when they write after bash completes.
 
-Always make sure to have passing tests.
+Always make sure to have passing tests. When modifying a script, run its unit tests **and** its integration tests (e.g. `bats task-manager/task-manager-github-integration.bats` after touching the github backend). Do the same for any script that depends on the modified one.
 
 
 ## Code style
