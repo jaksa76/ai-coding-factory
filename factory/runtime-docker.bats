@@ -74,7 +74,7 @@ stub_exit() {
     rm -f "$calls_file"
 }
 
-@test "add: passes --restart=on-failure to docker run" {
+@test "add: passes --restart=no to docker run" {
     local calls_file
     calls_file="$(mktemp)"
     stub_script docker "echo \"\$@\" > '$calls_file'"
@@ -82,7 +82,7 @@ stub_exit() {
     run "$RUNTIME" add my-worker myimage
     [ "$status" -eq 0 ]
 
-    [[ "$(cat "$calls_file")" == *"--restart=on-failure"* ]]
+    [[ "$(cat "$calls_file")" == *"--restart=no"* ]]
 
     rm -f "$calls_file"
 }

@@ -17,6 +17,7 @@ _gh_list_issues_for_planning() {
         # All unassigned open issues that don't have skip-plan
         gh issue list --repo "$repo" \
             --state open \
+            --order asc \
             --json number,title,body,labels,assignees \
             --jq '[.[] | select((.assignees | length) == 0)
                        | select([.labels[].name] | index("skip-plan") == null)]'
@@ -25,6 +26,7 @@ _gh_list_issues_for_planning() {
         gh issue list --repo "$repo" \
             --label "needs-plan" \
             --state open \
+            --order asc \
             --json number,title,body,labels,assignees \
             --jq '[.[] | select((.assignees | length) == 0)]'
     fi
@@ -36,6 +38,7 @@ _gh_list_issues_for_implementation() {
         # Unassigned issues with plan-approved OR skip-plan label
         gh issue list --repo "$repo" \
             --state open \
+            --order asc \
             --json number,title,body,labels,assignees \
             --jq '[.[] | select((.assignees | length) == 0)
                        | select([.labels[].name]
@@ -44,6 +47,7 @@ _gh_list_issues_for_implementation() {
         # Unassigned open issues without needs-plan
         gh issue list --repo "$repo" \
             --state open \
+            --order asc \
             --json number,title,body,labels,assignees \
             --jq '[.[] | select((.assignees | length) == 0)
                        | select([.labels[].name] | index("needs-plan") == null)]'

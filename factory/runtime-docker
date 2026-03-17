@@ -39,7 +39,7 @@ cmd_add() {
         esac
     done
 
-    local run_args=(-d --restart=on-failure --label "$WORKER_LABEL" --name "$name")
+    local run_args=(-d --restart=no --label "$WORKER_LABEL" --name "$name")
     [[ -n "$env_file" ]] && run_args+=(--env-file "$env_file")
     run_args+=("$image")
     docker run "${run_args[@]}"
